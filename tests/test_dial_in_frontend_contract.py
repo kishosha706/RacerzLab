@@ -12,7 +12,7 @@ def test_setup_tab_no_longer_owns_full_dial_in_panel() -> None:
 
     assert "analyzeRunDialIn" not in setup_tab
     assert "Crew Chief Dial-In" not in setup_tab
-    assert "analyzeRunDialIn" in dial_in_tab
+    assert "submitAtomicDriverIntentWorkflow" in dial_in_tab
     assert "Crew Chief Dial-In" in dial_in_tab
 
 
@@ -23,10 +23,10 @@ def test_dial_in_tab_requests_ranked_hypotheses_but_caps_learning_mode_at_three(
     assert "const SHOW_MORE_STEP = 9" in dial_in_tab
     assert "const DIAL_IN_REQUEST_LIMIT = DIAL_IN_INITIAL_LIMIT + SHOW_MORE_STEP" in dial_in_tab
     assert "const MAX_VISIBLE_UNVERIFIED_HYPOTHESES = 3" in dial_in_tab
-    assert "limit: DIAL_IN_REQUEST_LIMIT" in dial_in_tab
+    assert "submitAtomicDriverIntentWorkflow" in dial_in_tab
     assert "response?.top_swings.slice(0, 1)" in dial_in_tab
     assert "response?.top_swings.slice(1, MAX_VISIBLE_UNVERIFIED_HYPOTHESES)" in dial_in_tab
-    assert "include_debug_evidence: false" in dial_in_tab
+    assert "expected_case_sha256: engineeringCase.case_sha256" in dial_in_tab
     assert "Show {nextRevealCount} more setup changes" not in dial_in_tab
 
 
@@ -41,8 +41,9 @@ def test_dial_in_tab_sends_explicit_decision_context_to_both_server_paths() -> N
     assert "selected_phase: selectedPhase || undefined" in dial_in_tab
     assert "objective," in dial_in_tab
     assert "priority," in dial_in_tab
-    assert dial_in_tab.count("...decisionContext") >= 3
+    assert dial_in_tab.count("...decisionContext") >= 2
     assert "& DialInDecisionContext" in client
+    assert "driver-intent-workflow" in client
     assert "export type DialInObjective" in telemetry_types
     assert "export type DialInPriority" in telemetry_types
 
@@ -239,13 +240,14 @@ def test_dial_in_enforces_one_active_controlled_test_with_confirmed_abandon() ->
         1,
     )[0]
     assert "if (!overview || !sessionId || !workflowCatalogReady || activeWorkflow || workflowAuthorityBlocked) return" in submit
-    assert "startControlledWorkflow" in submit
-    assert "if (!overview || !sessionId || !workflowCatalogReady || workflowBusy || activeWorkflow || workflowAuthorityBlocked) return" in build
+    assert "submitAtomicDriverIntentWorkflow" in submit
+    assert "if (!overview || !sessionId || !engineeringCase || !workflowCatalogReady || workflowBusy || activeWorkflow || workflowAuthorityBlocked) return" in build
     assert "session_id: sessionId" in submit
     assert "session_id: sessionId" in build
-    assert "if (workflowResult.status === \"rejected\")" in submit
+    assert "if (result.workflow == null)" in submit
     assert "setResponse(dialResponse)" in submit
-    assert "startControlledWorkflow" in build
+    assert "submitAtomicDriverIntentWorkflow" in build
+    assert "replaceRevision(result.case_revision)" in submit
     assert "&& workflowCatalogReady" in dial_in
     assert "&& complaint.trim().length > 0" in dial_in
     assert "&& !loading" in dial_in

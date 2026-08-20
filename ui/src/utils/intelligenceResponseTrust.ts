@@ -378,14 +378,24 @@ export function isIntelligenceQueryResponseBoundToReport(
 ): value is IntelligenceQueryResponse {
   if (!isRecord(value) || !hasSnapshotIdentity(value)) return false;
   if (
-    value.schema_version !== "p19.intelligence-query.v1"
+    value.schema_version !== "p3544.engineering-case-query.v1"
     || value.run_id !== report.run_id
     || value.session_id !== report.session_id
     || value.reasoning_snapshot_sha256 !== report.reasoning_snapshot_sha256
     || value.setup_id !== report.setup_id
     || value.setup_snapshot_sha256 !== report.setup_snapshot_sha256
+    || typeof value.case_id !== "string"
+    || !/^p3543case_[0-9a-f]{24}$/.test(value.case_id)
+    || typeof value.case_sha256 !== "string"
+    || !/^[0-9a-f]{64}$/.test(value.case_sha256)
     || typeof value.action_authorized !== "boolean"
     || (value.action_authorized && value.setup_id === null)
+    || !Array.isArray(value.source_artifact_ids)
+    || !value.source_artifact_ids.every(isCanonicalString)
+    || new Set(value.source_artifact_ids).size !== value.source_artifact_ids.length
+    || !["evidence_only", "attention_only", "navigation_only", "p19_measurement_mirror", "p19_exact_mirror"]
+      .includes(String(value.authority_ceiling))
+    || (value.action_authorized && value.authority_ceiling !== "p19_exact_mirror")
     || !Array.isArray(value.scope_run_ids)
     || value.scope_run_ids.length === 0
     || !value.scope_run_ids.every(isCanonicalString)

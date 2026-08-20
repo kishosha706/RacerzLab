@@ -432,6 +432,9 @@ export type ControlledResponseReceipt = {
     source_recording_sha256: string;
     setup_snapshot_sha256: string;
     response_artifact_ids: string[];
+    response_artifact_sha256s: string[];
+    producer_version: string;
+    canonical_clock_contract: "qualified_session_tick";
     source_channels: string[];
     eligible_lap_numbers: number[];
     phase: string;
@@ -442,6 +445,7 @@ export type ControlledResponseReceipt = {
     blocker_reasons: string[];
   }>;
   expected_response_relation_ids: string[];
+  expected_response_contract_ids: string[];
   observed_metric_deltas: Array<Record<string, unknown>>;
   performance_effect_s: number | null;
   time_origin_phase: string | null;

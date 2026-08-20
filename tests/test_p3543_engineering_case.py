@@ -14,14 +14,23 @@ from racelab_engine.models.engineering_case import (
     ControlledResponseMetricDelta,
     ControlledResponseReceipt,
     ControlledStageResponseReceipt,
+    EngineeringMission,
+    ResponseExpectationContract,
 )
 from racelab_engine.services.engineering_case_service import (
+    attach_deficits_to_readiness,
     build_capability_resolutions,
     build_canonical_engineering_case,
+    build_evidence_deficits,
     build_engineering_response_artifacts,
     build_p19_response_admissions,
     build_setup_effect_readiness,
+    engineering_case_id,
 )
+from racelab_engine.services.p19_response_admission_service import (
+    build_p19_response_evaluations_and_admissions,
+)
+from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.services.vehicle_dynamics_service import (
     _dynamic_operational_evidence,
 )
@@ -66,6 +75,39 @@ def _hypothesis(**updates):
     return SimpleNamespace(**values)
 
 
+def _expectation(artifact, *, expected_sign: int | None = None):
+    metric = artifact.operational_evidence.metrics[0]
+    sign = expected_sign or (1 if metric.value > 0 else -1)
+    return ResponseExpectationContract.build(
+        owning_effect_id="front_arb_response",
+        owning_mechanism_ids=("mechanism:center_rotation_deficit",),
+        experiment_factor_id="factor:front_arb",
+        control_key="front_arb_diameter",
+        direction_sign=1,
+        relation_id=artifact.relation,
+        metric_id=metric.metric_id,
+        expected_sign=sign,
+        units=metric.units,
+        phase=artifact.phase,
+        lap_pct_start=artifact.lap_pct_start,
+        lap_pct_end=artifact.lap_pct_end,
+        speed_min_mps=artifact.speed_min_mps,
+        speed_max_mps=artifact.speed_max_mps,
+        minimum_independent_repetitions=artifact.operational_evidence.repetition_count,
+        minimum_absolute_signal=0.0,
+        required_channel_ids=artifact.operational_evidence.source_channels,
+        required_context_states=(
+            "matched_driver_demand",
+            "qualified_context",
+            "traffic_clear",
+        ),
+        allowed_evidence_states=(artifact.evidence_state,),
+        protected_outcomes=("driver_workload",),
+        car_applicability=("all",),
+        build_applicability=("all",),
+    )
+
+
 def test_semantic_registry_is_relationship_only_and_covers_response_vocabulary() -> None:
     registry = compile_engineering_semantic_registry()
 
@@ -103,7 +145,7 @@ def test_response_artifact_and_p19_adapter_preserve_identity_and_authority() -> 
     assert artifact.component_support_authorized is False
     assert artifact.setup_authorized is False
 
-    admissions = build_p19_response_admissions(
+    unresolved = build_p19_response_admissions(
         case_id=artifact.case_id,
         case_revision_sha256=_REVISION,
         p19_reasoning_snapshot_sha256="c" * 64,
@@ -119,8 +161,28 @@ def test_response_artifact_and_p19_adapter_preserve_identity_and_authority() -> 
         context_state="qualified",
         traffic_blocked=False,
     )
+    assert unresolved[0].state == "unresolved"
+    assert unresolved[0].assessments[0].result == "unresolved"
+
+    admissions = build_p19_response_admissions(
+        case_id=artifact.case_id,
+        case_revision_sha256=_REVISION,
+        p19_reasoning_snapshot_sha256="c" * 64,
+        causes=(
+            SimpleNamespace(
+                cause_id="cause-center",
+                mechanism_keys=("corner_rotation",),
+                status="possible",
+            ),
+        ),
+        response_artifacts=artifacts,
+        driver_demand_state="matched",
+        context_state="qualified",
+        traffic_blocked=False,
+        expectation_contracts=(_expectation(artifact),),
+    )
     assert admissions[0].state == "admitted"
-    assert admissions[0].assessments[0].result == "supports_existing_contract"
+    assert admissions[0].assessments[0].result == "support"
     assert admissions[0].reasoning_rank_modified is False
     assert admissions[0].terminal_action_modified is False
     assert admissions[0].setup_authorized is False
@@ -155,16 +217,24 @@ def test_response_ready_effect_remains_non_testable_and_capability_linked() -> N
     assert readiness[0].setup_authorized is False
     assert "Exact legal option" in " ".join(readiness[0].missing_evidence)
 
-    capability = build_capability_resolutions(readiness, artifacts)
+    deficits = build_evidence_deficits(readiness, artifacts)
+    readiness = attach_deficits_to_readiness(readiness, deficits)
+    capability = build_capability_resolutions(deficits, artifacts)
     assert capability
     assert all(item.authority == "measurement_routing_only" for item in capability)
     assert all(item.setup_authorized is False for item in capability)
+    assert {item.deficit_code for item in capability} == {
+        "EXACT_LEGAL_OPTION_MISSING",
+        "P19_AUTHORITY_REQUIRED",
+    }
 
 
 def test_canonical_case_rejects_foreign_response_and_never_credits_p36_counts() -> None:
     artifacts = _response_artifacts()
     readiness = build_setup_effect_readiness((_hypothesis(),), artifacts)
-    capability = build_capability_resolutions(readiness, artifacts)
+    deficits = build_evidence_deficits(readiness, artifacts)
+    readiness = attach_deficits_to_readiness(readiness, deficits)
+    capability = build_capability_resolutions(deficits, artifacts)
     identity = SimpleNamespace(
         workspace_revision=_REVISION,
         run_id="run-response",
@@ -180,15 +250,27 @@ def test_canonical_case_rejects_foreign_response_and_never_credits_p36_counts() 
         p35_assessment_sha256="3" * 64,
         learning_projection_sha256="4" * 64,
     )
-    admissions = build_p19_response_admissions(
+    evaluations, admissions = build_p19_response_evaluations_and_admissions(
         case_id=artifacts[0].case_id,
         case_revision_sha256=_REVISION,
         p19_reasoning_snapshot_sha256="c" * 64,
         causes=(),
         response_artifacts=artifacts,
+        expectation_contracts=(),
         driver_demand_state="matched",
         context_state="qualified",
         traffic_blocked=False,
+    )
+    terminal_decision = {"kind": "measurement_mission"}
+    mission = EngineeringMission(
+        what="Measure before changing the setup",
+        where="center · exact scope",
+        why_it_matters="Current P19 evidence requires measurement.",
+        uncertain="No exact response contract exists.",
+        next="Collect the required evidence with the setup unchanged.",
+        done_when="Three exact-context laps clear the measurement contract.",
+        source_authority="p19_measurement_mirror",
+        terminal_move_sha256=canonical_json_sha256(terminal_decision),
     )
     case = build_canonical_engineering_case(
         identity=identity,
@@ -196,6 +278,8 @@ def test_canonical_case_rejects_foreign_response_and_never_credits_p36_counts() 
         evidence_index_sha256="5" * 64,
         p351_projection=SimpleNamespace(projection_sha256="6" * 64),
         response_artifacts=artifacts,
+        response_expectation_contracts=(),
+        response_expectation_evaluations=evaluations,
         p19_admissions=admissions,
         p35=SimpleNamespace(
             performance_opportunity_ids=("opportunity-1",),
@@ -203,13 +287,17 @@ def test_canonical_case_rejects_foreign_response_and_never_credits_p36_counts() 
             next_discriminator_contract_id=None,
         ),
         p26=SimpleNamespace(component_states=()),
-        terminal_decision={"kind": "measurement_mission"},
+        terminal_decision=terminal_decision,
         effect_readiness=readiness,
+        evidence_deficits=deficits,
         capability_resolutions=capability,
         investigation_id=None,
+        mission=mission,
     )
 
-    assert case.case_id == f"p3543case_{_REVISION[:24]}"
+    assert case.case_id == engineering_case_id(
+        run_id="run-response", session_id="session-response"
+    )
     assert case.campaign_capture.state == "pending"
     assert case.campaign_capture.historical_count_credited is False
     assert case.campaign_capture.null_count_credited is False
@@ -237,6 +325,7 @@ def _stage(
         source_recording_sha256=recording,
         setup_snapshot_sha256=setup,
         response_artifact_ids=(artifact,),
+        response_artifact_sha256s=("f" * 64,),
         source_channels=("steering_deg", "yaw_rate"),
         eligible_lap_numbers=(3, 4, 5),
         phase="center",
@@ -275,6 +364,7 @@ def test_controlled_response_receipt_keeps_three_truth_axes_separate() -> None:
         direction_sign=1,
         stages=stages,
         expected_response_relation_ids=("steering_wheel_to_yaw",),
+        expected_response_contract_ids=("p3544expect_" + "5" * 24,),
         observed_metric_deltas=(metric,),
         performance_effect_s=-0.03,
         time_origin_phase="center",

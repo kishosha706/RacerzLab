@@ -15,9 +15,9 @@ DEFAULT_DB_PATH = Path("data/racelab.sqlite")
 # mode.  That added several milliseconds to even a single-row lookup.
 _INITIALIZED_DATABASES: dict[str, tuple[int, int]] = {}
 _INITIALIZE_LOCK = RLock()
-_LIGHTWEIGHT_MIGRATION_VERSION = 1
+_LIGHTWEIGHT_MIGRATION_VERSION = 2
 _LIGHTWEIGHT_MIGRATION_CHECKSUM = hashlib.sha256(
-    b"racelab-additive-schema-through-p35.4.1-v1"
+    b"racelab-additive-schema-through-p35.4.4-v2"
 ).hexdigest()
 
 
@@ -1082,6 +1082,50 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
           FOREIGN KEY(operation_id) REFERENCES evidence_campaign_operations(operation_id)
             ON DELETE RESTRICT
         )
+        """
+    )
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS engineering_cases (
+          case_id TEXT PRIMARY KEY,
+          run_id TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          current_revision INTEGER NOT NULL,
+          current_case_sha256 TEXT NOT NULL,
+          FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_engineering_case_scope
+          ON engineering_cases(run_id, session_id);
+        CREATE TABLE IF NOT EXISTS engineering_case_revisions (
+          case_id TEXT NOT NULL,
+          case_revision INTEGER NOT NULL,
+          case_sha256 TEXT NOT NULL UNIQUE,
+          previous_case_sha256 TEXT,
+          created_at TEXT NOT NULL,
+          change_category TEXT NOT NULL,
+          source_workspace_revision TEXT NOT NULL,
+          revision_json TEXT NOT NULL,
+          PRIMARY KEY(case_id, case_revision),
+          FOREIGN KEY(case_id) REFERENCES engineering_cases(case_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_engineering_case_revision_history
+          ON engineering_case_revisions(case_id, case_revision DESC);
+        CREATE TABLE IF NOT EXISTS engineering_driver_intents (
+          intent_id TEXT PRIMARY KEY,
+          intent_sha256 TEXT NOT NULL UNIQUE,
+          case_id TEXT NOT NULL,
+          intent_revision INTEGER NOT NULL,
+          supersedes_intent_id TEXT,
+          created_at TEXT NOT NULL,
+          intent_json TEXT NOT NULL,
+          UNIQUE(case_id, intent_revision),
+          FOREIGN KEY(case_id) REFERENCES engineering_cases(case_id) ON DELETE CASCADE,
+          FOREIGN KEY(supersedes_intent_id) REFERENCES engineering_driver_intents(intent_id)
+            ON DELETE RESTRICT
+        );
+        CREATE INDEX IF NOT EXISTS idx_engineering_driver_intent_current
+          ON engineering_driver_intents(case_id, intent_revision DESC);
         """
     )
     connection.execute(

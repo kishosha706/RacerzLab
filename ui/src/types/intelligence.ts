@@ -668,7 +668,9 @@ export type RunIntelligenceReport = {
 
 export type IntelligenceQueryRequest = {
   question: string;
-  session_id?: string | null;
+  session_id: string;
+  case_id: string;
+  case_sha256: string;
   selected_lap: number | null;
   selected_window_start_lap?: number | null;
   selected_window_end_lap?: number | null;
@@ -678,9 +680,11 @@ export type IntelligenceQueryRequest = {
 };
 
 export type IntelligenceQueryResponse = {
-  schema_version: "p19.intelligence-query.v1";
+  schema_version: "p3544.engineering-case-query.v1";
   run_id: string;
-  session_id: string | null;
+  session_id: string;
+  case_id: string;
+  case_sha256: string;
   reasoning_snapshot_sha256: string;
   setup_id: string | null;
   setup_snapshot_sha256: string | null;
@@ -702,6 +706,8 @@ export type IntelligenceQueryResponse = {
   clarification_required?: boolean;
   action_authorized: boolean;
   action_source_event_ids: string[];
+  source_artifact_ids: string[];
+  authority_ceiling: "evidence_only" | "attention_only" | "navigation_only" | "p19_measurement_mirror" | "p19_exact_mirror";
   evidence_state: EvidenceState;
   citations: IntelligenceCitation[];
   suggested_navigation: IntelligenceQueryNavigationTarget[];

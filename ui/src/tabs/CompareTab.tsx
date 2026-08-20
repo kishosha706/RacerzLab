@@ -7,6 +7,7 @@ import { DidItWorkCard } from "../components/DidItWorkCard";
 import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPanel";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { useCompareBasket, type BasketItem } from "../store/CompareBasketContext";
+import { useEngineeringCase } from "../store/EngineeringCaseContext";
 import type { RunListItem } from "../types/telemetry";
 import type {
   ChannelDeltaStats, CompareResponse, ComparisonInsightsResponse, CornerName, CornerMetric,
@@ -747,6 +748,7 @@ function EvidenceView({ observation }: { observation: ComparisonObservation | nu
 
 export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabProps) {
   const { basket } = useCompareBasket();
+  const { engineeringCase } = useEngineeringCase();
   const [baselineRunId, setBaselineRunId] = useState(currentRunId);
   const [testRunId, setTestRunId] = useState("");
   // Determine if Compare is using basket-driven or manual selections
@@ -763,7 +765,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
   const [result, setResult] = useState<CompareResponse | null>(null);
   const [subview, setSubview] = useState<SubView>("observation");
   const [loading, setLoading] = useState(false);
-  const { selection } = useTelemetrySelection();
+  const { selection, focusEvidence, setWorkspace } = useTelemetrySelection();
   const [error, setError] = useState<string | null>(null);
   const [insights, setInsights] = useState<ComparisonInsightsResponse | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -1239,6 +1241,56 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
             learningMode={selection.selectedMode === "learning"}
             onOpen={setSubview}
           />
+          <div className="tab-handoff-actions compare-case-handoffs" aria-label="Engineering Case comparison handoffs">
+            <button
+              type="button"
+              disabled={engineeringCase == null}
+              onClick={() => {
+                if (engineeringCase == null) return;
+                focusEvidence({
+                  runId: currentRunId,
+                  lapNumber: effectiveTestLap,
+                  lapScope: effectiveTestLap == null ? "track_zone" : "single_lap",
+                  eventId: null,
+                  producerId: "p32.compare",
+                  artifactId: null,
+                  caseId: engineeringCase.case_id,
+                  caseRevision: engineeringCase.case_revision_sha256,
+                  caseSha256: engineeringCase.case_sha256,
+                  mechanismIds: engineeringCase.semantic_focus.mechanism_ids,
+                  responseRelationId: engineeringCase.semantic_focus.response_relation_id,
+                  componentIds: engineeringCase.semantic_focus.component_ids,
+                  effectIds: engineeringCase.semantic_focus.effect_ids,
+                  controlKeys: engineeringCase.semantic_focus.control_keys,
+                  p19CauseIds: engineeringCase.semantic_focus.p19_cause_ids,
+                  quantityIds: engineeringCase.quantity_observability.map((item) => item.quantity_id),
+                  discriminatorId: engineeringCase.active_discriminator_id,
+                  sampleIndex: null,
+                  lapDistFt: null,
+                  lapPct: startPct,
+                  zoneId: null,
+                  zoneLabel: `Compare ${baselineRunId} → ${testRunId}`,
+                  zoneStartPct: startPct,
+                  zoneEndPct: endPct,
+                  channelId: null,
+                  system: "compare",
+                  selectionSource: "compare_verdict",
+                  lockState: "locked",
+                  trustTier: "observation_only",
+                  compareRole: "test",
+                  sourceRunId: baselineRunId,
+                  sourceSetupId: null,
+                  valueBasis: effectiveTestLap == null ? "run_level" : "full_lap",
+                }, "engineer");
+              }}
+            >Explain this comparison</button>
+            <button
+              type="button"
+              disabled={engineeringCase?.active_workflow_id == null}
+              title={engineeringCase?.active_workflow_id == null ? "No exact current P19 workflow is bound to this case" : `Review ${engineeringCase.active_workflow_id}`}
+              onClick={() => setWorkspace("engineer", "compare_verdict")}
+            >Review against hypothesis</button>
+          </div>
           <p className="section-note compare-group-explainer" style={{ marginTop: 0, marginBottom: 8 }}>
             Grouped navigation: start with Observation, then drill into Platform, Systems, and Detail.
           </p>

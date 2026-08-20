@@ -378,6 +378,8 @@ class RaceLabRepository:
         self,
         workflow: ControlledWorkflow,
         scope_run_ids: tuple[str, ...],
+        *,
+        connection: Any | None = None,
     ) -> None:
         """Atomically reserve one active workflow slot for an explicit run scope.
 
@@ -389,9 +391,11 @@ class RaceLabRepository:
         scope = {run_id for run_id in scope_run_ids if run_id}
         if not scope:
             raise ValueError("A controlled workflow requires an explicit run scope.")
-        connection = initialize_database(self.db_path)
+        owns_transaction = connection is None
+        connection = connection or initialize_database(self.db_path)
         try:
-            connection.execute("BEGIN IMMEDIATE")
+            if owns_transaction:
+                connection.execute("BEGIN IMMEDIATE")
             placeholders = ",".join("?" for _ in scope)
             rows = connection.execute(
                 f"SELECT DISTINCT workflow.workflow_id "
@@ -408,12 +412,15 @@ class RaceLabRepository:
                     f"{row['workflow_id']} before starting another workflow in this session."
                 )
             self._write_controlled_workflow(connection, workflow)
-            connection.commit()
+            if owns_transaction:
+                connection.commit()
         except Exception:
-            connection.rollback()
+            if owns_transaction:
+                connection.rollback()
             raise
         finally:
-            connection.close()
+            if owns_transaction:
+                connection.close()
 
     def save_controlled_workflow_if_scope_exclusive(
         self,

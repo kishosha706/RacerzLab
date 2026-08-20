@@ -112,6 +112,11 @@ export type CarResponseFact = {
   policy_verdict: "keep" | "undo" | "retest" | "invalid";
   source_workflow_id: string;
   source_response_record_id: string | null;
+  response_expectation_contract_ids: string[];
+  response_metric_delta_ids: string[];
+  stage_response_artifact_ids: Array<["A" | "B" | "A2", string[]]>;
+  response_phase: string | null;
+  response_speed_band_mps: [number, number] | null;
   source_artifact_ids: string[];
   setup_authorized: false;
 };

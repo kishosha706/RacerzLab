@@ -1,8 +1,9 @@
 import { AlertTriangle, BrainCircuit, Crosshair, Gauge, Layers, MapPin, ShieldCheck, Sliders, Wrench } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { fetchSetup } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { useCompareBasket } from "../store/CompareBasketContext";
+import { useEngineeringCase } from "../store/EngineeringCaseContext";
 import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPanel";
 import { VehicleSystemsPanel } from "../components/VehicleSystemsPanel";
 import type { RunOverview, SetupSnapshot, TelemetryEvent } from "../types/telemetry";
@@ -14,6 +15,9 @@ type SetupTabProps = {
   workflowUpdatedAt?: string | null;
   onToggleMapOverlay?: () => void;
 };
+
+type SetupRowSelection = (value: { semanticKey: string; controlKey?: string }) => void;
+const SetupRowSelectionContext = createContext<SetupRowSelection | null>(null);
 
 type SetupEvidenceFocus = Pick<TelemetryEvent, "event_id" | "event_type" | "related_setup_keys"> &
   Partial<Pick<
@@ -142,23 +146,33 @@ function isEvidenceLinkedControl(relevantKeys: ReadonlySet<string>, ...candidate
 }
 
 // ── Field Row ────────────────────────────────────────────────────
-function Field({ l, v, u, imp: isImp, relevant = false }: {
+function Field({ l, v, u, imp: isImp, relevant = false, semanticKey, controlKey }: {
   l: string; v: string | number | null | undefined;
-  u?: string; imp?: boolean; relevant?: boolean;
+  u?: string; imp?: boolean; relevant?: boolean; semanticKey?: string; controlKey?: string;
 }) {
+  const onSelect = useContext(SetupRowSelectionContext);
   const missing = v == null || (typeof v === "number" && !Number.isFinite(v)) || (typeof v === "object");
   const cls = ["gr-row"];
   if (missing) cls.push("missing");
   else if (isImp) cls.push("important");
   if (relevant) cls.push("evidence-linked");
-  return (
-    <div className={cls.join(" ")} role="row" data-evidence-linked={relevant ? "true" : undefined}>
+  if (onSelect) cls.push("is-selectable");
+  const content = <>
       <span className="gr-label" role="rowheader">{l}</span>
       <span className="gr-value" role="cell">{missing ? "—" : v}</span>
       <span className="gr-value-unit" aria-hidden={missing || !u ? "true" : undefined}>{missing ? "" : (u ?? "")}</span>
       {relevant && <span className="gr-row-evidence" role="cell">Evidence-linked</span>}
-    </div>
-  );
+    </>;
+  return onSelect ? (
+    <button
+      type="button"
+      className={cls.join(" ")}
+      role="row"
+      data-evidence-linked={relevant ? "true" : undefined}
+      onClick={() => onSelect({ semanticKey: semanticKey ?? normalizedSetupKey(l), controlKey })}
+      aria-label={`Focus setup control ${l}`}
+    >{content}</button>
+  ) : <div className={cls.join(" ")} role="row" data-evidence-linked={relevant ? "true" : undefined}>{content}</div>;
 }
 
 // ── Corner Panel ─────────────────────────────────────────────────
@@ -189,8 +203,8 @@ function CornerPanel({ label, corner, setup, glow, relevantKeys }: {
       <div className="gr-corner-head">{label}</div>
       <div className="gr-corner-body">
         <Field l="Tire PSI" v={psi} u="psi" imp relevant={relevant("cold_pressure_kpa", "pressure")} />
-        <Field l="Ride Height" v={rh} u="in" imp relevant={relevant("ride_height_mm", "ride_height")} />
-        <Field l="Spring Rate" v={spring} u="lb/in" imp relevant={relevant("spring_rate_n_per_mm", `${frontCorner ? "front" : "rear"}_spring_n_per_mm`, "spring")} />
+        <Field l="Ride Height" v={rh} u="in" imp relevant={relevant("ride_height_mm", "ride_height")} semanticKey={`${corner}_ride_height_mm`} controlKey={`${corner}_ride_height_mm`} />
+        <Field l="Spring Rate" v={spring} u="lb/in" imp relevant={relevant("spring_rate_n_per_mm", `${frontCorner ? "front" : "rear"}_spring_n_per_mm`, "spring")} semanticKey={`${corner}_${frontCorner ? "front" : "rear"}_spring_n_per_mm`} controlKey={`${corner}_${frontCorner ? "front" : "rear"}_spring_n_per_mm`} />
         <Field l="Corner Weight" v={wt} u="lb" imp relevant={relevant("corner_weight_n", "corner_weight")} />
         <div className="gr-group-head">Dampers</div>
         <Field l="LS Compression" v={lsC} u="clk" relevant={relevant("ls_compression")} />
@@ -220,7 +234,8 @@ export function SetupTab({
     overview.setup_snapshot && overview.setup_snapshot.run_id !== overview.run_id,
   );
   const setup = setupIdentityMismatch ? null : overview.setup_snapshot;
-  const { selection, setWorkspace } = useTelemetrySelection();
+  const { selection, setWorkspace, focusEvidence } = useTelemetrySelection();
+  const { engineeringCase } = useEngineeringCase();
   const learning = selection.selectedMode === "learning";
   const { basket } = useCompareBasket();
   const hasValidBaselineComparison = Boolean(
@@ -442,6 +457,48 @@ export function SetupTab({
     && selectedEvent.valid_for_tuning
     && relevantSetupKeys.size > 0,
   );
+  const focusSetupRow = useCallback<SetupRowSelection>(({ semanticKey, controlKey }) => {
+    if (engineeringCase == null || engineeringCase.run_id !== overview.run_id) return;
+    const effects = engineeringCase.effect_readiness.filter((item) => (
+      (controlKey != null && item.exact_control_keys.includes(controlKey))
+      || item.effect_id === semanticKey
+    ));
+    focusEvidence({
+      runId: overview.run_id,
+      lapNumber: null,
+      lapScope: "run",
+      eventId: null,
+      producerId: "p35.1.setup-effect-readiness",
+      artifactId: null,
+      caseId: engineeringCase.case_id,
+      caseRevision: engineeringCase.case_revision_sha256,
+      caseSha256: engineeringCase.case_sha256,
+      mechanismIds: engineeringCase.semantic_focus.mechanism_ids,
+      responseRelationId: engineeringCase.semantic_focus.response_relation_id,
+      componentIds: engineeringCase.semantic_focus.component_ids,
+      effectIds: effects.map((item) => item.effect_id),
+      controlKeys: controlKey ? [controlKey] : [],
+      p19CauseIds: engineeringCase.semantic_focus.p19_cause_ids,
+      quantityIds: engineeringCase.quantity_observability.map((item) => item.quantity_id),
+      discriminatorId: engineeringCase.active_discriminator_id,
+      sampleIndex: null,
+      lapDistFt: null,
+      lapPct: null,
+      zoneId: null,
+      zoneLabel: semanticKey,
+      zoneStartPct: null,
+      zoneEndPct: null,
+      channelId: null,
+      system: "setup",
+      selectionSource: "setup_table",
+      lockState: "locked",
+      trustTier: effects[0]?.authority ?? "knowledge_only",
+      compareRole: null,
+      sourceRunId: overview.run_id,
+      sourceSetupId: setup.setup_id,
+      valueBasis: "run_level",
+    }, "setup_impact");
+  }, [engineeringCase, focusEvidence, overview.run_id, setup.setup_id]);
   const setupDecisionState = selectedEvent
     ? hasQualifiedEvidenceLink ? "evidence_linked" : "context_only"
     : "recorded_snapshot";
@@ -550,6 +607,7 @@ export function SetupTab({
                 };
 
   return (
+    <SetupRowSelectionContext.Provider value={focusSetupRow}>
     <section className="garage-board">
       {/* 1) Setup Context / Evidence Focus strip */}
       <div className="gr-topbar">
@@ -808,23 +866,23 @@ export function SetupTab({
         <div className="gr-card setup-system-card setup-system-steering" data-evidence-relevant={relevant("steering_ratio", "steering_pinion_mm", "steering_offset_deg", "front_brake_bias_percent") ? "true" : undefined} data-evidence-context={relevantSetupKeys.size === 0 && focusZone === "steering" ? "true" : undefined}>
           <div className="gr-card-head"><Gauge size={12} /> Steering / Control</div>
           <div className="gr-card-body">
-            <Field l={steeringControlLabel} v={displayRatio ?? null} relevant={relevant("steering_ratio", "steering_pinion_mm")} />
+            <Field l={steeringControlLabel} v={displayRatio ?? null} relevant={relevant("steering_ratio", "steering_pinion_mm")} semanticKey="steering_ratio" controlKey="steering_ratio" />
             {derivedRatio && pinion != null && (
               <Field l="Steering Pinion" v={pinion} u="mm/rev" relevant={relevant("steering_pinion_mm")} />
             )}
-            <Field l="Steering Offset" v={setup.steering_offset_deg ?? null} u="deg" relevant={relevant("steering_offset_deg")} />
-            <Field l="Front Brake Bias" v={setup.front_brake_bias_percent ?? null} u="%" relevant={relevant("front_brake_bias_percent")} />
+            <Field l="Steering Offset" v={setup.steering_offset_deg ?? null} u="deg" relevant={relevant("steering_offset_deg")} semanticKey="steering_offset_deg" controlKey="steering_offset_deg" />
+            <Field l="Front Brake Bias" v={setup.front_brake_bias_percent ?? null} u="%" relevant={relevant("front_brake_bias_percent")} semanticKey="front_brake_bias_percent" controlKey="front_brake_bias_percent" />
             <Field l="Front Master Cyl" v={frontMc} u="in" relevant={relevant("front_mc_mm")} />
             <Field l="Rear Master Cyl" v={rearMc} u="in" relevant={relevant("rear_mc_mm")} />
-            <Field l="Tape / Cooling" v={setup.tape_percent ?? null} u={typeof setup.tape_percent === "number" ? "%" : undefined} relevant={relevant("tape_percent")} />
+            <Field l="Tape / Cooling" v={setup.tape_percent ?? null} u={typeof setup.tape_percent === "number" ? "%" : undefined} relevant={relevant("tape_percent")} semanticKey="tape_percent" controlKey="tape_percent" />
           </div>
         </div>
 
         <div className="gr-card setup-system-card setup-system-balance" data-evidence-relevant={relevant("nose_weight_percent", "cross_weight_percent", "final_drive_ratio") ? "true" : undefined} data-evidence-context={relevantSetupKeys.size === 0 && (focusZone === "front" || focusZone === "rear" || focusZone === "all") ? "true" : undefined}>
           <div className="gr-card-head"><Crosshair size={12} /> Balance</div>
           <div className="gr-card-body">
-            <Field l="Nose Weight" v={setup.nose_weight_percent ?? null} u="%" relevant={relevant("nose_weight_percent")} />
-            <Field l="Cross Weight" v={setup.cross_weight_percent ?? null} u="%" relevant={relevant("cross_weight_percent")} />
+            <Field l="Nose Weight" v={setup.nose_weight_percent ?? null} u="%" relevant={relevant("nose_weight_percent")} semanticKey="nose_weight_percent" controlKey="nose_weight_percent" />
+            <Field l="Cross Weight" v={setup.cross_weight_percent ?? null} u="%" relevant={relevant("cross_weight_percent")} semanticKey="cross_weight_percent" controlKey="cross_weight_percent" />
             <Field l="Left Weight" v={
               (() => {
                 const lf = evCorner(setup, "lf", "corner_weight_n");
@@ -838,7 +896,7 @@ export function SetupTab({
                 return null;
               })()
             } u="%" />
-            <Field l="Rear End Ratio" v={evNum(setup, "final_drive_ratio")} u=":1" relevant={relevant("rear_end_ratio", "final_drive_ratio")} />
+            <Field l="Rear End Ratio" v={evNum(setup, "final_drive_ratio")} u=":1" relevant={relevant("rear_end_ratio", "final_drive_ratio")} semanticKey="rear_end_ratio" controlKey="rear_end_ratio" />
           </div>
         </div>
 
@@ -861,7 +919,7 @@ export function SetupTab({
           <div className="gr-card-head"><Layers size={12} /> Diff</div>
           <div className="gr-card-body">
             <Field l="Diff Preload" v={imp(evNum(setup, "diff_preload_nm"), NM_FTLB, 1)} u="ft-lb" relevant={relevant("diff_preload_nm")} />
-            <Field l="Rear End Ratio" v={setup.rear_end_ratio ?? evNum(setup, "final_drive_ratio")} u=":1" relevant={relevant("rear_end_ratio", "final_drive_ratio")} />
+            <Field l="Rear End Ratio" v={setup.rear_end_ratio ?? evNum(setup, "final_drive_ratio")} u=":1" relevant={relevant("rear_end_ratio", "final_drive_ratio")} semanticKey="rear_end_ratio" controlKey="rear_end_ratio" />
           </div>
         </div>
       </div>
@@ -902,5 +960,6 @@ export function SetupTab({
         </div>
       )}
     </section>
+    </SetupRowSelectionContext.Provider>
   );
 }

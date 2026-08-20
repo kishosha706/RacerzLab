@@ -117,6 +117,7 @@ const crewEvidenceIndexFloatKeys = new Set([
   "yaw_rate_delta",
   "value",
 ]);
+export const engineeringCaseFloatKeys = crewEvidenceIndexFloatKeys;
 const engineeringObjectives = new Set([
   "qualifying_peak", "race_long_run", "tire_conservation", "driver_confidence",
   "traffic_robustness", "superspeedway_stability", "fuel_strategy",
@@ -523,7 +524,7 @@ export async function canonicalCrewEvidenceIndexSha256(
   entries: readonly CrewChiefEvidenceEntry[],
 ): Promise<string> {
   return canonicalJsonSha256(entries, {
-    pythonFloatKeys: crewEvidenceIndexFloatKeys,
+    pythonFloatKeys: engineeringCaseFloatKeys,
   });
 }
 
@@ -547,16 +548,21 @@ export async function hasCanonicalEngineeringCaseDigest(
     const caseSha = engineeringCase.case_sha256;
     delete (engineeringCase as Partial<typeof engineeringCase>).case_id;
     delete (engineeringCase as Partial<typeof engineeringCase>).case_sha256;
-    if (caseId !== `p3543case_${engineeringCase.case_revision_sha256.slice(0, 24)}`
+    const lifecycleDigest = await canonicalJsonSha256({
+      schema: "p3544.engineering-case-lifecycle.v1",
+      run_id: engineeringCase.run_id,
+      session_id: engineeringCase.session_id,
+    });
+    if (caseId !== `p3543case_${lifecycleDigest.slice(0, 24)}`
       || await canonicalJsonSha256(engineeringCase, {
-        pythonFloatKeys: crewEvidenceIndexFloatKeys,
+        pythonFloatKeys: engineeringCaseFloatKeys,
       }) !== caseSha) return false;
     for (const response of workspace.engineering_case.response_artifacts) {
       const body = structuredClone(response);
       const digest = body.artifact_sha256;
       delete (body as Partial<typeof body>).artifact_sha256;
       if (await canonicalJsonSha256(body, {
-        pythonFloatKeys: crewEvidenceIndexFloatKeys,
+        pythonFloatKeys: engineeringCaseFloatKeys,
       }) !== digest) return false;
     }
     for (const admission of workspace.engineering_case.p19_response_admissions) {
@@ -567,7 +573,18 @@ export async function hasCanonicalEngineeringCaseDigest(
       delete (body as Partial<typeof body>).admission_sha256;
       if (admissionId !== `p19response_${digest.slice(0, 24)}`
         || await canonicalJsonSha256(body, {
-          pythonFloatKeys: crewEvidenceIndexFloatKeys,
+          pythonFloatKeys: engineeringCaseFloatKeys,
+        }) !== digest) return false;
+    }
+    for (const deficit of workspace.engineering_case.evidence_deficits) {
+      const body = structuredClone(deficit);
+      const deficitId = body.deficit_id;
+      const digest = body.deficit_sha256;
+      delete (body as Partial<typeof body>).deficit_id;
+      delete (body as Partial<typeof body>).deficit_sha256;
+      if (deficitId !== `p3544deficit_${digest.slice(0, 24)}`
+        || await canonicalJsonSha256(body, {
+          pythonFloatKeys: engineeringCaseFloatKeys,
         }) !== digest) return false;
     }
     return true;
@@ -746,7 +763,7 @@ function validCanonicalEngineeringCase(
   knowledge: Record<string, unknown>,
 ): boolean {
   if (!record(value)
-    || value.schema_version !== "p3543.canonical-engineering-case.v1"
+    || value.schema_version !== "p3544.unified-engineering-case.v1"
     || !/^p3543case_[0-9a-f]{24}$/.test(String(value.case_id))
     || typeof value.case_sha256 !== "string" || !hash.test(value.case_sha256)
     || value.case_revision_sha256 !== identity.workspace_revision
@@ -763,14 +780,22 @@ function validCanonicalEngineeringCase(
     || value.p32_projection_sha256 !== identity.p32_projection_sha256
     || value.p35_assessment_sha256 !== identity.p35_assessment_sha256
     || value.p33_projection_sha256 !== identity.learning_projection_sha256
+    || typeof value.semantic_registry_sha256 !== "string" || !hash.test(value.semantic_registry_sha256)
     || value.evidence_index_sha256 !== indexHash
     || value.p351_projection_sha256 !== knowledge.projection_sha256
+    || value.active_workflow_id !== identity.active_workflow_id
+    || value.active_workflow_revision !== identity.active_workflow_revision
     || !Array.isArray(value.response_artifacts)
+    || !Array.isArray(value.response_expectation_contracts)
+    || !Array.isArray(value.response_expectation_evaluations)
     || !Array.isArray(value.p19_response_admissions)
     || !Array.isArray(value.effect_readiness)
+    || !Array.isArray(value.evidence_deficits)
     || !Array.isArray(value.capability_resolutions)
     || !Array.isArray(value.quantity_observability)
     || !record(value.semantic_focus)
+    || !record(value.mission)
+    || value.mission.terminal_move_sha256 !== value.terminal_move_sha256
     || !record(value.campaign_capture)
     || value.authority !== "case_receipt_only"
     || value.p19_authority_unchanged !== true
@@ -1634,6 +1659,25 @@ export function isCrewChiefWorkspaceResponse(
       !== value.tool_eligibility.length
     || !sameJson(
       value.tool_eligibility.map((item) => item.tool_id),
+      value.available_tools.map((tool) => tool.tool_id),
+    )
+    || !Array.isArray(value.inspection_evidence_qualifications)
+    || value.inspection_evidence_qualifications.length !== value.available_tools.length
+    || !value.inspection_evidence_qualifications.every((item) => (
+      record(item)
+      && safeText(item.tool_id)
+      && item.case_sha256 === (value.engineering_case as Record<string, unknown>).case_sha256
+      && uniqueStrings(item.requirement_ids)
+      && uniqueStrings(item.accepted_artifact_ids)
+      && uniqueStrings(item.rejected_artifact_ids)
+      && uniqueStrings(item.rejection_reasons)
+      && typeof item.requirement_complete === "boolean"
+      && item.requirement_complete === (item.accepted_artifact_ids.length > 0)
+      && item.authority === "measurement_only"
+      && item.setup_authorized === false
+    ))
+    || !sameJson(
+      value.inspection_evidence_qualifications.map((item) => item.tool_id),
       value.available_tools.map((tool) => tool.tool_id),
     )
     || !vehicleDynamicsToolIds.every((toolId) => (

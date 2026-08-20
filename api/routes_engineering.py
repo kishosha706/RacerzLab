@@ -362,68 +362,80 @@ def _project_p19_bound_workflow(
     return project_workflow_for_publication(workflow, repository=repository)
 
 
+def build_authorized_workflow_candidate(
+    request: WorkflowStartRequest,
+    *,
+    repository: RaceLabRepository,
+) -> ControlledWorkflow:
+    """Build and bind one candidate without persisting it."""
+
+    candidate = create_workflow(
+        request.run_id,
+        request.complaint,
+        selected_lap=request.selected_lap,
+        lap_scope=request.lap_scope,
+        window_start_lap=request.window_start_lap,
+        window_end_lap=request.window_end_lap,
+        representative_lap=request.representative_lap,
+        selected_zone_start_pct=request.selected_zone_start_pct,
+        selected_zone_end_pct=request.selected_zone_end_pct,
+        selected_zone_label=request.selected_zone_label,
+        selected_phase=request.selected_phase,
+        objective=request.objective,
+        priority=request.priority,
+        repository=repository,
+        persist=False,
+    )
+    bundle, public = _derive_p19_report(
+        candidate,
+        repository=repository,
+        session_id=request.session_id,
+        candidate=True,
+    )
+    _require_matching_p19_action(candidate, bundle, public)
+    workspace = build_crew_chief_workspace(
+        request.run_id,
+        session_id=request.session_id,
+        objective=_CREW_OBJECTIVE_BY_DIAL_IN[request.objective],
+        db_path=repository.db_path,
+    )
+    performance_binding = build_canonical_performance_opportunity_binding(
+        p32=workspace.performance_intelligence,
+        knowledge=workspace.engineering_knowledge,
+        workflow_opportunity=candidate.packet.opportunity,
+    )
+    snapshot = dict(candidate.reproduction_snapshot)
+    snapshot["p352_performance_opportunity_binding"] = (
+        performance_binding.model_dump(mode="json")
+    )
+    candidate = candidate.model_copy(
+        update={
+            "reproduction_snapshot": snapshot,
+            "p32_opportunity_id": performance_binding.p32_opportunity_id,
+            "p32_projection_sha256": performance_binding.p32_projection_sha256,
+            "engineering_knowledge_projection_sha256": (
+                performance_binding.engineering_knowledge_projection_sha256
+            ),
+        }
+    )
+    snapshot = dict(candidate.reproduction_snapshot)
+    snapshot["p19_authority_binding"] = _binding_for_authorized_candidate(
+        candidate,
+        repository=repository,
+        session_id=request.session_id,
+        bundle=bundle,
+        public=public,
+    )
+    return candidate.model_copy(update={"reproduction_snapshot": snapshot})
+
+
 @router.post("/workflows", response_model=ControlledWorkflow)
 def start_workflow(request: WorkflowStartRequest) -> ControlledWorkflow:
     try:
         repository = RaceLabRepository()
-        candidate = create_workflow(
-            request.run_id,
-            request.complaint,
-            selected_lap=request.selected_lap,
-            lap_scope=request.lap_scope,
-            window_start_lap=request.window_start_lap,
-            window_end_lap=request.window_end_lap,
-            representative_lap=request.representative_lap,
-            selected_zone_start_pct=request.selected_zone_start_pct,
-            selected_zone_end_pct=request.selected_zone_end_pct,
-            selected_zone_label=request.selected_zone_label,
-            selected_phase=request.selected_phase,
-            objective=request.objective,
-            priority=request.priority,
-            repository=repository,
-            persist=False,
+        candidate = build_authorized_workflow_candidate(
+            request, repository=repository
         )
-        bundle, public = _derive_p19_report(
-            candidate,
-            repository=repository,
-            session_id=request.session_id,
-            candidate=True,
-        )
-        _require_matching_p19_action(candidate, bundle, public)
-        workspace = build_crew_chief_workspace(
-            request.run_id,
-            session_id=request.session_id,
-            objective=_CREW_OBJECTIVE_BY_DIAL_IN[request.objective],
-            db_path=repository.db_path,
-        )
-        performance_binding = build_canonical_performance_opportunity_binding(
-            p32=workspace.performance_intelligence,
-            knowledge=workspace.engineering_knowledge,
-            workflow_opportunity=candidate.packet.opportunity,
-        )
-        snapshot = dict(candidate.reproduction_snapshot)
-        snapshot["p352_performance_opportunity_binding"] = (
-            performance_binding.model_dump(mode="json")
-        )
-        candidate = candidate.model_copy(
-            update={
-                "reproduction_snapshot": snapshot,
-                "p32_opportunity_id": performance_binding.p32_opportunity_id,
-                "p32_projection_sha256": performance_binding.p32_projection_sha256,
-                "engineering_knowledge_projection_sha256": (
-                    performance_binding.engineering_knowledge_projection_sha256
-                ),
-            }
-        )
-        snapshot = dict(candidate.reproduction_snapshot)
-        snapshot["p19_authority_binding"] = _binding_for_authorized_candidate(
-            candidate,
-            repository=repository,
-            session_id=request.session_id,
-            bundle=bundle,
-            public=public,
-        )
-        candidate = candidate.model_copy(update={"reproduction_snapshot": snapshot})
         persisted = persist_workflow_candidate(candidate, repository=repository)
         return project_workflow_for_publication(persisted, repository=repository)
     except ValueError as exc:

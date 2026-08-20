@@ -28,6 +28,7 @@ from api.intelligence_schemas import (
 from racelab_engine.analysis.lap_eligibility import lap_is_eligible
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.experiment import MeasurementAttempt
+from racelab_engine.models.crew_chief import EngineeringObjective
 from racelab_engine.models.intelligence import (
     EvidenceCitation,
     GroundedQueryResult,
@@ -50,6 +51,10 @@ from racelab_engine.services.experiment_service import (
     record_durable_measurement_attempt,
 )
 from racelab_engine.services.intelligence_service import answer_grounded_query
+from racelab_engine.services.crew_chief_service import build_crew_chief_workspace
+from racelab_engine.services.engineering_case_query_service import (
+    answer_engineering_case_question,
+)
 from racelab_engine.services.lap_engineering_context_service import (
     mission_lap_context_is_clear,
 )
@@ -73,6 +78,10 @@ from racelab_engine.services.vehicle_systems_service import (
     vehicle_systems_runtime_identity,
 )
 from racelab_engine.storage.repository import RaceLabRepository
+from racelab_engine.storage.engineering_case_repository import (
+    EngineeringCaseIntegrityError,
+    EngineeringCaseRepository,
+)
 
 router = APIRouter(prefix="/api/runs", tags=["internal-intelligence"])
 
@@ -748,6 +757,84 @@ def query_run_intelligence(
     except ValueError as exc:
         raise _http_error(exc) from exc
     overview = RaceLabRepository().get_overview(run_id)
+    try:
+        persisted_case = EngineeringCaseRepository().current_for_scope(
+            run_id, request.session_id
+        )
+        if persisted_case is None:
+            raise ValueError(
+                "Open the current Engineering Case before asking Smart Engineer."
+            )
+        if (
+            persisted_case.case_id != request.case_id
+            or persisted_case.case_sha256 != request.case_sha256
+        ):
+            raise ValueError(
+                "Smart Engineer question is stale for the current Engineering Case revision."
+            )
+        workspace = build_crew_chief_workspace(
+            run_id,
+            session_id=request.session_id,
+            objective=EngineeringObjective(persisted_case.case.objective_id),
+        )
+        if workspace.engineering_case.case_sha256 != request.case_sha256:
+            raise ValueError(
+                "Engineering Case changed while Smart Engineer was binding evidence."
+            )
+    except (EngineeringCaseIntegrityError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    case_answer = answer_engineering_case_question(request.question, workspace)
+    if case_answer is not None:
+        snapshot_identity = intelligence_snapshot_identity(
+            bundle.report.reasoning_snapshot,
+            run_id=run_id,
+            setup_snapshot=(overview.setup_snapshot if overview is not None else None),
+        )
+        action_authorized = (
+            case_answer.action_authorized
+            and workspace.engineering_case.mission.setup_authorized
+            and workspace.terminal_decision.authority == "p19_projection_only"
+        )
+        return IntelligenceQueryResponse(
+            schema_version="p3544.engineering-case-query.v1",
+            run_id=run_id,
+            session_id=request.session_id,
+            case_id=request.case_id,
+            case_sha256=request.case_sha256,
+            reasoning_snapshot_sha256=snapshot_identity.reasoning_snapshot_sha256,
+            setup_id=snapshot_identity.setup_id,
+            setup_snapshot_sha256=snapshot_identity.setup_snapshot_sha256,
+            scope_run_ids=list(bundle.calibration.scope_run_ids),
+            selected_lap=request.selected_lap,
+            status="ready",
+            question=request.question,
+            headline=case_answer.headline,
+            answer=case_answer.answer,
+            interpreted_lap_number=request.selected_lap,
+            interpreted_window_start_lap=request.selected_window_start_lap,
+            interpreted_window_end_lap=request.selected_window_end_lap,
+            interpreted_window_representative_lap=(
+                request.selected_window_representative_lap
+            ),
+            action_authorized=action_authorized,
+            action_source_event_ids=(
+                list(workspace.terminal_decision.source_event_ids)
+                if action_authorized
+                else []
+            ),
+            source_artifact_ids=list(case_answer.source_artifact_ids),
+            authority_ceiling=case_answer.authority_ceiling,
+            evidence_state=(
+                EvidenceState.CONTROLLED_TEST_EFFECT
+                if action_authorized
+                else EvidenceState.CALCULATED
+                if case_answer.source_artifact_ids
+                else EvidenceState.NEEDS_CONFIRMATION
+            ),
+            blocker_reasons=list(case_answer.blocker_reasons),
+            follow_up_questions=list(bundle.report.suggested_questions),
+        )
     selected_scope_laps = tuple(
         dict.fromkeys(
             lap_number
@@ -884,9 +971,11 @@ def query_run_intelligence(
         setup_snapshot=(overview.setup_snapshot if overview is not None else None),
     )
     return IntelligenceQueryResponse(
-        schema_version="p19.intelligence-query.v1",
+        schema_version="p3544.engineering-case-query.v1",
         run_id=run_id,
-        session_id=bundle.report.session_id,
+        session_id=request.session_id,
+        case_id=request.case_id,
+        case_sha256=request.case_sha256,
         reasoning_snapshot_sha256=snapshot_identity.reasoning_snapshot_sha256,
         setup_id=snapshot_identity.setup_id,
         setup_snapshot_sha256=snapshot_identity.setup_snapshot_sha256,
@@ -921,6 +1010,14 @@ def query_run_intelligence(
         action_authorized=action_authorized,
         action_source_event_ids=(
             list(result.action_source_event_ids) if action_authorized else []
+        ),
+        source_artifact_ids=list(
+            dict.fromkeys(
+                item.event_id or item.citation_id for item in result.citations
+            )
+        ),
+        authority_ceiling=(
+            "p19_exact_mirror" if action_authorized else "evidence_only"
         ),
         evidence_state=evidence_state,
         citations=citations,

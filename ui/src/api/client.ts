@@ -31,6 +31,8 @@ import type {
 } from "../types/vehicleSystems";
 import { isVehicleSystemsProjection } from "../types/vehicleSystems";
 import type { EngineeringAwarenessProjection } from "../types/engineeringAwareness";
+import type { DriverIntent, EngineeringCaseRevision } from "../types/engineeringCase";
+import { isEngineeringCaseRevision } from "../utils/engineeringCaseTrust";
 import { isEngineeringAwarenessProjection } from "../types/engineeringAwareness";
 import type { CrewChiefWorkspace, EngineeringObjective } from "../types/crewChief";
 import type {
@@ -343,6 +345,27 @@ export function fetchRunIntelligence(
       );
     }
     return payload;
+  });
+}
+
+export function fetchEngineeringCase(
+  runId: string,
+  sessionId: string,
+  options?: { objective?: string; expectedCaseSha256?: string | null },
+): Promise<EngineeringCaseRevision> {
+  const params = new URLSearchParams({ session_id: sessionId });
+  if (options?.objective) params.set("objective", options.objective);
+  if (options?.expectedCaseSha256) params.set("expected_case_sha256", options.expectedCaseSha256);
+  return requestJson<unknown>(
+    `/api/runs/${encodeURIComponent(runId)}/engineering-case?${params.toString()}`,
+    undefined,
+    INTELLIGENCE_TIMEOUT_MS,
+    "Engineering Case",
+  ).then(async (payload) => {
+    if (!await isEngineeringCaseRevision(payload, { runId, sessionId })) {
+      throw new Error("Engineering Case failed its exact revision, scope, hash, or authority check.");
+    }
+    return payload as EngineeringCaseRevision;
   });
 }
 
@@ -762,6 +785,52 @@ export function startControlledWorkflow(payload: {
     method: "POST",
     body: JSON.stringify(payload),
   }).then((response) => trustedControlledWorkflow(response));
+}
+
+export type AtomicDriverIntentWorkflowResponse = {
+  state: "workflow_created" | "measurement_required" | "blocked" | "no_current_problem" | "insufficient_evidence" | "unsupported_context";
+  case_revision: EngineeringCaseRevision;
+  driver_intent: DriverIntent;
+  advisory: DialInResponse;
+  workflow: ControlledWorkflow | null;
+  withholding_reason: string | null;
+};
+
+export function submitAtomicDriverIntentWorkflow(payload: {
+  run_id: string;
+  session_id: string;
+  complaint: string;
+  expected_case_sha256: string;
+  baseline_run_id?: string | null;
+  selected_lap?: number | null;
+  lap_scope?: "run" | "single_lap" | "lap_window" | "track_zone" | null;
+  window_start_lap?: number | null;
+  window_end_lap?: number | null;
+  representative_lap?: number | null;
+} & DialInDecisionContext): Promise<AtomicDriverIntentWorkflowResponse> {
+  return requestJson<unknown>(
+    `/api/runs/${encodeURIComponent(payload.run_id)}/engineering-case/driver-intent-workflow`,
+    { method: "POST", body: JSON.stringify(payload) },
+    INTELLIGENCE_TIMEOUT_MS,
+    "Engineering Case driver intent",
+  ).then(async (value) => {
+    if (typeof value !== "object" || value === null) throw new Error("Atomic DriverIntent response is malformed.");
+    const response = value as AtomicDriverIntentWorkflowResponse;
+    if (!await isEngineeringCaseRevision(response.case_revision, {
+      runId: payload.run_id,
+      sessionId: payload.session_id,
+    }) || response.driver_intent.case_id !== response.case_revision.case_id
+      || response.driver_intent.raw_driver_wording.trim() !== payload.complaint.trim()
+      || !isDialInHypothesisResponse(response.advisory, {
+        runId: payload.run_id,
+        complaint: payload.complaint,
+        sessionId: payload.session_id,
+      })
+      || (response.workflow !== null && !isControlledWorkflowResponse(response.workflow))) {
+      throw new Error("Atomic DriverIntent/workflow response failed exact case and authority validation.");
+    }
+    return response;
+  });
 }
 
 function trustedControlledWorkflow(payload: unknown): ControlledWorkflow {

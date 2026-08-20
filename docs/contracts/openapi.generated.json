@@ -2716,6 +2716,254 @@
         }
       }
     },
+    "/api/runs/{run_id}/engineering-case": {
+      "get": {
+        "tags": [
+          "engineering-case"
+        ],
+        "summary": "Get Current Engineering Case",
+        "operationId": "get_current_engineering_case_api_runs__run_id__engineering_case_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160,
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160,
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "objective",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/EngineeringObjective",
+              "default": "race_long_run"
+            }
+          },
+          {
+            "name": "expected_case_sha256",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Case Sha256"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineeringCaseRevision"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engineering-cases/{case_id}/revisions": {
+      "get": {
+        "tags": [
+          "engineering-case"
+        ],
+        "summary": "List Engineering Case Revisions",
+        "operationId": "list_engineering_case_revisions_api_engineering_cases__case_id__revisions_get",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^p3543case_[0-9a-f]{24}$",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EngineeringCaseRevisionSummary"
+                  },
+                  "title": "Response List Engineering Case Revisions Api Engineering Cases  Case Id  Revisions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/engineering-case/driver-intent": {
+      "post": {
+        "tags": [
+          "engineering-case"
+        ],
+        "summary": "Append Engineering Case Driver Intent",
+        "operationId": "append_engineering_case_driver_intent_api_runs__run_id__engineering_case_driver_intent_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160,
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DriverIntentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineeringCaseRevision"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/engineering-case/driver-intent-workflow": {
+      "post": {
+        "tags": [
+          "engineering-case"
+        ],
+        "summary": "Submit Atomic Driver Intent Workflow",
+        "operationId": "submit_atomic_driver_intent_workflow_api_runs__run_id__engineering_case_driver_intent_workflow_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160,
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AtomicDriverIntentWorkflowRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AtomicDriverIntentWorkflowResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/runs/{run_id}/engineering-awareness": {
       "get": {
         "tags": [
@@ -5712,6 +5960,248 @@
         ],
         "title": "AppliedControlCertificate"
       },
+      "AtomicDriverIntentWorkflowRequest": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "session_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Session Id"
+          },
+          "complaint": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Complaint"
+          },
+          "selected_lap": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Lap"
+          },
+          "lap_scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "run",
+                  "single_lap",
+                  "lap_window",
+                  "track_zone"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lap Scope"
+          },
+          "window_start_lap": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start Lap"
+          },
+          "window_end_lap": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End Lap"
+          },
+          "representative_lap": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Representative Lap"
+          },
+          "selected_zone_start_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMaximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Zone Start Pct"
+          },
+          "selected_zone_end_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Zone End Pct"
+          },
+          "selected_zone_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Zone Label"
+          },
+          "selected_phase": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Phase"
+          },
+          "objective": {
+            "type": "string",
+            "enum": [
+              "race-pace",
+              "qualifying",
+              "long-run",
+              "tire-conservation",
+              "driver-confidence"
+            ],
+            "title": "Objective",
+            "default": "race-pace"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "overall-pace",
+              "entry-security",
+              "center-rotation",
+              "exit-drive",
+              "tire-life",
+              "platform-margin"
+            ],
+            "title": "Priority",
+            "default": "overall-pace"
+          },
+          "expected_case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Case Sha256"
+          },
+          "baseline_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Run Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "session_id",
+          "complaint",
+          "expected_case_sha256"
+        ],
+        "title": "AtomicDriverIntentWorkflowRequest"
+      },
+      "AtomicDriverIntentWorkflowResponse": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "workflow_created",
+              "measurement_required",
+              "blocked",
+              "no_current_problem",
+              "insufficient_evidence",
+              "unsupported_context"
+            ],
+            "title": "State"
+          },
+          "case_revision": {
+            "$ref": "#/components/schemas/EngineeringCaseRevision"
+          },
+          "driver_intent": {
+            "$ref": "#/components/schemas/DriverIntent"
+          },
+          "advisory": {
+            "$ref": "#/components/schemas/DialInHypothesisResponse"
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ControlledWorkflow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "withholding_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withholding Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "case_revision",
+          "driver_intent",
+          "advisory"
+        ],
+        "title": "AtomicDriverIntentWorkflowResponse"
+      },
       "AttentionItem": {
         "properties": {
           "attention_id": {
@@ -7234,9 +7724,9 @@
         "properties": {
           "schema_version": {
             "type": "string",
-            "const": "p3543.canonical-engineering-case.v1",
+            "const": "p3544.unified-engineering-case.v1",
             "title": "Schema Version",
-            "default": "p3543.canonical-engineering-case.v1"
+            "default": "p3544.unified-engineering-case.v1"
           },
           "case_id": {
             "type": "string",
@@ -7323,10 +7813,83 @@
             "pattern": "^[0-9a-f]{64}$",
             "title": "P33 Projection Sha256"
           },
+          "semantic_registry_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Semantic Registry Sha256"
+          },
           "evidence_index_sha256": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
             "title": "Evidence Index Sha256"
+          },
+          "driver_intent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DriverIntent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "crew_event_head_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crew Event Head Sha256"
+          },
+          "crew_current_subgoal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crew Current Subgoal"
+          },
+          "crew_critic_state": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "blocked",
+              "reinvestigate",
+              "ask_driver",
+              "unavailable"
+            ],
+            "title": "Crew Critic State",
+            "default": "unavailable"
+          },
+          "active_workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Workflow Id"
+          },
+          "active_workflow_revision": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Workflow Revision"
           },
           "primary_opportunity_id": {
             "anyOf": [
@@ -7345,6 +7908,22 @@
             },
             "type": "array",
             "title": "Response Artifacts",
+            "default": []
+          },
+          "response_expectation_contracts": {
+            "items": {
+              "$ref": "#/components/schemas/ResponseExpectationContract"
+            },
+            "type": "array",
+            "title": "Response Expectation Contracts",
+            "default": []
+          },
+          "response_expectation_evaluations": {
+            "items": {
+              "$ref": "#/components/schemas/ResponseExpectationEvaluation"
+            },
+            "type": "array",
+            "title": "Response Expectation Evaluations",
             "default": []
           },
           "p19_response_admissions": {
@@ -7412,6 +7991,17 @@
             "pattern": "^[0-9a-f]{64}$",
             "title": "Terminal Move Sha256"
           },
+          "mission": {
+            "$ref": "#/components/schemas/EngineeringMission"
+          },
+          "evidence_deficits": {
+            "items": {
+              "$ref": "#/components/schemas/EngineeringEvidenceDeficit"
+            },
+            "type": "array",
+            "title": "Evidence Deficits",
+            "default": []
+          },
           "capability_resolutions": {
             "items": {
               "$ref": "#/components/schemas/CapabilityEvidenceResolution"
@@ -7473,10 +8063,12 @@
           "p35_assessment_sha256",
           "p351_projection_sha256",
           "p33_projection_sha256",
+          "semantic_registry_sha256",
           "evidence_index_sha256",
           "effect_readiness",
           "workspace_revision",
           "terminal_move_sha256",
+          "mission",
           "semantic_focus",
           "campaign_capture"
         ],
@@ -7644,6 +8236,35 @@
             "minLength": 1,
             "title": "Missing Evidence"
           },
+          "deficit_id": {
+            "type": "string",
+            "pattern": "^p3544deficit_[0-9a-f]{24}$",
+            "title": "Deficit Id"
+          },
+          "deficit_code": {
+            "type": "string",
+            "enum": [
+              "CHANNEL_MISSING",
+              "CHANNEL_UNHEALTHY",
+              "WRONG_UPDATE_SEMANTIC",
+              "PIT_SNAPSHOT_ONLY",
+              "INSUFFICIENT_REPETITION",
+              "INSUFFICIENT_CLEAN_LAPS",
+              "TRAFFIC_CONTAMINATED",
+              "SPEED_BAND_MISMATCH",
+              "PHASE_MISMATCH",
+              "SETUP_MISMATCH",
+              "CASE_REVISION_MISMATCH",
+              "RECORDING_NOT_INDEPENDENT",
+              "REQUIRED_COUNTEREFFECT_MISSING",
+              "EXACT_SEMANTIC_BRIDGE_MISSING",
+              "EXACT_LEGAL_OPTION_MISSING",
+              "P19_AUTHORITY_REQUIRED",
+              "BUILD_APPLICABILITY_BLOCKED",
+              "STRUCTURALLY_UNAVAILABLE"
+            ],
+            "title": "Deficit Code"
+          },
           "required_channel_ids": {
             "items": {
               "type": "string"
@@ -7656,8 +8277,10 @@
             "type": "string",
             "enum": [
               "available_now",
+              "requires_more_laps",
               "requires_new_run",
               "pit_snapshot_only",
+              "controlled_test_required",
               "structurally_unavailable"
             ],
             "title": "Status"
@@ -7666,6 +8289,18 @@
             "type": "string",
             "minLength": 1,
             "title": "Recovery"
+          },
+          "recovery_mode": {
+            "type": "string",
+            "enum": [
+              "use_current_data",
+              "collect_more_laps",
+              "collect_new_run",
+              "pit_snapshot",
+              "controlled_test",
+              "unavailable"
+            ],
+            "title": "Recovery Mode"
           },
           "source_artifact_ids": {
             "items": {
@@ -7693,8 +8328,11 @@
         "required": [
           "resolution_id",
           "missing_evidence",
+          "deficit_id",
+          "deficit_code",
           "status",
-          "recovery"
+          "recovery",
+          "recovery_mode"
         ],
         "title": "CapabilityEvidenceResolution"
       },
@@ -7961,6 +8599,75 @@
               }
             ],
             "title": "Source Response Record Id"
+          },
+          "response_expectation_contract_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Response Expectation Contract Ids",
+            "default": []
+          },
+          "response_metric_delta_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Response Metric Delta Ids",
+            "default": []
+          },
+          "stage_response_artifact_ids": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "title": "Stage Response Artifact Ids",
+            "default": []
+          },
+          "response_phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Phase"
+          },
+          "response_speed_band_mps": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Speed Band Mps"
           },
           "source_artifact_ids": {
             "items": {
@@ -10737,8 +11444,16 @@
               "type": "string"
             },
             "type": "array",
-            "minItems": 1,
-            "title": "Expected Response Relation Ids"
+            "title": "Expected Response Relation Ids",
+            "default": []
+          },
+          "expected_response_contract_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Expected Response Contract Ids",
+            "default": []
           },
           "observed_metric_deltas": {
             "items": {
@@ -10871,7 +11586,6 @@
           "experiment_factor_id",
           "direction_sign",
           "stages",
-          "expected_response_relation_ids",
           "mechanism_assessment",
           "control_response_assessment",
           "policy_verdict",
@@ -10913,6 +11627,25 @@
             "type": "array",
             "title": "Response Artifact Ids",
             "default": []
+          },
+          "response_artifact_sha256s": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Response Artifact Sha256S",
+            "default": []
+          },
+          "producer_version": {
+            "type": "string",
+            "title": "Producer Version",
+            "default": "p35.4.4.controlled-response-stage.v1"
+          },
+          "canonical_clock_contract": {
+            "type": "string",
+            "const": "qualified_session_tick",
+            "title": "Canonical Clock Contract",
+            "default": "qualified_session_tick"
           },
           "source_channels": {
             "items": {
@@ -13167,6 +13900,14 @@
             },
             "type": "array",
             "title": "Tool Eligibility",
+            "default": []
+          },
+          "inspection_evidence_qualifications": {
+            "items": {
+              "$ref": "#/components/schemas/InspectionEvidenceQualification"
+            },
+            "type": "array",
+            "title": "Inspection Evidence Qualifications",
             "default": []
           },
           "current_subgoal": {
@@ -15641,6 +16382,352 @@
         ],
         "title": "DriverFingerprintContribution"
       },
+      "DriverIntent": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "p3544.driver-intent.v1",
+            "title": "Schema Version",
+            "default": "p3544.driver-intent.v1"
+          },
+          "intent_id": {
+            "type": "string",
+            "pattern": "^p3544intent_[0-9a-f]{24}$",
+            "title": "Intent Id"
+          },
+          "intent_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Intent Sha256"
+          },
+          "case_id": {
+            "type": "string",
+            "pattern": "^p3543case_[0-9a-f]{24}$",
+            "title": "Case Id"
+          },
+          "intent_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Intent Revision"
+          },
+          "raw_driver_wording": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Raw Driver Wording"
+          },
+          "canonical_symptom": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_.:-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Symptom"
+          },
+          "phase_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Scope"
+          },
+          "response_regime_scope": {
+            "type": "string",
+            "enum": [
+              "transient",
+              "steady_state",
+              "migration",
+              "unknown",
+              "context_only"
+            ],
+            "title": "Response Regime Scope",
+            "default": "unknown"
+          },
+          "traffic_context": {
+            "type": "string",
+            "enum": [
+              "clear",
+              "exposed",
+              "unknown",
+              "context_only"
+            ],
+            "title": "Traffic Context",
+            "default": "unknown"
+          },
+          "stint_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stint Context"
+          },
+          "power_state_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Power State Context"
+          },
+          "time_origin_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Origin Scope"
+          },
+          "driver_demand_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Driver Demand Scope"
+          },
+          "objective": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Objective"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "crew_question",
+              "dial_in",
+              "smart_engineer",
+              "session_restore"
+            ],
+            "title": "Source"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "supersedes_intent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^p3544intent_[0-9a-f]{24}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Intent Id"
+          },
+          "typed_interpretation_provenance": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Typed Interpretation Provenance",
+            "default": []
+          },
+          "authority": {
+            "type": "string",
+            "const": "driver_context_only",
+            "title": "Authority",
+            "default": "driver_context_only"
+          },
+          "physical_truth_modified": {
+            "type": "boolean",
+            "const": false,
+            "title": "Physical Truth Modified",
+            "default": false
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "intent_id",
+          "intent_sha256",
+          "case_id",
+          "intent_revision",
+          "raw_driver_wording",
+          "objective",
+          "source",
+          "created_at"
+        ],
+        "title": "DriverIntent"
+      },
+      "DriverIntentRequest": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Session Id"
+          },
+          "expected_case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Case Sha256"
+          },
+          "raw_driver_wording": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Raw Driver Wording"
+          },
+          "canonical_symptom": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_.:-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Symptom"
+          },
+          "phase_scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Scope"
+          },
+          "response_regime_scope": {
+            "type": "string",
+            "enum": [
+              "transient",
+              "steady_state",
+              "migration",
+              "unknown",
+              "context_only"
+            ],
+            "title": "Response Regime Scope",
+            "default": "unknown"
+          },
+          "traffic_context": {
+            "type": "string",
+            "enum": [
+              "clear",
+              "exposed",
+              "unknown",
+              "context_only"
+            ],
+            "title": "Traffic Context",
+            "default": "unknown"
+          },
+          "stint_context": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stint Context"
+          },
+          "power_state_context": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Power State Context"
+          },
+          "time_origin_scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Origin Scope"
+          },
+          "driver_demand_scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Driver Demand Scope"
+          },
+          "objective": {
+            "$ref": "#/components/schemas/EngineeringObjective",
+            "default": "race_long_run"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "crew_question",
+              "dial_in",
+              "smart_engineer",
+              "session_restore"
+            ],
+            "title": "Source",
+            "default": "manual"
+          },
+          "typed_interpretation_provenance": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Typed Interpretation Provenance",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session_id",
+          "expected_case_sha256",
+          "raw_driver_wording"
+        ],
+        "title": "DriverIntentRequest"
+      },
       "DriverLineReport": {
         "properties": {
           "gate": {
@@ -16466,6 +17553,213 @@
         ],
         "title": "EngineeringCaseCampaignCapture"
       },
+      "EngineeringCaseDeliveryDiagnostics": {
+        "properties": {
+          "route_duration_ms": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Route Duration Ms"
+          },
+          "run_intelligence_build_count_delta": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Run Intelligence Build Count Delta"
+          },
+          "crew_workspace_build_count_delta": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Crew Workspace Build Count Delta"
+          },
+          "case_projection_build_count_delta": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Case Projection Build Count Delta"
+          },
+          "response_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Bytes"
+          },
+          "authority": {
+            "type": "string",
+            "const": "delivery_only",
+            "title": "Authority",
+            "default": "delivery_only"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "route_duration_ms",
+          "run_intelligence_build_count_delta",
+          "crew_workspace_build_count_delta",
+          "case_projection_build_count_delta"
+        ],
+        "title": "EngineeringCaseDeliveryDiagnostics"
+      },
+      "EngineeringCaseRevision": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "p3544.engineering-case-revision.v1",
+            "title": "Schema Version",
+            "default": "p3544.engineering-case-revision.v1"
+          },
+          "case_id": {
+            "type": "string",
+            "pattern": "^p3543case_[0-9a-f]{24}$",
+            "title": "Case Id"
+          },
+          "case_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Case Revision"
+          },
+          "case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Case Sha256"
+          },
+          "previous_case_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Case Sha256"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "change_category": {
+            "type": "string",
+            "enum": [
+              "initial",
+              "evidence",
+              "driver_intent",
+              "investigation",
+              "workflow",
+              "controlled_outcome",
+              "history",
+              "setup",
+              "scope",
+              "rebuild"
+            ],
+            "title": "Change Category"
+          },
+          "source_workspace_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Workspace Revision"
+          },
+          "case": {
+            "$ref": "#/components/schemas/CanonicalEngineeringCase"
+          },
+          "delivery_diagnostics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EngineeringCaseDeliveryDiagnostics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "case_id",
+          "case_revision",
+          "case_sha256",
+          "created_at",
+          "change_category",
+          "source_workspace_revision",
+          "case"
+        ],
+        "title": "EngineeringCaseRevision"
+      },
+      "EngineeringCaseRevisionSummary": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "pattern": "^p3543case_[0-9a-f]{24}$",
+            "title": "Case Id"
+          },
+          "case_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Case Revision"
+          },
+          "case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Case Sha256"
+          },
+          "previous_case_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Case Sha256"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "change_category": {
+            "type": "string",
+            "enum": [
+              "initial",
+              "evidence",
+              "driver_intent",
+              "investigation",
+              "workflow",
+              "controlled_outcome",
+              "history",
+              "setup",
+              "scope",
+              "rebuild"
+            ],
+            "title": "Change Category"
+          },
+          "source_workspace_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Workspace Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "case_id",
+          "case_revision",
+          "case_sha256",
+          "created_at",
+          "change_category",
+          "source_workspace_revision"
+        ],
+        "title": "EngineeringCaseRevisionSummary"
+      },
       "EngineeringConclusion": {
         "properties": {
           "key": {
@@ -16571,6 +17865,140 @@
           "may_deprioritize_within_band"
         ],
         "title": "EngineeringDeadEndRecord"
+      },
+      "EngineeringEvidenceDeficit": {
+        "properties": {
+          "deficit_id": {
+            "type": "string",
+            "pattern": "^p3544deficit_[0-9a-f]{24}$",
+            "title": "Deficit Id"
+          },
+          "deficit_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Deficit Sha256"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "CHANNEL_MISSING",
+              "CHANNEL_UNHEALTHY",
+              "WRONG_UPDATE_SEMANTIC",
+              "PIT_SNAPSHOT_ONLY",
+              "INSUFFICIENT_REPETITION",
+              "INSUFFICIENT_CLEAN_LAPS",
+              "TRAFFIC_CONTAMINATED",
+              "SPEED_BAND_MISMATCH",
+              "PHASE_MISMATCH",
+              "SETUP_MISMATCH",
+              "CASE_REVISION_MISMATCH",
+              "RECORDING_NOT_INDEPENDENT",
+              "REQUIRED_COUNTEREFFECT_MISSING",
+              "EXACT_SEMANTIC_BRIDGE_MISSING",
+              "EXACT_LEGAL_OPTION_MISSING",
+              "P19_AUTHORITY_REQUIRED",
+              "BUILD_APPLICABILITY_BLOCKED",
+              "STRUCTURALLY_UNAVAILABLE"
+            ],
+            "title": "Code"
+          },
+          "affected_contract_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Affected Contract Ids",
+            "default": []
+          },
+          "affected_effect_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Affected Effect Ids",
+            "default": []
+          },
+          "affected_mechanism_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Affected Mechanism Ids",
+            "default": []
+          },
+          "affected_tool_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Affected Tool Ids",
+            "default": []
+          },
+          "required_channel_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Required Channel Ids",
+            "default": []
+          },
+          "current_channel_capability_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Current Channel Capability Ids",
+            "default": []
+          },
+          "blocker_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Blocker Reasons"
+          },
+          "recovery_mode": {
+            "type": "string",
+            "enum": [
+              "use_current_data",
+              "collect_more_laps",
+              "collect_new_run",
+              "pit_snapshot",
+              "controlled_test",
+              "unavailable"
+            ],
+            "title": "Recovery Mode"
+          },
+          "mission_eligible": {
+            "type": "boolean",
+            "title": "Mission Eligible"
+          },
+          "authority": {
+            "type": "string",
+            "const": "measurement_routing_only",
+            "title": "Authority",
+            "default": "measurement_routing_only"
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "deficit_id",
+          "deficit_sha256",
+          "code",
+          "blocker_reasons",
+          "recovery_mode",
+          "mission_eligible"
+        ],
+        "title": "EngineeringEvidenceDeficit",
+        "description": "Typed evidence debt.  Planner behavior must never depend on prose parsing."
       },
       "EngineeringEvidenceIndex": {
         "properties": {
@@ -17024,6 +18452,80 @@
         ],
         "title": "EngineeringLearningLedger"
       },
+      "EngineeringMission": {
+        "properties": {
+          "what": {
+            "type": "string",
+            "minLength": 1,
+            "title": "What"
+          },
+          "where": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Where"
+          },
+          "why_it_matters": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Why It Matters"
+          },
+          "uncertain": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Uncertain"
+          },
+          "next": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Next"
+          },
+          "done_when": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Done When"
+          },
+          "source_authority": {
+            "type": "string",
+            "enum": [
+              "p19_exact_mirror",
+              "p19_measurement_mirror",
+              "navigation_only"
+            ],
+            "title": "Source Authority"
+          },
+          "terminal_move_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Terminal Move Sha256"
+          },
+          "source_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Artifact Ids",
+            "default": []
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "what",
+          "where",
+          "why_it_matters",
+          "uncertain",
+          "next",
+          "done_when",
+          "source_authority",
+          "terminal_move_sha256"
+        ],
+        "title": "EngineeringMission"
+      },
       "EngineeringObjective": {
         "type": "string",
         "enum": [
@@ -17090,6 +18592,11 @@
             "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
             "title": "Source Producer Id"
           },
+          "source_producer_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Source Producer Version"
+          },
           "relation": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
@@ -17142,8 +18649,65 @@
             "minItems": 2,
             "title": "Independence Unit Ids"
           },
+          "physical_episode_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Physical Episode Sha256"
+          },
+          "speed_min_mps": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed Min Mps"
+          },
+          "speed_median_mps": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed Median Mps"
+          },
+          "speed_max_mps": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed Max Mps"
+          },
+          "metric_channel_lineage": {
+            "items": {
+              "$ref": "#/components/schemas/ResponseChannelLineage"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Metric Channel Lineage"
+          },
           "operational_evidence": {
             "$ref": "#/components/schemas/OperationalResponseEvidence"
+          },
+          "evidence_state": {
+            "type": "string",
+            "enum": [
+              "calculated",
+              "observed_correlation"
+            ],
+            "title": "Evidence State"
           },
           "applicability": {
             "type": "string",
@@ -17196,13 +18760,17 @@
           "setup_id",
           "source_recording_sha256",
           "source_producer_id",
+          "source_producer_version",
           "relation",
           "lap_pct_start",
           "lap_pct_end",
           "phase",
           "source_lap_numbers",
           "independence_unit_ids",
-          "operational_evidence"
+          "physical_episode_sha256",
+          "metric_channel_lineage",
+          "operational_evidence",
+          "evidence_state"
         ],
         "title": "EngineeringResponseArtifact",
         "description": "Globally addressable envelope for one P35.4 response observation."
@@ -19367,6 +20935,76 @@
         ],
         "title": "InsightsRequest"
       },
+      "InspectionEvidenceQualification": {
+        "properties": {
+          "tool_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tool Id"
+          },
+          "case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Case Sha256"
+          },
+          "requirement_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Requirement Ids",
+            "default": []
+          },
+          "accepted_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Accepted Artifact Ids",
+            "default": []
+          },
+          "rejected_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Rejected Artifact Ids",
+            "default": []
+          },
+          "rejection_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Rejection Reasons",
+            "default": []
+          },
+          "requirement_complete": {
+            "type": "boolean",
+            "title": "Requirement Complete"
+          },
+          "authority": {
+            "type": "string",
+            "const": "measurement_only",
+            "title": "Authority",
+            "default": "measurement_only"
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tool_id",
+          "case_sha256",
+          "requirement_complete"
+        ],
+        "title": "InspectionEvidenceQualification"
+      },
       "IntegrityCheck": {
         "properties": {
           "key": {
@@ -20586,16 +22224,20 @@
             "title": "Question"
           },
           "session_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 160
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
             "title": "Session Id"
+          },
+          "case_id": {
+            "type": "string",
+            "pattern": "^p3543case_[0-9a-f]{24}$",
+            "title": "Case Id"
+          },
+          "case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Case Sha256"
           },
           "selected_lap": {
             "anyOf": [
@@ -20664,7 +22306,10 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "question"
+          "question",
+          "session_id",
+          "case_id",
+          "case_sha256"
         ],
         "title": "IntelligenceQueryRequest"
       },
@@ -20672,7 +22317,7 @@
         "properties": {
           "schema_version": {
             "type": "string",
-            "const": "p19.intelligence-query.v1",
+            "const": "p3544.engineering-case-query.v1",
             "title": "Schema Version"
           },
           "run_id": {
@@ -20680,15 +22325,18 @@
             "title": "Run Id"
           },
           "session_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Session Id"
+          },
+          "case_id": {
+            "type": "string",
+            "pattern": "^p3543case_[0-9a-f]{24}$",
+            "title": "Case Id"
+          },
+          "case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Case Sha256"
           },
           "reasoning_snapshot_sha256": {
             "type": "string",
@@ -20889,6 +22537,25 @@
             "type": "array",
             "title": "Action Source Event Ids"
           },
+          "source_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Artifact Ids"
+          },
+          "authority_ceiling": {
+            "type": "string",
+            "enum": [
+              "evidence_only",
+              "attention_only",
+              "navigation_only",
+              "p19_measurement_mirror",
+              "p19_exact_mirror"
+            ],
+            "title": "Authority Ceiling",
+            "default": "evidence_only"
+          },
           "evidence_state": {
             "$ref": "#/components/schemas/EvidenceState"
           },
@@ -20933,6 +22600,9 @@
         "required": [
           "schema_version",
           "run_id",
+          "session_id",
+          "case_id",
+          "case_sha256",
           "reasoning_snapshot_sha256",
           "scope_run_ids",
           "status",
@@ -26976,11 +28646,27 @@
             "minItems": 1,
             "title": "Matched Mechanism Ids"
           },
+          "expectation_contract_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Expectation Contract Ids",
+            "default": []
+          },
+          "evaluation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evaluation Ids",
+            "default": []
+          },
           "result": {
             "type": "string",
             "enum": [
-              "supports_existing_contract",
-              "contradicts_existing_contract",
+              "support",
+              "contradiction",
               "unresolved",
               "blocked"
             ],
@@ -32993,6 +34679,410 @@
         ],
         "title": "ResistanceWindow"
       },
+      "ResponseChannelLineage": {
+        "properties": {
+          "metric_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Metric Id"
+          },
+          "source_channel_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Source Channel Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "metric_id",
+          "source_channel_ids"
+        ],
+        "title": "ResponseChannelLineage"
+      },
+      "ResponseCountereffectContract": {
+        "properties": {
+          "metric_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Metric Id"
+          },
+          "accepted_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Min"
+          },
+          "accepted_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Max"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "metric_id"
+        ],
+        "title": "ResponseCountereffectContract"
+      },
+      "ResponseExpectationContract": {
+        "properties": {
+          "expectation_contract_id": {
+            "type": "string",
+            "pattern": "^p3544expect_[0-9a-f]{24}$",
+            "title": "Expectation Contract Id"
+          },
+          "expectation_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expectation Sha256"
+          },
+          "owning_effect_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Owning Effect Id"
+          },
+          "owning_mechanism_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Owning Mechanism Ids"
+          },
+          "experiment_factor_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Experiment Factor Id"
+          },
+          "control_key": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Control Key"
+          },
+          "direction_sign": {
+            "type": "integer",
+            "enum": [
+              -1,
+              1
+            ],
+            "title": "Direction Sign"
+          },
+          "relation_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Relation Id"
+          },
+          "metric_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Metric Id"
+          },
+          "expected_sign": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "enum": [
+                  -1,
+                  1
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Sign"
+          },
+          "accepted_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Min"
+          },
+          "accepted_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Max"
+          },
+          "units": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Units"
+          },
+          "phase": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Phase"
+          },
+          "lap_pct_start": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lap Pct Start"
+          },
+          "lap_pct_end": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lap Pct End"
+          },
+          "speed_min_mps": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed Min Mps"
+          },
+          "speed_max_mps": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed Max Mps"
+          },
+          "minimum_independent_repetitions": {
+            "type": "integer",
+            "minimum": 2.0,
+            "title": "Minimum Independent Repetitions"
+          },
+          "minimum_absolute_signal": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Minimum Absolute Signal"
+          },
+          "required_channel_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Required Channel Ids"
+          },
+          "required_context_states": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Required Context States"
+          },
+          "allowed_evidence_states": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "calculated",
+                "observed_correlation"
+              ]
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Allowed Evidence States"
+          },
+          "countereffect_contracts": {
+            "items": {
+              "$ref": "#/components/schemas/ResponseCountereffectContract"
+            },
+            "type": "array",
+            "title": "Countereffect Contracts",
+            "default": []
+          },
+          "protected_outcomes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Protected Outcomes"
+          },
+          "car_applicability": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Car Applicability"
+          },
+          "build_applicability": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Build Applicability"
+          },
+          "authority_ceiling": {
+            "type": "string",
+            "const": "relationship_only",
+            "title": "Authority Ceiling",
+            "default": "relationship_only"
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expectation_contract_id",
+          "expectation_sha256",
+          "owning_effect_id",
+          "owning_mechanism_ids",
+          "experiment_factor_id",
+          "control_key",
+          "direction_sign",
+          "relation_id",
+          "metric_id",
+          "units",
+          "phase",
+          "minimum_independent_repetitions",
+          "minimum_absolute_signal",
+          "required_channel_ids",
+          "required_context_states",
+          "allowed_evidence_states",
+          "protected_outcomes",
+          "car_applicability",
+          "build_applicability"
+        ],
+        "title": "ResponseExpectationContract",
+        "description": "Reviewed response expectation; relationship alone can never satisfy it."
+      },
+      "ResponseExpectationEvaluation": {
+        "properties": {
+          "evaluation_id": {
+            "type": "string",
+            "pattern": "^p3544evaluation_[0-9a-f]{24}$",
+            "title": "Evaluation Id"
+          },
+          "evaluation_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Evaluation Sha256"
+          },
+          "expectation_contract_id": {
+            "type": "string",
+            "pattern": "^p3544expect_[0-9a-f]{24}$",
+            "title": "Expectation Contract Id"
+          },
+          "response_artifact_id": {
+            "type": "string",
+            "pattern": "^p3542\\.response:[0-9a-f]{24}$",
+            "title": "Response Artifact Id"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "contradicted",
+              "inconclusive",
+              "blocked",
+              "unavailable"
+            ],
+            "title": "Result"
+          },
+          "matched_metric_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Matched Metric Ids",
+            "default": []
+          },
+          "blocker_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocker Reasons",
+            "default": []
+          },
+          "authority": {
+            "type": "string",
+            "const": "p19_response_evaluation_only",
+            "title": "Authority",
+            "default": "p19_response_evaluation_only"
+          },
+          "rank_modified": {
+            "type": "boolean",
+            "const": false,
+            "title": "Rank Modified",
+            "default": false
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "evaluation_id",
+          "evaluation_sha256",
+          "expectation_contract_id",
+          "response_artifact_id",
+          "result"
+        ],
+        "title": "ResponseExpectationEvaluation"
+      },
       "RevisionRequest": {
         "properties": {
           "session_id": {
@@ -35247,6 +37337,14 @@
             },
             "type": "array",
             "title": "Missing Evidence",
+            "default": []
+          },
+          "deficit_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Deficit Ids",
             "default": []
           },
           "authority": {

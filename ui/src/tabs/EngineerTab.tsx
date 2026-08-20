@@ -32,6 +32,7 @@ import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPan
 import { VehicleSystemsPanel } from "../components/VehicleSystemsPanel";
 import { CrewChiefCommandDeck } from "../components/CrewChiefCommandDeck";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
+import { useEngineeringCase } from "../store/EngineeringCaseContext";
 import type { LapScope } from "../store/types";
 import type {
   IntelligenceCitation,
@@ -658,6 +659,7 @@ export function IntelligencePanel({
   onNavigateCrewEvidence,
 }: EngineerTabProps) {
   const { selection, focusEvidence, setWorkspace } = useTelemetrySelection();
+  const { engineeringCase } = useEngineeringCase();
   const learning = selection.selectedMode === "learning";
   const workflowRevision = useMemo(() => ({ workflowId, workflowUpdatedAt }), [workflowId, workflowUpdatedAt]);
   const queryNavigationRunIds = useMemo(() => {
@@ -724,6 +726,7 @@ export function IntelligencePanel({
   });
   const [question, setQuestion] = useState("");
   const [raceSupportOpen, setRaceSupportOpen] = useState(false);
+  const [learningSection, setLearningSection] = useState<"decision" | "evidence" | "causes" | "car" | "history" | "research">("decision");
   const [queryState, setQueryState] = useState<QueryState>({
     requestKey: null,
     status: "idle",
@@ -1014,10 +1017,20 @@ export function IntelligencePanel({
   const submitQuestion = useCallback(async (rawQuestion: string) => {
     const nextQuestion = rawQuestion.trim();
     if (nextQuestion.length < 2) return;
+    if (engineeringCase == null) {
+      setQueryState({
+        requestKey: null,
+        status: "error",
+        response: null,
+        error: "Open the current Engineering Case before asking Smart Engineer.",
+      });
+      return;
+    }
     const sequence = ++querySequence.current;
     const requestKey = JSON.stringify({
       run_id: runId,
       session_id: sessionId,
+      case_sha256: engineeringCase.case_sha256,
       question: nextQuestion,
       question_scope: questionScopeKey,
       lap: selectedQueryLap,
@@ -1027,7 +1040,9 @@ export function IntelligencePanel({
     try {
       const response = await queryRunIntelligence(runId, {
         question: nextQuestion,
-        session_id: sessionId,
+        session_id: engineeringCase.session_id,
+        case_id: engineeringCase.case_id,
+        case_sha256: engineeringCase.case_sha256,
         selected_lap: selectedQueryLap,
         selected_window_start_lap: completeWindowQuestionScope ? selectedLapWindowStart : null,
         selected_window_end_lap: completeWindowQuestionScope ? selectedLapWindowEnd : null,
@@ -1056,6 +1071,8 @@ export function IntelligencePanel({
       if (
         report == null
         || !isIntelligenceQueryResponseBoundToReport(response, report)
+        || response.case_id !== engineeringCase.case_id
+        || response.case_sha256 !== engineeringCase.case_sha256
         || !scopeMatches(response, runId, sessionId)
         || !responseRunScopeMatches
         || (response.selected_lap ?? null) !== selectedQueryLap
@@ -1084,6 +1101,7 @@ export function IntelligencePanel({
     }
   }, [
     completeWindowQuestionScope,
+    engineeringCase,
     learning,
     queryNavigationRunIds,
     questionScopeKey,
@@ -1370,13 +1388,27 @@ export function IntelligencePanel({
         </div>
       </header>
 
+      {learning && (
+        <nav className="engineer-learning-section-nav" aria-label="Learning Mode sections">
+          {(["decision", "evidence", "causes", "car", "history", "research"] as const).map((section) => (
+            <button
+              key={section}
+              type="button"
+              aria-current={learningSection === section ? "page" : undefined}
+              className={learningSection === section ? "active" : ""}
+              onClick={() => setLearningSection(section)}
+            >{section}</button>
+          ))}
+        </nav>
+      )}
+
       {sessionId && (
         <CrewChiefCommandDeck
           runId={runId}
           sessionId={sessionId}
           report={report}
           scopeRunIds={crewChiefScopeRunIds}
-          learning={learning}
+          learning={learning && (learningSection === "history" || learningSection === "research")}
           onFocusEvidence={(entry) => { void onNavigateCrewEvidence(entry); }}
         />
       )}
@@ -1436,8 +1468,8 @@ export function IntelligencePanel({
         </button>
       )}
 
-      {(learning || raceSupportOpen) && (
-      <div id="engineer-supporting-evidence" className="engineer-support-stack">
+      {((learning && learningSection !== "decision") || raceSupportOpen) && (
+      <div id="engineer-supporting-evidence" className="engineer-support-stack" data-learning-section={learning ? learningSection : undefined}>
       <EngineeringAwarenessPanel runId={runId} sessionId={sessionId} surface="engineer" />
       <VehicleSystemsPanel
         runId={runId}
@@ -1641,7 +1673,7 @@ export function IntelligencePanel({
       </div>
       )}
 
-      {learning && (
+      {learning && learningSection !== "decision" && (
         <div className="engineer-learning-grid">
           <LearningReadinessCard state={readinessState} campaignAction={campaignAction} predictionAction={predictionAction} onFreezePrediction={freezePrediction} onStartCampaign={startCampaign} />
           <section className="engineer-learning-card engineer-evidence-graph" aria-labelledby="engineer-graph-heading">

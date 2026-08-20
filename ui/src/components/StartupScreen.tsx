@@ -1,15 +1,18 @@
 import {
   AlertTriangle,
+  Archive,
   ArrowRight,
   BrainCircuit,
   Gauge,
   Plus,
+  Pencil,
   RefreshCw,
+  Search,
   ShieldCheck,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createSession, deleteSession, fetchSessions } from "../api/client";
+import { archiveSession, createSession, deleteSession, fetchSessions, updateSession } from "../api/client";
 import racerzlabBanner from "../assets/racerzlab-banner-1920.jpg";
 import type { RaceLabSession, SessionSelectionSource } from "../types/session";
 import { isBrowser } from "../utils/env";
@@ -100,6 +103,10 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
     () => !launchSplashWasDismissed(),
   );
   const [lastSessionId, setLastSessionId] = useState(savedLastSessionId);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
 
   const loadRequestRef = useRef(0);
   const deletingSessionRef = useRef<string | null>(null);
@@ -115,7 +122,7 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
     setLoading(true);
     setLoadError(null);
     try {
-      const data = await fetchSessions();
+      const data = await fetchSessions(showArchived);
       if (requestId !== loadRequestRef.current) return null;
       setSessions(data);
       return data;
@@ -127,7 +134,7 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
     } finally {
       if (requestId === loadRequestRef.current) setLoading(false);
     }
-  }, []);
+  }, [showArchived]);
 
   useEffect(() => { void loadSessions(); }, [loadSessions]);
 
@@ -249,7 +256,38 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
     }
   }, [lastSessionId, loadSessions, sessions]);
 
-  const lastSession = sessions.find((session) => session.session_id === lastSessionId) ?? null;
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const visibleSessions = sessions.filter((session) => {
+    if (!showArchived && session.status === "archived") return false;
+    if (!normalizedSearch) return true;
+    return [session.name, session.track_name, session.car_name, session.session_id]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(normalizedSearch));
+  });
+  const lastSession = sessions.find((session) => session.session_id === lastSessionId && session.status !== "archived") ?? null;
+
+  const saveSessionName = useCallback(async (sessionId: string) => {
+    const name = editingName.trim();
+    if (!name) return;
+    try {
+      const updated = await updateSession(sessionId, { name });
+      setSessions((current) => current.map((item) => item.session_id === sessionId ? updated : item));
+      setEditingSessionId(null);
+    } catch (reason) {
+      setDeleteError(reason instanceof Error ? reason.message : "Session name could not be updated.");
+    }
+  }, [editingName]);
+
+  const toggleArchive = useCallback(async (session: RaceLabSession) => {
+    try {
+      const updated = session.status === "archived"
+        ? await updateSession(session.session_id, { status: "active" })
+        : await archiveSession(session.session_id);
+      setSessions((current) => current.map((item) => item.session_id === session.session_id ? updated : item));
+    } catch (reason) {
+      setDeleteError(reason instanceof Error ? reason.message : "Session archive state could not be changed.");
+    }
+  }, []);
 
   return (
     <main className="start-shell" data-banner-visible={bannerVisible} data-launch-splash={launchSplashVisible}>
@@ -365,8 +403,24 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
         <section className="session-list">
           <h2 className="session-list-heading">Continue engineering</h2>
           {deleteError && <p className="session-delete-error" role="alert">{deleteError}</p>}
+          <div className="session-list-tools">
+            <label>
+              <Search size={14} aria-hidden="true" />
+              <span className="sr-only">Search sessions</span>
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search name, track, car, or session ID"
+              />
+            </label>
+            <button type="button" onClick={() => setShowArchived((value) => !value)}>
+              <Archive size={14} /> {showArchived ? "Hide archived" : "Show archived"}
+            </button>
+          </div>
+          {visibleSessions.length === 0 && <p className="muted">No sessions match this search.</p>}
           <div className="session-list-grid">
-            {sessions.map((s) => (
+            {visibleSessions.map((s) => (
               <div key={s.session_id} className="session-card">
                 <button
                   ref={(node) => {
@@ -395,11 +449,44 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
                     )}
                   </span>
                   <span className="session-card-footer">
-                    <span className="session-card-date">Updated {s.updated_at?.slice(0, 10) ?? "recently"}</span>
+                    <span className="session-card-date">
+                      Created {new Date(s.created_at).toLocaleString()} · Updated {new Date(s.updated_at).toLocaleString()} · {s.session_id.slice(-6)}
+                    </span>
                     <span className="session-card-continue">Continue <ArrowRight size={13} aria-hidden="true" /></span>
                   </span>
                 </button>
                 <div className="session-card-actions">
+                  {editingSessionId === s.session_id && (
+                    <div className="session-card-rename">
+                      <input
+                        aria-label={`Rename ${s.name}`}
+                        value={editingName}
+                        onChange={(event) => setEditingName(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") { event.preventDefault(); void saveSessionName(s.session_id); }
+                          if (event.key === "Escape") setEditingSessionId(null);
+                        }}
+                      />
+                      <button type="button" onClick={() => { void saveSessionName(s.session_id); }}>Save</button>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="session-delete-btn"
+                    onClick={() => {
+                      setEditingSessionId(s.session_id);
+                      setEditingName(s.name);
+                    }}
+                    aria-label={`Rename session ${sessionAccessibleContext(s)}`}
+                    title="Rename session"
+                  ><Pencil size={14} /></button>
+                  <button
+                    type="button"
+                    className="session-delete-btn"
+                    onClick={() => { void toggleArchive(s); }}
+                    aria-label={`${s.status === "archived" ? "Unarchive" : "Archive"} session ${sessionAccessibleContext(s)}`}
+                    title={s.status === "archived" ? "Unarchive session" : "Archive session"}
+                  ><Archive size={14} /></button>
                   {confirmDelete === s.session_id ? (
                     <div className="session-confirm-delete">
                       <span className="muted" style={{ fontSize: 11 }}>Remove session?</span>

@@ -381,6 +381,11 @@ class CarResponseFact(EngineeringLearningModel):
     policy_verdict: Literal["keep", "undo", "retest", "invalid"]
     source_workflow_id: str = Field(min_length=1)
     source_response_record_id: str | None = Field(default=None, min_length=1)
+    response_expectation_contract_ids: tuple[str, ...] = ()
+    response_metric_delta_ids: tuple[str, ...] = ()
+    stage_response_artifact_ids: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    response_phase: str | None = None
+    response_speed_band_mps: tuple[float, float] | None = None
     source_artifact_ids: tuple[str, ...] = ()
     setup_authorized: Literal[False] = False
 
@@ -388,6 +393,15 @@ class CarResponseFact(EngineeringLearningModel):
     def undo_keeps_three_axes_separate(self) -> Self:
         _unique(self.countereffects, "countereffect")
         _unique(self.source_artifact_ids, "car-response artifact")
+        _unique(self.response_expectation_contract_ids, "response expectation")
+        _unique(self.response_metric_delta_ids, "response metric delta")
+        if self.response_speed_band_mps is not None and (
+            self.response_speed_band_mps[1] < self.response_speed_band_mps[0]
+        ):
+            raise ValueError("P33 response speed band is reversed")
+        stage_names = tuple(item[0] for item in self.stage_response_artifact_ids)
+        if self.stage_response_artifact_ids and stage_names != ("A", "B", "A2"):
+            raise ValueError("P33 controlled response stages must preserve A/B/A2 order")
         for label, statement in (
             ("expected car response", self.expected_vehicle_response),
             ("observed car response", self.observed_vehicle_response),

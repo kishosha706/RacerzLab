@@ -186,7 +186,9 @@ function validCarResponse(value) {
     "expected_vehicle_response", "observed_vehicle_response", "p32_time_origin",
     "phase_time_effect_s", "carry_effect_s", "recovery_surrender", "countereffects",
     "p19_mechanism_assessment", "control_response_assessment", "policy_verdict",
-    "source_workflow_id", "source_response_record_id", "source_artifact_ids", "setup_authorized",
+    "source_workflow_id", "source_response_record_id", "response_expectation_contract_ids",
+    "response_metric_delta_ids", "stage_response_artifact_ids", "response_phase",
+    "response_speed_band_mps", "source_artifact_ids", "setup_authorized",
   ])) return false;
   const requiredText = [
     "response_id", "component", "control", "direction", "magnitude_class",
@@ -207,6 +209,21 @@ function validCarResponse(value) {
     && ["matched", "missed", "inconclusive", "unavailable", "invalid"].includes(value.control_response_assessment)
     && ["keep", "undo", "retest", "invalid"].includes(value.policy_verdict)
     && nullableNonempty(value.source_response_record_id)
+    && uniqueNonemptyStrings(value.response_expectation_contract_ids)
+    && uniqueNonemptyStrings(value.response_metric_delta_ids)
+    && Array.isArray(value.stage_response_artifact_ids)
+    && (value.stage_response_artifact_ids.length === 0
+      || JSON.stringify(value.stage_response_artifact_ids.map((item) => item[0])) === JSON.stringify(["A", "B", "A2"]))
+    && value.stage_response_artifact_ids.every((item) => (
+      Array.isArray(item) && item.length === 2 && uniqueNonemptyStrings(item[1])
+    ))
+    && (value.response_phase === null || nonempty(value.response_phase))
+    && (value.response_speed_band_mps === null || (
+      Array.isArray(value.response_speed_band_mps)
+      && value.response_speed_band_mps.length === 2
+      && value.response_speed_band_mps.every(Number.isFinite)
+      && value.response_speed_band_mps[1] >= value.response_speed_band_mps[0]
+    ))
     && uniqueNonemptyStrings(value.source_artifact_ids)
     && value.setup_authorized === false
     && (value.policy_verdict !== "undo" || value.countereffects.length > 0)

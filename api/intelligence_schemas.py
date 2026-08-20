@@ -734,7 +734,9 @@ class RunIntelligenceResponse(IntelligenceApiModel):
 
 class IntelligenceQueryRequest(IntelligenceApiModel):
     question: str = Field(min_length=2, max_length=500)
-    session_id: str | None = Field(default=None, max_length=160)
+    session_id: str = Field(min_length=1, max_length=160)
+    case_id: str = Field(pattern=r"^p3543case_[0-9a-f]{24}$")
+    case_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     selected_lap: int | None = Field(default=None, ge=1)
     selected_window_start_lap: int | None = Field(default=None, ge=1)
     selected_window_end_lap: int | None = Field(default=None, ge=1)
@@ -780,9 +782,11 @@ class IntelligenceNavigationResponse(IntelligenceApiModel):
 
 
 class IntelligenceQueryResponse(IntelligenceApiModel):
-    schema_version: Literal["p19.intelligence-query.v1"]
+    schema_version: Literal["p3544.engineering-case-query.v1"]
     run_id: str
-    session_id: str | None = None
+    session_id: str
+    case_id: str = Field(pattern=r"^p3543case_[0-9a-f]{24}$")
+    case_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     reasoning_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     setup_id: str | None = Field(default=None, min_length=1, max_length=240)
     setup_snapshot_sha256: str | None = Field(
@@ -808,6 +812,14 @@ class IntelligenceQueryResponse(IntelligenceApiModel):
     clarification_required: bool = False
     action_authorized: bool = False
     action_source_event_ids: list[str] = Field(default_factory=list)
+    source_artifact_ids: list[str] = Field(default_factory=list)
+    authority_ceiling: Literal[
+        "evidence_only",
+        "attention_only",
+        "navigation_only",
+        "p19_measurement_mirror",
+        "p19_exact_mirror",
+    ] = "evidence_only"
     evidence_state: EvidenceState
     citations: list[IntelligenceCitationResponse] = Field(default_factory=list)
     suggested_navigation: list[IntelligenceNavigationResponse] = Field(default_factory=list)
@@ -827,6 +839,17 @@ class IntelligenceQueryResponse(IntelligenceApiModel):
             raise ValueError("query setup identity must be canonical")
         if self.action_authorized and self.setup_id is None:
             raise ValueError("authorized query actions require an exact setup snapshot identity")
+        if self.action_authorized and (
+            self.authority_ceiling != "p19_exact_mirror"
+            or not self.action_source_event_ids
+        ):
+            raise ValueError(
+                "authorized case query actions must exactly mirror P19 evidence"
+            )
+        if self.authority_ceiling != "p19_exact_mirror" and self.action_authorized:
+            raise ValueError("non-P19 case query output cannot authorize an action")
+        if len(self.source_artifact_ids) != len(set(self.source_artifact_ids)):
+            raise ValueError("case query source artifact identities must be unique")
         if self.interpreted_component_id is not None and (
             self.interpreted_component_id.strip() != self.interpreted_component_id
         ):

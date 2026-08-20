@@ -413,12 +413,12 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
         )}
       </div>
       <div className="tab-handoff-actions" aria-label="Supporting evidence views" data-role="supporting-evidence-navigation">
-        {topEvent && (
+        {isLearning && topEvent && (
           <button type="button" onClick={openTopEvent}>
             <Layers size={13} /> Inspect evidence
           </button>
         )}
-        {!topEvent && topObservedEvent && (
+        {isLearning && !topEvent && topObservedEvent && (
           <button type="button" onClick={openObservedEvent}>
             <Layers size={13} /> Inspect evidence limit
           </button>
@@ -428,9 +428,9 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
             <MapPin size={13} /> Show on map
           </button>
         )}
-        {isLearning && <button type="button" onClick={openEngineerBriefing}>
-          <BrainCircuit size={13} /> Engineer briefing
-        </button>}
+        <button type="button" onClick={openEngineerBriefing}>
+          <BrainCircuit size={13} /> {isLearning ? "Engineer briefing" : "Ask Engineer"}
+        </button>
         {isLearning && <button type="button" onClick={() => setWorkspace("laps", "overview")}>
           <Clock size={13} /> Review laps
         </button>}

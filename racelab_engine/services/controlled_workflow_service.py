@@ -2046,6 +2046,8 @@ def persist_workflow_candidate(
     workflow: ControlledWorkflow,
     *,
     repository: RaceLabRepository | None = None,
+    connection: Any | None = None,
+    record_plan: bool = True,
 ) -> ControlledWorkflow:
     """Atomically persist one server-built, still-planned workflow candidate."""
 
@@ -2070,8 +2072,15 @@ def persist_workflow_candidate(
         validate_p19_workflow_origin(workflow, repository=repo)
     scoped_run_ids = _workflow_scope_run_ids(repo, (workflow.source_run_id,))
     if isinstance(repo, RaceLabRepository):
-        repo.create_controlled_workflow_if_scope_available(workflow, scoped_run_ids)
-        record_workflow_plan(workflow, db_path=repo.db_path)
+        repo.create_controlled_workflow_if_scope_available(
+            workflow, scoped_run_ids, connection=connection
+        )
+        if record_plan:
+            if connection is not None:
+                raise ValueError(
+                    "Workflow plan memory must be recorded after the shared transaction commits."
+                )
+            record_workflow_plan(workflow, db_path=repo.db_path)
     else:
         _assert_active_workflow_slot(repo, scoped_run_ids)
         repo.save_controlled_workflow(workflow)
@@ -2834,16 +2843,10 @@ def _expected_response_relations(effect_id: str, target_phase: str) -> tuple[str
             or (phase == "initial_throttle" and "throttle_pickup" in item.problem_phases)
         )
     )
-    if relations:
-        return relations
-    fallback = (
-        "brake_to_yaw"
-        if phase in {"brake", "braking"}
-        else "throttle_to_yaw"
-        if phase in {"throttle", "throttle_pickup", "initial_throttle", "exit"}
-        else "steering_wheel_to_yaw"
-    )
-    return (fallback,)
+    # P35.4.4 removes the generic phase surrogate.  One exact reviewed bridge
+    # may define one response relation; zero or ambiguous matches remain
+    # unavailable without corrupting the rest of P19 scoring.
+    return relations if len(relations) == 1 else ()
 
 
 def _build_controlled_response_receipt(
@@ -2926,6 +2929,9 @@ def _build_controlled_response_receipt(
                     setups[stage]
                 ),
                 response_artifact_ids=tuple(item.evidence_id for item in projected),
+                response_artifact_sha256s=tuple(
+                    canonical_json_sha256(item) for item in projected
+                ),
                 source_channels=tuple(
                     dict.fromkeys(
                         channel
@@ -2993,7 +2999,17 @@ def _build_controlled_response_receipt(
             for reason in item.blocker_reasons
         )
     )
-    ready = bool(deltas) and not blockers and quality.verdict != "invalid"
+    expected_response_contract_ids: tuple[str, ...] = ()
+    semantic_contract_blocker = (
+        "No exact reviewed ResponseExpectationContract is bound to this controlled test.",
+    )
+    blockers = tuple(dict.fromkeys((*blockers, *semantic_contract_blocker)))
+    ready = (
+        bool(deltas)
+        and bool(expected_response_contract_ids)
+        and not blockers
+        and quality.verdict != "invalid"
+    )
     countereffects = tuple(
         dict.fromkeys(
             (
@@ -3028,6 +3044,7 @@ def _build_controlled_response_receipt(
         direction_sign=card.direction_sign,
         stages=tuple(stage_receipts),
         expected_response_relation_ids=expected_relations,
+        expected_response_contract_ids=expected_response_contract_ids,
         observed_metric_deltas=tuple(deltas) if ready else (),
         performance_effect_s=(
             float(

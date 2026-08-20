@@ -78,6 +78,7 @@ result, and remember only what the evidence supports.
 | P35.4.1 - Canonical Telemetry Truth Closure | Verified locally | Source identity, tick clock, physical position, geometry provenance, typed blocker scope, and channel admission fail closed before any diagnosis or learned recurrence |
 | P35.4.2 - Response-to-Mechanism Operational Integration | Verified locally; field evidence remains unearned | Qualified dynamic, repeated-disturbance, and ten-lap stint signatures refine P35 mechanism inspection without gaining support, cause, component, setup, or P19 authority |
 | P35.4.3 - Closed-Loop Engineering Interconnectivity | Verified locally; P36 qualification remains field-locked | One canonical case, first-class response artifacts, P19-owned admission, A/B/A2 response receipts, effect readiness, quantity observability, capability routing, memory capture, and semantic focus share one revision without changing authority |
+| P35.4.4 - Unified Engineering Case Experience | Verified locally; reviewed response expectations and field evidence remain locked | Stable case lifecycles, immutable revision history, one DriverIntent, typed semantic debt, exact-case queries, one mission/scope UI, and revision-safe specialist handoffs make all decision surfaces consume one P19-bounded engineering reality |
 | P35.5 - Field-Ready Alpha Hardening | Verified local release slice; field evidence remains unearned | One honest Next Gen oval alpha opens quickly, exposes one canonical move, packages as one owned desktop instance, and ships only after semantic real-file, dependency, contract, UI, and lifecycle gates pass |
 | P36 - Prospective Investigation Evidence Campaigns | Planned; evidence collection remains data-locked | Qualified prospective campaigns produce the independent recurrence, controls, subgroups, and observable comparisons required before learned investigation ordering can earn promotion |
 
@@ -2854,6 +2855,115 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
   negative controls **0/8**, subgroups **0/9**, prospective locked, and no
   activation earned. Software receipts do not manufacture driving evidence.
 
+## P35.4.4 - Unified Engineering Case Experience
+
+- [x] Replace one-hash case identity with a stable run/session lifecycle ID and
+  immutable content-addressed revisions. SQLite retains the current head,
+  predecessor hash, bounded history, change category, source workspace revision,
+  and exact case payload; identical truth is idempotent and corrupt history fails
+  closed.
+- [x] Make the existing Canonical Engineering Case the product-wide read model.
+  One case endpoint finalizes the exact current projection, reports delivery-only
+  build/timing/size diagnostics, and the frontend provider owns loading, stale,
+  retry, invalidation, and atomic mutation replacement.
+- [x] Add one append-only DriverIntent lineage with raw wording, typed symptom/
+  phase/regime/context/objective, provenance, predecessor identity, and explicit
+  context-only authority. Dial-In now persists intent and a P19 workflow or typed
+  withholding result in one transaction; workflow failure rolls the intent back.
+- [x] Replace mechanically-related response support with exact
+  `ResponseExpectationContract` evaluation. Sign/range, units, phase, physical
+  scope, speed band, repetitions, empirical noise, channel lineage, context,
+  applicability, and protected countereffects produce only matched,
+  contradicted, inconclusive, blocked, or unavailable receipts. No reviewed
+  numeric expectations exist in current P35.1 knowledge, so current response
+  evidence truthfully remains unresolved/measurement-only rather than being
+  promoted by resemblance.
+- [x] Remove the generic A/B/A2 steering/brake/throttle fallback. Zero or
+  ambiguous semantic matches produce a blocked response receipt while valid P19
+  performance/policy scoring remains separate. Stage receipts retain response
+  hashes, producer/clock identity, exact recordings, setups, laps, scope, speed,
+  and three-axis mechanism/control/policy truth.
+- [x] Give every Crew tool an exact-case `InspectionEvidenceQualification`.
+  Blocked, unavailable, foreign, wrong-contract, or non-decisive response
+  artifacts remain inspected/blocked evidence and cannot suppress or satisfy a
+  generic inspection.
+- [x] Replace missing-evidence prose parsing with typed deficit identities and
+  recovery modes. Channel, repetition, legal-option, P19-authority, build,
+  countereffect, pit-snapshot, and structural debt route deterministically to
+  current data, more laps, a new run, a pit snapshot, a controlled test, or
+  unavailability.
+- [x] Extend deterministic Smart Engineer queries over the exact persisted case
+  hash. Whole-case performance, response, mechanism, quantity/component,
+  setup-readiness, Crew, history, and exact P19 mission answers return the same
+  case identity; stale hashes reject, and setup action wording can only mirror
+  the current P19 terminal object.
+- [x] Present one persistent Engineering Case mission strip with What, Where,
+  Why, Uncertain, Next, and Done When plus a visible Viewing / Active Decision /
+  Supporting Evidence scope stack. Existing `focusEvidence` owns the decision
+  focus; no second selection architecture or authority path was added.
+- [x] Bind Crew, whole-car awareness, Vehicle Systems, Engineer questions,
+  Dial-In, Setup, and Compare to the provider case revision. Crew/workflow
+  mutations invalidate or atomically replace the case, specialist results from a
+  foreign revision are rejected, Race Overview exposes one reachable Engineer
+  CTA, and Platform mode changes preserve the active subview.
+- [x] Make Learning Mode open on a compact Decision section with six explicit
+  Decision/Evidence/Causes/Car/History/Research anchors; heavyweight evidence
+  and research surfaces do not mount in the default decision view. Narrow
+  Priority is a real modal with backdrop, focus trap, Escape, inert underlying
+  controls, and focus restoration. Decision copy is at least 14 px, secondary
+  engineering text 12 px, and chart labels 11 px.
+- [x] Make setup rows keyboard-selectable semantic focus sources, add exact-case
+  Compare explanation/hypothesis handoffs, per-workspace render recovery, and a
+  searchable/renameable/archiveable session picker with created/updated time and
+  stable short identity. Presentation metadata does not enter scientific case
+  identity.
+- [ ] Populate reviewed numeric `ResponseExpectationContract` instances only
+  after source-backed sign/range/noise/countereffect contracts are reviewed.
+  Current static P35.1 targets are intentionally insufficient for a matched
+  response result.
+- [ ] Earn a qualified real Engineering Case, Null Session 01, and source-owned
+  response-complete A/B/A2 receipt. **FIELD DATA REQUIRED.** P36 counts remain
+  historical 0/9, null 0/10, negative controls 0/8, subgroups 0/9.
+
+### P35.4.4 verification - 2026-08-20
+
+- Backend: the complete 2,868-test collection passed with 2,865 successes,
+  three protected skips, and zero failures. New hostile coverage proves stable
+  revision chains/restart equality, corrupt persistence rejection, DriverIntent
+  append-only context, atomic rollback, wrong sign/range/noise/phase/speed/
+  repetition/countereffect rejection, typed-deficit prose independence, blocked
+  Crew evidence containment, and zero generic A/B/A2 fallback. Frozen P34 and all
+  prior P19/P20/P26/P32/P33/P35 authority suites remained green.
+- Frontend/API: TypeScript, 49 rendered Vitest behaviors, seven executable
+  runtime trust programs, generated OpenAPI parity at 92 paths / 390 schemas,
+  two Chromium first-use flows, and the 2,232-module production build passed.
+  Entry measured 194.81 KiB raw / 52.86 KiB gzip and all configured bundle
+  budgets passed.
+- Real evidence: the protected Atlanta source audit passed at 26,556 records,
+  277/277 declared channels, 11 useful laps, qualified SessionTick, and schema
+  `5565017159206c0b2f4407add6f97b66dfcd28b38c3ded62a78899b5428441af`.
+  Known traffic/context attribution remained blocked without invalidating valid
+  laps, platform observations, or unrelated evidence.
+- Live UI: desktop and 390 x 844 checks showed one case revision and one Next,
+  exact Viewing/Decision/Supporting scopes, compact default Learning content,
+  narrow Priority closed by default, modal/inert/focus restoration behavior, no
+  horizontal document overflow, and a clean browser console. Default Learning
+  Engineer content fell from the audited 16,987 px wall to about 508 px before a
+  section is opened; visible-text median rose from about 10.2 px to 12 px.
+- Performance: persisted restart case delivery measured 560.775 ms server-side
+  / 680 ms client with one Crew and one case projection build and zero fresh
+  RunIntelligence builds. Warm delivery measured 88.85-94.32 ms server-side,
+  103 ms second-request client time, 145.6 KB, and zero fresh RunIntelligence,
+  Crew, or case builds. Full uncached Engineer construction remains the existing
+  measured vectorization debt rather than a closed 2-second claim.
+- Quality/delivery: whole-repository Ruff, bytecode compilation, diff integrity,
+  permanent synthetic trust, the real protected trust audit, Cargo locked check,
+  full Tauri release packaging to MSI and NSIS, packaged single-instance/backend
+  identity/shutdown smoke, and existing authority/runtime guards passed. P19
+  remains sole exact setup/Keep/Undo/Retest/terminal authority; P33 remains
+  attention-only; P34 remains frozen; P36 is not activated and all real evidence
+  counts remain unchanged.
+
 ## P35.5 - Field-Ready Alpha Hardening
 
 - [x] Bound the current decision product to an honest NASCAR Next Gen oval alpha.
@@ -3049,3 +3159,4 @@ Implementation queue completed in this pass:
 | 2026-08-18 | Verified P35.4.1 Canonical Telemetry Truth Closure locally | Physical alignment is driver-input invariant; full source SHA owns recording independence; tick-primary timing is mandatory for eligible decisions; nominal diffuser geometry is unavailable; typed blockers scope authority; all 62 audited channels have explicit roles; Learning Telemetry Capabilities and executable chart truth are restored; and the first brake/throttle, surface-settling, and stint-migration response producers remain observation-only. The complete 2,839-test collection passed with 2,836 successes and three protected DuckDB skips, plus 214 focused hostiles, 38 UI behaviors, Ruff, TypeScript, the 2,209-module budgeted build, diff integrity, live 1,280/390-pixel Race/Learning verification, and the protected 26,556-record/277-channel Atlanta release audit. P19 remains sole setup authority and P36 remains data-locked. |
 | 2026-08-18 | Verified P35.5 field-ready alpha hardening locally | Next Gen oval scope and ordinal evidence wording are honest; one compact cached shell move replaces eager full-intelligence run-open work; returning-session resume, continuous lap playback, exact zoom persistence, grouped evidence debt, shortcut disablement, generated contracts, locked dependencies, single-instance sidecar identity/restart, semantic real-file gates, Windows packaging, and lifecycle smoke are wired without changing P19 authority. The current 2,850-test Python collection is covered by the green definitive 2,847-test run plus focused closure of the three later additions, 43 UI behaviors, two Chromium flows, TypeScript, Ruff, Cargo, zero npm advisories, generated 88-path/96-operation OpenAPI parity, the 2,228-module budgeted build, MSI/NSIS bundles, and packaged ownership/shutdown smoke. Shell access is 13.173 ms unbuilt / 28.376 ms cached without starting intelligence; full first construction remains measured at 12.226 s, while digest-verified exact-semantic restart reuse is 104.327 ms with zero fresh build count. Null Session 01, real A/B/A2, P23/P36 evidence, and every statistical activation remain unearned. |
 | 2026-08-19 | Verified P35.4.3 closed-loop engineering interconnectivity locally | Operational responses are now first-class case/index artifacts; one atomic Engineering Case binds all current producer revisions; P19 owns non-mutating response admission; A/B/A2 scoring can retain exact response receipts; the semantic registry connects response/mechanism/quantity/component/Crew vocabularies; all 92 effects expose readiness; capability debt routes to current channels, new runs, pit snapshots, or structural unavailability; P33 retains controlled response provenance; and one semantic focus reuses canonical evidence navigation. The complete 3,331-test Python collection passed with three protected skips, plus five dedicated hostiles, 44 UI behaviors, executable client guards, whole-repo Ruff, TypeScript, generated 88-path/376-schema OpenAPI parity, the 2,228-module budgeted build, and diff integrity. P19 remains sole cause/setup/terminal authority and P36 counts remain 0/9, 0/10, 0/8, and 0/9. |
+| 2026-08-20 | Verified P35.4.4 unified Engineering Case experience locally | Stable case lifecycles and immutable revisions, one DriverIntent, exact response expectations, typed deficits, usable-evidence Crew qualification, fail-closed A/B/A2 response scoring, exact-case Smart Engineer queries, one provider/mission/scope voice, revision-safe specialist handoffs, compact sectioned Learning, modal narrow Priority, semantic Setup/Compare focus, and distinct session management passed the complete 2,868-test Python collection with three protected skips, 49 rendered UI behaviors, seven runtime guards, Ruff, TypeScript, OpenAPI 92-path/390-schema parity, the 2,232-module budgeted build, two Chromium flows, Cargo locked check, permanent synthetic trust, and the protected 26,556-record/277-channel Atlanta audit. Persisted restart case delivery is 560.775 ms server-side; warm is 88.85-94.32 ms with zero fresh intelligence/Crew/case builds. P19/P33/P34/P36 authority and 0/9, 0/10, 0/8, 0/9 field counts remain unchanged. |

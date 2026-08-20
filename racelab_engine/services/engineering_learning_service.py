@@ -2660,6 +2660,21 @@ def build_controlled_workflow_experience(
         and controlled_response_receipt.observed_metric_deltas
         else f"The recorded control response was {control_response.replace('_', ' ')}."
     )
+    response_speed_band = None
+    if controlled_response_receipt is not None and all(
+        stage.speed_min_mps is not None and stage.speed_max_mps is not None
+        for stage in controlled_response_receipt.stages
+    ):
+        lower = max(
+            stage.speed_min_mps  # type: ignore[arg-type]
+            for stage in controlled_response_receipt.stages
+        )
+        upper = min(
+            stage.speed_max_mps  # type: ignore[arg-type]
+            for stage in controlled_response_receipt.stages
+        )
+        if lower <= upper:
+            response_speed_band = (lower, upper)
     response = CarResponseFact(
         response_id="p33response_"
         + canonical_json_sha256(
@@ -2685,6 +2700,33 @@ def build_controlled_workflow_experience(
             if controlled_response_receipt is not None
             else None
         ),
+        response_expectation_contract_ids=(
+            controlled_response_receipt.expected_response_contract_ids
+            if controlled_response_receipt is not None
+            else ()
+        ),
+        response_metric_delta_ids=(
+            tuple(
+                item.metric_id
+                for item in controlled_response_receipt.observed_metric_deltas
+            )
+            if controlled_response_receipt is not None
+            else ()
+        ),
+        stage_response_artifact_ids=(
+            tuple(
+                (stage.stage, stage.response_artifact_ids)
+                for stage in controlled_response_receipt.stages
+            )
+            if controlled_response_receipt is not None
+            else ()
+        ),
+        response_phase=(
+            controlled_response_receipt.stages[0].phase
+            if controlled_response_receipt is not None
+            else None
+        ),
+        response_speed_band_mps=response_speed_band,
         source_artifact_ids=artifact_ids,
     )
     driver_contributions = (

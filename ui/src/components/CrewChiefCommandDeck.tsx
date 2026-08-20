@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useEngineeringCase } from "../store/EngineeringCaseContext";
 import { BrainCircuit, CheckCircle2, CircleHelp, Play, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
 
 import {
@@ -333,6 +334,7 @@ function InvestigationImprovementCard({
 }
 
 export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, learning, onFocusEvidence }: Props) {
+  const { engineeringCase, retry: retryEngineeringCase, invalidate: invalidateEngineeringCase } = useEngineeringCase();
   const [workspace, setWorkspace] = useState<CrewChiefWorkspace | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -341,12 +343,21 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
   const workspaceSequence = useRef(0);
 
   useEffect(() => {
+    if (engineeringCase == null) return undefined;
     const sequence = ++workspaceSequence.current;
     setWorkspace(null);
     setError(null);
     setBusy(true);
     void fetchCrewChiefWorkspace(runId, sessionId, report, { objective, scopeRunIds })
-      .then((value) => { if (sequence === workspaceSequence.current) setWorkspace(value); })
+      .then((value) => {
+        if (sequence !== workspaceSequence.current) return;
+        if (value.engineering_case.case_sha256 !== engineeringCase.case_sha256) {
+          setError("Crew Chief returned a different Engineering Case revision.");
+          setWorkspace(null);
+        } else {
+          setWorkspace(value);
+        }
+      })
       .catch((caught: unknown) => {
         if (sequence === workspaceSequence.current) {
           setError(caught instanceof Error ? caught.message : "Crew Chief unavailable.");
@@ -356,7 +367,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
     return () => {
       if (sequence === workspaceSequence.current) workspaceSequence.current += 1;
     };
-  }, [objective, report, runId, scopeRunIds, sessionId]);
+  }, [engineeringCase, objective, report, runId, scopeRunIds, sessionId]);
 
   const runMutation = async (operation: () => Promise<CrewChiefWorkspace>) => {
     const sequence = ++workspaceSequence.current;
@@ -364,7 +375,10 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
     setError(null);
     try {
       const value = await operation();
-      if (sequence === workspaceSequence.current) setWorkspace(value);
+      if (sequence === workspaceSequence.current) {
+        setWorkspace(value);
+        invalidateEngineeringCase();
+      }
     } catch (caught) {
       if (sequence === workspaceSequence.current) {
         setError(caught instanceof Error ? caught.message : "Crew Chief operation failed.");
@@ -375,7 +389,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
   };
 
   if (error && !workspace) {
-    return <section className="crew-chief-deck crew-chief-error" role="alert"><b>Crew Chief withheld</b><p>{error}</p></section>;
+    return <section className="crew-chief-deck crew-chief-error" role="alert"><b>Crew Chief withheld</b><p>{error}</p><button type="button" onClick={retryEngineeringCase}>Retry current case</button></section>;
   }
   if (!workspace) {
     return <section className="crew-chief-deck crew-chief-loading" aria-busy="true" aria-live="polite">

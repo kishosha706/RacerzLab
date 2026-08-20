@@ -66,6 +66,7 @@ from racelab_engine.models.intelligence import (
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.models.setup import SetupSnapshot
+from racelab_engine.storage.engineering_case_repository import EngineeringCaseRepository
 from racelab_engine.services.controlled_workflow_service import (
     _workflow_decision_context,
     _workflow_plan_binding_hash,
@@ -78,6 +79,8 @@ from racelab_engine.services.intelligence_service import (
     plan_best_next_measurement,
     rank_competing_causes,
 )
+
+
 from racelab_engine.services.run_intelligence_service import (
     _card_semantic_blockers,
     _claims,
@@ -97,6 +100,38 @@ from racelab_engine.storage.db import initialize_database
 from racelab_engine.storage.repository import RaceLabRepository
 
 client = TestClient(app)
+
+_CASE_ID = "p3543case_" + "a" * 24
+_CASE_SHA = "b" * 64
+
+
+def _bind_case_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    revision = SimpleNamespace(
+        case_id=_CASE_ID,
+        case_sha256=_CASE_SHA,
+        case=SimpleNamespace(objective_id="race_long_run"),
+    )
+    monkeypatch.setattr(
+        EngineeringCaseRepository,
+        "current_for_scope",
+        lambda self, run_id, session_id: revision,
+    )
+    monkeypatch.setattr(
+        "api.routes_intelligence.build_crew_chief_workspace",
+        lambda *args, **kwargs: SimpleNamespace(
+            engineering_case=SimpleNamespace(case_sha256=_CASE_SHA)
+        ),
+    )
+
+
+def _case_query(question: str, **values: object) -> dict[str, object]:
+    return {
+        "question": question,
+        "session_id": "session-smart",
+        "case_id": _CASE_ID,
+        "case_sha256": _CASE_SHA,
+        **values,
+    }
 TEST_REASONING_SNAPSHOT_SHA256 = "a" * 64
 
 
@@ -1010,6 +1045,7 @@ def test_intelligence_api_exposes_only_grounded_intent_fields(
 ) -> None:
     db_path = tmp_path / "racelab.sqlite"
     _seed_untrusted_run(db_path)
+    _bind_case_query(monkeypatch)
     bundle = build_run_intelligence("smart-run", db_path=db_path)
     monkeypatch.setattr(
         "api.routes_intelligence.build_run_intelligence",
@@ -1040,38 +1076,38 @@ def test_intelligence_api_exposes_only_grounded_intent_fields(
     )
     query = client.post(
         "/api/runs/smart-run/intelligence/query",
-        json={
-            "question": "What should I do next?",
-            "selected_lap": 2,
-            "presentation_mode": "learning",
-        },
+        json=_case_query(
+            "What should I do next?",
+            selected_lap=2,
+            presentation_mode="learning",
+        ),
     )
     race_query = client.post(
         "/api/runs/smart-run/intelligence/query",
-        json={
-            "question": "What should I do next?",
-            "selected_lap": 2,
-            "presentation_mode": "race",
-        },
+        json=_case_query(
+            "What should I do next?",
+            selected_lap=2,
+            presentation_mode="race",
+        ),
     )
     window_query = client.post(
         "/api/runs/smart-run/intelligence/query",
-        json={
-            "question": "Is the data good on laps 1-3?",
-            "selected_lap": 2,
-            "selected_window_start_lap": 1,
-            "selected_window_end_lap": 3,
-            "selected_window_representative_lap": 2,
-            "presentation_mode": "learning",
-        },
+        json=_case_query(
+            "Is the data good on laps 1-3?",
+            selected_lap=2,
+            selected_window_start_lap=1,
+            selected_window_end_lap=3,
+            selected_window_representative_lap=2,
+            presentation_mode="learning",
+        ),
     )
     injected = client.post(
         "/api/runs/smart-run/intelligence/query",
-        json={
-            "question": "What should I do next?",
-            "setup_authorized": True,
-            "proposed_value": "invented",
-        },
+        json=_case_query(
+            "What should I do next?",
+            setup_authorized=True,
+            proposed_value="invented",
+        ),
     )
     monkeypatch.setattr(
         "api.routes_intelligence.record_driver_presentation_preference_for_run",
@@ -1081,11 +1117,11 @@ def test_intelligence_api_exposes_only_grounded_intent_fields(
     )
     query_with_profile_failure = client.post(
         "/api/runs/smart-run/intelligence/query",
-        json={
-            "question": "Is the data good?",
-            "selected_lap": 2,
-            "presentation_mode": "race",
-        },
+        json=_case_query(
+            "Is the data good?",
+            selected_lap=2,
+            presentation_mode="race",
+        ),
     )
     monkeypatch.setattr(
         "api.routes_intelligence.answer_grounded_query",
@@ -1113,7 +1149,7 @@ def test_intelligence_api_exposes_only_grounded_intent_fields(
     )
     navigation_query = client.post(
         "/api/runs/smart-run/intelligence/query",
-        json={"question": "What worked here before?"},
+        json=_case_query("What worked here before?"),
     )
     monkeypatch.setattr(
         "api.routes_intelligence.answer_grounded_query",
@@ -1141,7 +1177,7 @@ def test_intelligence_api_exposes_only_grounded_intent_fields(
     )
     outside_navigation_query = client.post(
         "/api/runs/smart-run/intelligence/query",
-        json={"question": "What worked here before?"},
+        json=_case_query("What worked here before?"),
     )
 
     assert report.status_code == 200
@@ -1164,7 +1200,9 @@ def test_intelligence_api_exposes_only_grounded_intent_fields(
     assert race_query.status_code == 200
     query_payload = query.json()
     race_query_payload = race_query.json()
-    assert query_payload["schema_version"] == "p19.intelligence-query.v1"
+    assert query_payload["schema_version"] == "p3544.engineering-case-query.v1"
+    assert query_payload["case_id"] == _CASE_ID
+    assert query_payload["case_sha256"] == _CASE_SHA
     assert query_payload["reasoning_snapshot_sha256"] == report_payload[
         "reasoning_snapshot_sha256"
     ]
@@ -1178,6 +1216,8 @@ def test_intelligence_api_exposes_only_grounded_intent_fields(
         "setup_snapshot_sha256",
         "action_authorized",
         "action_source_event_ids",
+        "source_artifact_ids",
+        "authority_ceiling",
         "evidence_state",
         "citations",
     ):
@@ -1218,6 +1258,7 @@ def test_query_api_projects_interpreted_component_identity_without_setup_authori
 ) -> None:
     db_path = tmp_path / "racelab.sqlite"
     _seed_untrusted_run(db_path)
+    _bind_case_query(monkeypatch)
     bundle = build_run_intelligence("smart-run", db_path=db_path)
     monkeypatch.setattr(
         "api.routes_intelligence.build_run_intelligence",
@@ -1242,7 +1283,7 @@ def test_query_api_projects_interpreted_component_identity_without_setup_authori
 
     response = client.post(
         "/api/runs/smart-run/intelligence/query",
-        json={"question": "What is the RF spring doing?"},
+        json=_case_query("What is the RF spring doing?"),
     )
 
     assert response.status_code == 200
@@ -1257,6 +1298,7 @@ def test_query_api_maps_post_build_grounding_failure_to_conflict(
 ) -> None:
     db_path = tmp_path / "racelab.sqlite"
     _seed_untrusted_run(db_path)
+    _bind_case_query(monkeypatch)
     bundle = build_run_intelligence("smart-run", db_path=db_path)
     monkeypatch.setattr(
         "api.routes_intelligence.build_run_intelligence",
@@ -1276,7 +1318,7 @@ def test_query_api_maps_post_build_grounding_failure_to_conflict(
 
     response = client.post(
         "/api/runs/smart-run/intelligence/query",
-        json={"question": "What is the RF spring doing?"},
+        json=_case_query("What is the RF spring doing?"),
     )
 
     assert response.status_code == 409
@@ -1289,6 +1331,7 @@ def test_text_only_lap_window_query_fails_closed_without_response_validation_err
 ) -> None:
     db_path = tmp_path / "racelab.sqlite"
     _seed_untrusted_run(db_path)
+    _bind_case_query(monkeypatch)
     bundle = build_run_intelligence("smart-run", db_path=db_path)
     monkeypatch.setattr(
         "api.routes_intelligence.build_run_intelligence",
@@ -1297,7 +1340,7 @@ def test_text_only_lap_window_query_fails_closed_without_response_validation_err
 
     response = client.post(
         "/api/runs/smart-run/intelligence/query",
-        json={"question": "Where is the loss on laps 1-3?"},
+        json=_case_query("Where is the loss on laps 1-3?"),
     )
 
     assert response.status_code == 200
@@ -1442,9 +1485,11 @@ def test_query_response_rejects_missing_authority_and_cross_lap_citations() -> N
         valid_for_tuning=True,
     )
     common = {
-        "schema_version": "p19.intelligence-query.v1",
+        "schema_version": "p3544.engineering-case-query.v1",
         "run_id": "smart-run",
-        "session_id": None,
+        "session_id": "session-smart",
+        "case_id": _CASE_ID,
+        "case_sha256": _CASE_SHA,
         "reasoning_snapshot_sha256": TEST_REASONING_SNAPSHOT_SHA256,
         "setup_id": "smart-run:setup",
         "setup_snapshot_sha256": "b" * 64,
@@ -1460,7 +1505,7 @@ def test_query_response_rejects_missing_authority_and_cross_lap_citations() -> N
 
     with pytest.raises(ValueError, match="requested run and lap"):
         IntelligenceQueryResponse(**common, citations=[citation])
-    with pytest.raises(ValueError, match="exact tuning citations"):
+    with pytest.raises(ValueError, match="exactly mirror P19 evidence"):
         IntelligenceQueryResponse(**common, action_authorized=True, citations=[])
 
 
@@ -1481,9 +1526,11 @@ def test_query_response_accepts_exact_window_and_requires_exact_action_events() 
 
     citations = [citation(4, "event-4"), citation(5, "event-5")]
     common = {
-        "schema_version": "p19.intelligence-query.v1",
+        "schema_version": "p3544.engineering-case-query.v1",
         "run_id": "smart-run",
-        "session_id": None,
+        "session_id": "session-smart",
+        "case_id": _CASE_ID,
+        "case_sha256": _CASE_SHA,
         "reasoning_snapshot_sha256": TEST_REASONING_SNAPSHOT_SHA256,
         "setup_id": "smart-run:setup",
         "setup_snapshot_sha256": "b" * 64,
@@ -1498,6 +1545,7 @@ def test_query_response_accepts_exact_window_and_requires_exact_action_events() 
         "interpreted_window_end_lap": 5,
         "interpreted_window_representative_lap": 4,
         "action_authorized": True,
+        "authority_ceiling": "p19_exact_mirror",
         "action_source_event_ids": ["event-4", "event-5"],
         "evidence_state": EvidenceState.MEASURED,
         "citations": citations,
@@ -1541,6 +1589,9 @@ def test_query_response_accepts_exact_window_and_requires_exact_action_events() 
 def test_query_request_requires_one_exact_selected_scope() -> None:
     request = IntelligenceQueryRequest(
         question="What changed in this window?",
+        session_id="session-smart",
+        case_id=_CASE_ID,
+        case_sha256=_CASE_SHA,
         selected_lap=4,
         selected_window_start_lap=2,
         selected_window_end_lap=6,
@@ -1554,12 +1605,18 @@ def test_query_request_requires_one_exact_selected_scope() -> None:
     with pytest.raises(ValueError, match="start, end, and representative"):
         IntelligenceQueryRequest(
             question="What changed in this window?",
+            session_id="session-smart",
+            case_id=_CASE_ID,
+            case_sha256=_CASE_SHA,
             selected_lap=4,
             selected_window_start_lap=2,
         )
     with pytest.raises(ValueError, match="selected window representative"):
         IntelligenceQueryRequest(
             question="What changed in this window?",
+            session_id="session-smart",
+            case_id=_CASE_ID,
+            case_sha256=_CASE_SHA,
             selected_lap=5,
             selected_window_start_lap=2,
             selected_window_end_lap=6,
@@ -1579,9 +1636,11 @@ def test_query_response_allows_only_non_action_history_from_exact_session_scope(
         valid_for_tuning=False,
     )
     common = {
-        "schema_version": "p19.intelligence-query.v1",
+        "schema_version": "p3544.engineering-case-query.v1",
         "run_id": "run-b",
         "session_id": "session-1",
+        "case_id": _CASE_ID,
+        "case_sha256": _CASE_SHA,
         "reasoning_snapshot_sha256": TEST_REASONING_SNAPSHOT_SHA256,
         "setup_id": None,
         "setup_snapshot_sha256": None,
@@ -1597,11 +1656,11 @@ def test_query_response_allows_only_non_action_history_from_exact_session_scope(
     response = IntelligenceQueryResponse(**common)
     assert response.citations == [history]
 
-    with pytest.raises(ValueError, match="run-only queries"):
+    with pytest.raises(ValueError, match="valid string"):
         IntelligenceQueryResponse(
             **(common | {"session_id": None})
         )
-    with pytest.raises(ValueError, match="exact tuning citations"):
+    with pytest.raises(ValueError, match="exactly mirror P19 evidence"):
         IntelligenceQueryResponse(
             **(
                 common
@@ -1664,9 +1723,11 @@ def test_mind_change_criteria_are_public_safe_and_exactly_scope_bound() -> None:
     assert "proposed_value" not in public.model_dump()
 
     common = {
-        "schema_version": "p19.intelligence-query.v1",
+        "schema_version": "p3544.engineering-case-query.v1",
         "run_id": "smart-run",
         "session_id": "session-1",
+        "case_id": _CASE_ID,
+        "case_sha256": _CASE_SHA,
         "reasoning_snapshot_sha256": TEST_REASONING_SNAPSHOT_SHA256,
         "setup_id": None,
         "setup_snapshot_sha256": None,

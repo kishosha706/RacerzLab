@@ -19,14 +19,15 @@ def test_dial_in_commits_only_exact_run_and_workflow_responses() -> None:
 
     submit = _between(dial_in, "const submitDialIn", "const clearDialIn")
     assert "nextWorkflow.source_run_id !== requestedRunId" in submit
-    assert "dialResult.value.run_id !== requestedRunId" in submit
+    assert "result.advisory.run_id !== requestedRunId" in submit
+    assert "result.case_revision.case.case_sha256 !== result.case_revision.case_sha256" in submit
     assert submit.index("nextWorkflow.source_run_id !== requestedRunId") < submit.index(
         "setWorkflow(nextWorkflow)"
     )
-    assert submit.index("dialResult.value.run_id !== requestedRunId") < submit.index(
+    assert submit.index("result.advisory.run_id !== requestedRunId") < submit.index(
         "setResponse(dialResponse)"
     )
-    assert "const dialResponse = dialResult.status" in submit
+    assert "const dialResponse = result.advisory" in submit
     assert "setWorkflowIdentityError(message)" in submit
 
     build = _between(dial_in, "const buildVerifiedWorkflow", "const nextWorkflowStage")
@@ -155,11 +156,11 @@ def test_same_run_stale_loose_exit_l7_cannot_replace_tight_center_l5_request() -
     assert "const requestedBinding = currentRequestBinding" in submit
     assert "requestBindingsMatch(currentRequestBindingRef.current, requestedBinding)" in submit
     assert "workflowMatchesRequest(nextWorkflow, requestedBinding)" in submit
-    assert "normalizeComplaint(dialResult.value.complaint_raw) !== requestedBinding.normalized_complaint" in submit
+    assert "normalizeComplaint(result.advisory.complaint_raw) !== requestedBinding.normalized_complaint" in submit
     assert submit.index("workflowMatchesRequest(nextWorkflow, requestedBinding)") < submit.index(
         "setWorkflow(nextWorkflow)"
     )
-    assert submit.index("normalizeComplaint(dialResult.value.complaint_raw)") < submit.index(
+    assert submit.index("normalizeComplaint(result.advisory.complaint_raw)") < submit.index(
         "setResponse(dialResponse)"
     )
     assert "setWorkflowIdentityError(message)" in submit

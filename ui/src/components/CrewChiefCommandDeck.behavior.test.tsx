@@ -7,6 +7,11 @@ import { CrewChiefCommandDeck } from "./CrewChiefCommandDeck";
 const api = vi.hoisted(() => ({
   fetchCrewChiefWorkspace: vi.fn(),
 }));
+const caseContext = vi.hoisted(() => ({
+  engineeringCase: { case_sha256: undefined },
+  retry: vi.fn(),
+  invalidate: vi.fn(),
+}));
 
 vi.mock("../api/client", () => ({
   fetchCrewChiefWorkspace: api.fetchCrewChiefWorkspace,
@@ -16,6 +21,10 @@ vi.mock("../api/client", () => ({
   openCrewChiefInvestigation: vi.fn(),
   rebaseCrewChiefInvestigation: vi.fn(),
   updateCrewChiefObjective: vi.fn(),
+}));
+
+vi.mock("../store/EngineeringCaseContext", () => ({
+  useEngineeringCase: () => caseContext,
 }));
 
 const report = {} as RunIntelligenceReport;

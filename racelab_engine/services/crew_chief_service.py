@@ -53,6 +53,7 @@ from racelab_engine.models.crew_chief import (
     HypothesisInspectionState,
     InvestigationProgress,
     InvestigationSubgoal,
+    InspectionEvidenceQualification,
     engineering_awareness_scientific_sha256,
     p34_qualified_current_artifact_cohort,
     p34_qualified_current_artifact_ids,
@@ -63,6 +64,7 @@ from racelab_engine.models.crew_chief import (
     VehicleDynamicsInspectionToolId,
 )
 from racelab_engine.models.controlled_workflow import ControlledWorkflow
+from racelab_engine.models.engineering_case import CanonicalEngineeringCase
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.experiment import MeasurementAttempt
 from racelab_engine.models.investigation_adaptation import (
@@ -153,6 +155,9 @@ from racelab_engine.storage.db import default_db_path, initialize_database
 from racelab_engine.storage.engineering_learning_repository import (
     EngineeringLearningRepository,
 )
+from racelab_engine.storage.engineering_case_repository import (
+    EngineeringCaseRepository,
+)
 from racelab_engine.storage.investigation_adaptation_repository import (
     InvestigationAdaptationIntegrityError,
     InvestigationAdaptationRepository,
@@ -162,16 +167,24 @@ from racelab_engine.services.engineering_knowledge_service import (
     build_current_engineering_knowledge,
 )
 from racelab_engine.services.engineering_case_service import (
+    attach_deficits_to_readiness,
     build_capability_resolutions,
     build_canonical_engineering_case,
+    build_engineering_mission,
     build_engineering_response_artifacts,
-    build_p19_response_admissions,
+    build_evidence_deficits,
+    build_response_expectation_contracts,
     build_setup_effect_readiness,
+    engineering_case_id,
+)
+from racelab_engine.services.p19_response_admission_service import (
+    build_p19_response_evaluations_and_admissions,
 )
 
 
 _CACHE_LOCK = RLock()
 _CACHE: dict[tuple[str, ...], CrewChiefWorkspace] = {}
+_WORKSPACE_BUILD_COUNT = 0
 
 
 @dataclass(frozen=True)
@@ -2442,11 +2455,124 @@ def _memory_record_times(
     }
 
 
+def _usable_response_relations(
+    engineering_case: CanonicalEngineeringCase,
+) -> frozenset[str]:
+    """Only decisive exact-contract evaluations may satisfy Crew inspection debt."""
+
+    admitted_artifact_ids = {
+        item.response_artifact_id
+        for item in engineering_case.p19_response_admissions
+        if item.state == "admitted"
+    }
+    usable_artifact_ids = {
+        item.response_artifact_id
+        for item in engineering_case.response_expectation_evaluations
+        if item.result in {"matched", "contradicted"}
+        and item.response_artifact_id in admitted_artifact_ids
+    }
+    return frozenset(
+        item.relation
+        for item in engineering_case.response_artifacts
+        if item.artifact_id in usable_artifact_ids
+    )
+
+
+def _inspection_evidence_qualifications(
+    engineering_case: CanonicalEngineeringCase,
+) -> tuple[InspectionEvidenceQualification, ...]:
+    from racelab_engine.knowledge.engineering_semantic_registry import (
+        compile_engineering_semantic_registry,
+    )
+
+    usable_relations = _usable_response_relations(engineering_case)
+    artifacts_by_relation: dict[str, tuple[str, ...]] = {}
+    for artifact in engineering_case.response_artifacts:
+        artifacts_by_relation.setdefault(artifact.relation, ())
+        artifacts_by_relation[artifact.relation] = (
+            *artifacts_by_relation[artifact.relation],
+            artifact.artifact_id,
+        )
+    admission_by_artifact = {
+        item.response_artifact_id: item
+        for item in engineering_case.p19_response_admissions
+    }
+    evaluations_by_artifact: dict[str, tuple[object, ...]] = {}
+    for evaluation in engineering_case.response_expectation_evaluations:
+        evaluations_by_artifact.setdefault(evaluation.response_artifact_id, ())
+        evaluations_by_artifact[evaluation.response_artifact_id] = (
+            *evaluations_by_artifact[evaluation.response_artifact_id],
+            evaluation,
+        )
+    registry = compile_engineering_semantic_registry()
+    result: list[InspectionEvidenceQualification] = []
+    for tool in _TOOLS:
+        requirements = tuple(
+            item.relation_id
+            for item in registry.entries
+            if tool.tool_id in item.crew_inspection_tool_ids
+        )
+        related_artifacts = tuple(
+            dict.fromkeys(
+                artifact_id
+                for relation in requirements
+                for artifact_id in artifacts_by_relation.get(relation, ())
+            )
+        )
+        accepted = tuple(
+            artifact_id
+            for relation in requirements
+            if relation in usable_relations
+            for artifact_id in artifacts_by_relation.get(relation, ())
+        )
+        rejected = tuple(
+            item for item in related_artifacts if item not in set(accepted)
+        )
+        rejection_reasons = tuple(
+            dict.fromkeys(
+                reason
+                for artifact_id in rejected
+                for reason in (
+                    *(
+                        admission_by_artifact[artifact_id].blocker_reasons
+                        if artifact_id in admission_by_artifact
+                        else ("Response artifact has no P19 admission receipt.",)
+                    ),
+                    *(
+                        tuple(
+                            blocker
+                            for evaluation in evaluations_by_artifact.get(
+                                artifact_id, ()
+                            )
+                            for blocker in getattr(
+                                evaluation, "blocker_reasons", ()
+                            )
+                        )
+                        or ("Response artifact did not satisfy an exact expectation.",)
+                    ),
+                )
+            )
+        )
+        result.append(
+            InspectionEvidenceQualification(
+                tool_id=tool.tool_id,
+                case_sha256=engineering_case.case_sha256,
+                requirement_ids=requirements,
+                accepted_artifact_ids=tuple(dict.fromkeys(accepted)),
+                rejected_artifact_ids=rejected,
+                rejection_reasons=rejection_reasons,
+                requirement_complete=bool(accepted),
+            )
+        )
+    return tuple(result)
+
+
 def _tool_eligibility(
     folded: FoldedInvestigationState | None,
     evidence_index: EngineeringEvidenceIndex,
     p35: PerformanceMechanismAssessment,
     engineering_knowledge: object,
+    engineering_case: CanonicalEngineeringCase,
 ) -> tuple[CrewChiefToolEligibility, ...]:
     """Expose the server-owned, deterministic reason each tool can or cannot run."""
 
@@ -2480,9 +2606,8 @@ def _tool_eligibility(
         and item.experiment_factor_id is not None
         and item.setup_authorized
     )
-    response_evidence_available = any(
-        producer.startswith("p35.response.") for producer in producers
-    )
+    usable_response_relations = _usable_response_relations(engineering_case)
+    response_evidence_available = bool(usable_response_relations)
     tier_by_band = {
         "integrity": "integrity_context",
         "context": "integrity_context",
@@ -2516,9 +2641,8 @@ def _tool_eligibility(
                 for item in compile_engineering_semantic_registry().entries
                 if tool_id in item.crew_inspection_tool_ids
             }
-            satisfied_by_response = any(
-                f"p35.response.{relation}" in producers
-                for relation in satisfying_relations
+            satisfied_by_response = bool(
+                satisfying_relations.intersection(usable_response_relations)
             )
             if satisfied_by_response:
                 relevant = False
@@ -5079,10 +5203,14 @@ def build_crew_chief_workspace(
         p34_ledger_revision = canonical_json_sha256(
             {"state": "blocked", "reason": str(exc)}
         )
+    case_repository = EngineeringCaseRepository(db_path)
+    stable_case_id = engineering_case_id(run_id=run_id, session_id=session_id)
+    driver_intent = case_repository.current_driver_intent(stable_case_id)
     cache_key = (
         *_workspace_cache_key(identity, db_path),
         p34_ledger_revision,
         str(continue_action_count),
+        driver_intent.intent_sha256 if driver_intent is not None else "no-driver-intent",
     )
     with _CACHE_LOCK:
         cached = _CACHE.get(cache_key)
@@ -5090,6 +5218,8 @@ def build_crew_chief_workspace(
             return cached.model_copy(
                 update={"cache_state": "warm", "generated_at": _now()}
             )
+        global _WORKSPACE_BUILD_COUNT
+        _WORKSPACE_BUILD_COUNT += 1
     question = _driver_question(
         identity,
         investigation,
@@ -5272,14 +5402,19 @@ def build_crew_chief_workspace(
     response_observation = (
         p35.response_observations[0] if p35.response_observations else None
     )
-    p19_response_admissions = build_p19_response_admissions(
+    response_expectation_contracts = build_response_expectation_contracts(
+        engineering_knowledge.hypotheses
+    )
+    response_evaluations, p19_response_admissions = (
+        build_p19_response_evaluations_and_admissions(
         case_id=response_artifacts[0].case_id
         if response_artifacts
-        else f"p3543case_{identity.workspace_revision[:24]}",
+        else engineering_case_id(run_id=run_id, session_id=session_id),
         case_revision_sha256=identity.workspace_revision,
         p19_reasoning_snapshot_sha256=identity.reasoning_snapshot_sha256,
         causes=bundle.report.reasoning_snapshot.causes,
         response_artifacts=response_artifacts,
+        expectation_contracts=response_expectation_contracts,
         driver_demand_state=(
             response_observation.driver_demand_state
             if response_observation is not None
@@ -5291,29 +5426,23 @@ def build_crew_chief_workspace(
             else "unavailable"
         ),
         traffic_blocked=p35.traffic_blocked,
+        )
     )
     effect_readiness = build_setup_effect_readiness(
         engineering_knowledge.hypotheses,
         response_artifacts,
         p19_response_admissions,
     )
-    capability_resolutions = build_capability_resolutions(
+    evidence_deficits = build_evidence_deficits(
         effect_readiness,
         response_artifacts,
     )
-    engineering_case = build_canonical_engineering_case(
-        identity=identity,
-        recording_sha256=recording_sha256,
-        evidence_index_sha256=evidence_index.index_hash,
-        p351_projection=engineering_knowledge,
-        response_artifacts=response_artifacts,
-        p19_admissions=p19_response_admissions,
-        p35=p35,
-        p26=p26,
-        terminal_decision=decision,
-        effect_readiness=effect_readiness,
-        capability_resolutions=capability_resolutions,
-        investigation_id=(investigation.investigation_id if investigation else None),
+    effect_readiness = attach_deficits_to_readiness(
+        effect_readiness, evidence_deficits
+    )
+    capability_resolutions = build_capability_resolutions(
+        evidence_deficits,
+        response_artifacts,
     )
     baseline_subgoal = _subgoal(
         bundle,
@@ -5325,8 +5454,45 @@ def build_crew_chief_workspace(
         evidence_index,
         engineering_knowledge,
     )
+    mission = build_engineering_mission(
+        decision,
+        response_artifacts=response_artifacts,
+        strongest_contradiction=critique.strongest_contradiction,
+        completion_criteria=(
+            contract.acceptance_rule
+            if contract is not None
+            else bundle.report.briefing.success_check
+        ),
+    )
+    engineering_case = build_canonical_engineering_case(
+        identity=identity,
+        recording_sha256=recording_sha256,
+        evidence_index_sha256=evidence_index.index_hash,
+        p351_projection=engineering_knowledge,
+        response_artifacts=response_artifacts,
+        response_expectation_contracts=response_expectation_contracts,
+        response_expectation_evaluations=response_evaluations,
+        p19_admissions=p19_response_admissions,
+        p35=p35,
+        p26=p26,
+        terminal_decision=decision,
+        effect_readiness=effect_readiness,
+        evidence_deficits=evidence_deficits,
+        capability_resolutions=capability_resolutions,
+        investigation_id=(investigation.investigation_id if investigation else None),
+        mission=mission,
+        driver_intent=driver_intent,
+        crew_event_head_sha256=(events[-1].event_hash if events else None),
+        crew_current_subgoal=(
+            baseline_subgoal.subgoal_id if baseline_subgoal is not None else None
+        ),
+        crew_critic_state=critique.outcome,
+    )
     tool_eligibility = _tool_eligibility(
-        folded, evidence_index, p35, engineering_knowledge
+        folded, evidence_index, p35, engineering_knowledge, engineering_case
+    )
+    inspection_evidence_qualifications = _inspection_evidence_qualifications(
+        engineering_case
     )
     investigation_improvement = _p34_projection_for_identity(
         identity,
@@ -5364,6 +5530,7 @@ def build_crew_chief_workspace(
         engineering_case=engineering_case,
         available_tools=_TOOLS,
         tool_eligibility=tool_eligibility,
+        inspection_evidence_qualifications=inspection_evidence_qualifications,
         current_subgoal=subgoal,
         latest_tool_result=latest_result,
         critique=critique,
@@ -5402,6 +5569,14 @@ def build_crew_chief_workspace(
         if len(_CACHE) > 24:
             _CACHE.pop(next(iter(_CACHE)))
     return workspace
+
+
+def crew_chief_workspace_stats() -> dict[str, int]:
+    with _CACHE_LOCK:
+        return {
+            "build_count": _WORKSPACE_BUILD_COUNT,
+            "cache_entries": len(_CACHE),
+        }
 
 
 def _event(

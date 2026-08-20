@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from threading import RLock
 from typing import Any
 
 from racelab_engine.identity import canonical_json_sha256
@@ -14,17 +15,36 @@ from racelab_engine.models.engineering_case import (
     CanonicalEngineeringCase,
     CaseQuantityObservability,
     CapabilityEvidenceResolution,
+    DriverIntent,
+    EngineeringEvidenceDeficit,
     EngineeringCaseCampaignCapture,
+    EngineeringMission,
     EngineeringResponseArtifact,
     EngineeringSemanticFocusState,
     P19ResponseAdmission,
-    P19ResponseCauseAssessment,
+    ResponseChannelLineage,
+    ResponseExpectationContract,
+    ResponseExpectationEvaluation,
     SetupEffectReadiness,
+)
+from racelab_engine.services.p19_response_admission_service import (
+    build_p19_response_evaluations_and_admissions,
 )
 
 
-def engineering_case_id(workspace_revision: str) -> str:
-    return f"p3543case_{workspace_revision[:24]}"
+_CASE_BUILD_LOCK = RLock()
+_CASE_PROJECTION_BUILD_COUNT = 0
+
+
+def engineering_case_id(*, run_id: str, session_id: str) -> str:
+    identity = canonical_json_sha256(
+        {
+            "schema": "p3544.engineering-case-lifecycle.v1",
+            "run_id": run_id,
+            "session_id": session_id,
+        }
+    )
+    return f"p3543case_{identity[:24]}"
 
 
 def _producer_for_relation(relation: str) -> str:
@@ -44,7 +64,7 @@ def build_engineering_response_artifacts(
     recording_sha256: str,
     operational_evidence: Sequence[Any],
 ) -> tuple[EngineeringResponseArtifact, ...]:
-    case_id = engineering_case_id(workspace_revision)
+    case_id = engineering_case_id(run_id=run_id, session_id=session_id)
     return tuple(
         EngineeringResponseArtifact.build(
             artifact_id=item.evidence_id,
@@ -55,6 +75,7 @@ def build_engineering_response_artifacts(
             setup_id=setup_id,
             source_recording_sha256=recording_sha256,
             source_producer_id=_producer_for_relation(item.relation),
+            source_producer_version="p35.4.4.response-artifact.v1",
             relation=item.relation,
             lap_pct_start=item.lap_pct_start,
             lap_pct_end=item.lap_pct_end,
@@ -65,7 +86,33 @@ def build_engineering_response_artifacts(
                 f"{recording_sha256}:lap:{lap_number}"
                 for lap_number in item.source_lap_numbers
             ),
+            physical_episode_sha256=canonical_json_sha256(
+                {
+                    "recording": recording_sha256,
+                    "producer": _producer_for_relation(item.relation),
+                    "relation": item.relation,
+                    "phase": item.phase,
+                    "lap_pct_start": item.lap_pct_start,
+                    "lap_pct_end": item.lap_pct_end,
+                    "source_artifact_ids": list(item.source_artifact_ids),
+                    "independence_unit_ids": [
+                        f"{recording_sha256}:lap:{lap_number}"
+                        for lap_number in item.source_lap_numbers
+                    ],
+                }
+            ),
+            speed_min_mps=item.speed_min_mps,
+            speed_median_mps=item.speed_median_mps,
+            speed_max_mps=item.speed_max_mps,
+            metric_channel_lineage=tuple(
+                ResponseChannelLineage(
+                    metric_id=metric.metric_id,
+                    source_channel_ids=metric.source_channels,
+                )
+                for metric in item.metrics
+            ),
             operational_evidence=item,
+            evidence_state=item.evidence_state,
         )
         for item in operational_evidence
     )
@@ -81,100 +128,20 @@ def build_p19_response_admissions(
     driver_demand_state: str,
     context_state: str,
     traffic_blocked: bool,
+    expectation_contracts: Sequence[ResponseExpectationContract] = (),
 ) -> tuple[P19ResponseAdmission, ...]:
-    admissions: list[P19ResponseAdmission] = []
-    exact_context = (
-        driver_demand_state == "matched"
-        and context_state == "qualified"
-        and not traffic_blocked
+    _evaluations, admissions = build_p19_response_evaluations_and_admissions(
+        case_id=case_id,
+        case_revision_sha256=case_revision_sha256,
+        p19_reasoning_snapshot_sha256=p19_reasoning_snapshot_sha256,
+        causes=causes,
+        response_artifacts=response_artifacts,
+        expectation_contracts=expectation_contracts,
+        driver_demand_state=driver_demand_state,
+        context_state=context_state,
+        traffic_blocked=traffic_blocked,
     )
-    for artifact in response_artifacts:
-        semantic = semantic_entry(artifact.relation)
-        if semantic is None:
-            admissions.append(
-                P19ResponseAdmission.build(
-                    case_id=case_id,
-                    case_revision_sha256=case_revision_sha256,
-                    response_artifact_id=artifact.artifact_id,
-                    p19_reasoning_snapshot_sha256=p19_reasoning_snapshot_sha256,
-                    assessments=(),
-                    state="blocked",
-                    blocker_reasons=("No reviewed P19 response relationship exists.",),
-                )
-            )
-            continue
-        assessments: list[P19ResponseCauseAssessment] = []
-        for cause in causes:
-            matched = tuple(
-                value
-                for value in getattr(cause, "mechanism_keys", ())
-                if value in semantic.p20_mechanism_ids
-            )
-            if not matched:
-                continue
-            if not exact_context:
-                result = "blocked"
-                blockers = (
-                    "P19 response admission requires matched driver demand, qualified context, and clear traffic.",
-                )
-                basis = "The observation remains visible but cannot enter a P19 support contract."
-            elif getattr(cause, "status", "unresolved") in {"likely", "possible"}:
-                result = "supports_existing_contract"
-                blockers = ()
-                basis = (
-                    "The raw response observation satisfies this existing P19 mechanism contract; "
-                    "the current cause rank and terminal action are unchanged."
-                )
-            else:
-                result = "unresolved"
-                blockers = ()
-                basis = (
-                    "The response is mechanically related, but P19 does not admit it as support "
-                    "for the current cause state."
-                )
-            assessments.append(
-                P19ResponseCauseAssessment(
-                    cause_id=cause.cause_id,
-                    matched_mechanism_ids=matched,
-                    result=result,
-                    basis=basis,
-                    blocker_reasons=blockers,
-                )
-            )
-        if not assessments:
-            state = "unresolved"
-            blockers = ()
-        elif all(item.result == "blocked" for item in assessments):
-            state = "blocked"
-            blockers = tuple(
-                dict.fromkeys(
-                    reason
-                    for item in assessments
-                    for reason in item.blocker_reasons
-                )
-            )
-        elif any(
-            item.result
-            in {"supports_existing_contract", "contradicts_existing_contract"}
-            for item in assessments
-        ):
-            state = "admitted"
-            blockers = ()
-        else:
-            state = "unresolved"
-            blockers = ()
-        admissions.append(
-            P19ResponseAdmission.build(
-                case_id=case_id,
-                case_revision_sha256=case_revision_sha256,
-                response_artifact_id=artifact.artifact_id,
-                p19_reasoning_snapshot_sha256=p19_reasoning_snapshot_sha256,
-                assessments=tuple(assessments),
-                state=state,
-                blocker_reasons=blockers,
-            )
-        )
-    return tuple(admissions)
+    return admissions
 
 
 def _relations_for_mechanisms(mechanism_ids: Iterable[str]) -> tuple[str, ...]:
@@ -186,20 +153,56 @@ def _relations_for_mechanisms(mechanism_ids: Iterable[str]) -> tuple[str, ...]:
     )
 
 
+def build_response_expectation_contracts(
+    hypotheses: Sequence[Any],
+) -> tuple[ResponseExpectationContract, ...]:
+    """Admit only explicit reviewed contracts already carried by producer truth.
+
+    P35.1 currently supplies direction-neutral validation targets, not numeric
+    sign/range/noise contracts.  Those hypotheses therefore remain measurable
+    but cannot be promoted by manufacturing a generic response expectation.
+    """
+
+    contracts: list[ResponseExpectationContract] = []
+    for hypothesis in hypotheses:
+        for raw in tuple(getattr(hypothesis, "response_expectation_contracts", ())):
+            contract = (
+                raw
+                if isinstance(raw, ResponseExpectationContract)
+                else ResponseExpectationContract.model_validate(raw)
+            )
+            p19_control = getattr(hypothesis, "p19_control", None)
+            if (
+                contract.owning_effect_id != hypothesis.effect_id
+                or contract.experiment_factor_id
+                != getattr(hypothesis, "experiment_factor_id", None)
+                or p19_control is None
+                or contract.control_key != p19_control.control_key
+            ):
+                raise ValueError(
+                    "response expectation does not match its exact P35.1/P19 bridge"
+                )
+            contracts.append(contract)
+    identities = tuple(item.expectation_contract_id for item in contracts)
+    if len(identities) != len(set(identities)):
+        raise ValueError("response expectation contracts must be unique")
+    return tuple(contracts)
+
+
 def build_setup_effect_readiness(
     hypotheses: Sequence[Any],
     response_artifacts: Sequence[EngineeringResponseArtifact],
     p19_admissions: Sequence[P19ResponseAdmission] = (),
 ) -> tuple[SetupEffectReadiness, ...]:
-    admitted_or_unresolved_ids = {
+    admitted_ids = {
         item.response_artifact_id
         for item in p19_admissions
-        if item.state != "blocked"
+        if item.state == "admitted"
     }
     apply_admission_gate = bool(p19_admissions)
     response_by_relation: dict[str, tuple[str, ...]] = {}
     for item in response_artifacts:
-        if apply_admission_gate and item.artifact_id not in admitted_or_unresolved_ids:
+        if apply_admission_gate and item.artifact_id not in admitted_ids:
             continue
         response_by_relation.setdefault(item.relation, ())
         response_by_relation[item.relation] = (
@@ -263,6 +266,7 @@ def build_setup_effect_readiness(
                 experiment_factor_id=hypothesis.experiment_factor_id,
                 countereffect_measurement_ids=hypothesis.countereffect_ids,
                 missing_evidence=missing,
+                deficit_ids=(),
                 authority=authority,
                 setup_authorized=setup_authorized,
             )
@@ -270,62 +274,245 @@ def build_setup_effect_readiness(
     return tuple(readiness)
 
 
-def build_capability_resolutions(
+def build_evidence_deficits(
     readiness: Sequence[SetupEffectReadiness],
     response_artifacts: Sequence[EngineeringResponseArtifact],
-) -> tuple[CapabilityEvidenceResolution, ...]:
+) -> tuple[EngineeringEvidenceDeficit, ...]:
+    """Build planner debt from typed readiness state, never from prose wording."""
+
     available_channels = {
         channel
         for artifact in response_artifacts
         for channel in artifact.operational_evidence.source_channels
     }
-    resolutions: dict[str, CapabilityEvidenceResolution] = {}
     registry = compile_engineering_semantic_registry()
     entry_by_relation = {item.relation_id: item for item in registry.entries}
-    for effect in readiness:
-        for missing in effect.missing_evidence:
-            relations = tuple(
-                entry_by_relation[relation]
-                for relation in effect.expected_response_relation_ids
-                if relation in entry_by_relation
+    deficits: list[EngineeringEvidenceDeficit] = []
+
+    def add(
+        effect: SetupEffectReadiness,
+        *,
+        code: str,
+        blockers: tuple[str, ...],
+        required_channels: tuple[str, ...] = (),
+        recovery_mode: str,
+        mission_eligible: bool,
+    ) -> None:
+        deficits.append(
+            EngineeringEvidenceDeficit.build(
+                code=code,
+                affected_contract_ids=effect.expected_response_relation_ids,
+                affected_effect_ids=(effect.effect_id,),
+                required_channel_ids=required_channels,
+                current_channel_capability_ids=tuple(
+                    f"channel:{channel}"
+                    for channel in required_channels
+                    if channel in available_channels
+                ),
+                blocker_reasons=blockers,
+                recovery_mode=recovery_mode,
+                mission_eligible=mission_eligible,
             )
-            required = tuple(
-                dict.fromkeys(
-                    channel for relation in relations for channel in relation.required_channel_ids
+        )
+
+    for effect in readiness:
+        relations = tuple(
+            entry_by_relation[item]
+            for item in effect.expected_response_relation_ids
+            if item in entry_by_relation
+        )
+        required_channels = tuple(
+            dict.fromkeys(
+                channel
+                for relation in relations
+                for channel in relation.required_channel_ids
+            )
+        )
+        missing_channels = tuple(
+            channel for channel in required_channels if channel not in available_channels
+        )
+        if not effect.expected_response_relation_ids:
+            add(
+                effect,
+                code="EXACT_SEMANTIC_BRIDGE_MISSING",
+                blockers=("No exact reviewed response relation exists for this effect.",),
+                recovery_mode="unavailable",
+                mission_eligible=False,
+            )
+            continue
+        if effect.state == "blocked":
+            add(
+                effect,
+                code="BUILD_APPLICABILITY_BLOCKED",
+                blockers=effect.missing_evidence
+                or ("Reviewed car/build applicability blocks this effect.",),
+                required_channels=required_channels,
+                recovery_mode="unavailable",
+                mission_eligible=False,
+            )
+            continue
+        if effect.state == "p19_testable":
+            continue
+        if effect.state == "response_evidence_ready":
+            add(
+                effect,
+                code="EXACT_LEGAL_OPTION_MISSING",
+                blockers=("An exact adjacent legal setup option is not yet bound.",),
+                required_channels=tuple(
+                    dict.fromkeys(
+                        channel
+                        for artifact in response_artifacts
+                        if artifact.artifact_id in effect.response_artifact_ids
+                        for channel in artifact.operational_evidence.source_channels
+                    )
+                ),
+                recovery_mode="controlled_test",
+                mission_eligible=False,
+            )
+            add(
+                effect,
+                code="P19_AUTHORITY_REQUIRED",
+                blockers=("Only the current exact P19 projection may authorize this test.",),
+                recovery_mode="controlled_test",
+                mission_eligible=False,
+            )
+        elif missing_channels:
+            add(
+                effect,
+                code="CHANNEL_MISSING",
+                blockers=(
+                    "Required healthy response channels are unavailable: "
+                    + ", ".join(missing_channels),
+                ),
+                required_channels=required_channels,
+                recovery_mode="collect_new_run",
+                mission_eligible=True,
+            )
+        elif effect.state == "measurement_ready":
+            add(
+                effect,
+                code="INSUFFICIENT_REPETITION",
+                blockers=("Independent exact-context response repetition is still required.",),
+                required_channels=required_channels,
+                recovery_mode="collect_more_laps",
+                mission_eligible=True,
+            )
+    unique = {item.deficit_id: item for item in deficits}
+    return tuple(unique.values())
+
+
+def attach_deficits_to_readiness(
+    readiness: Sequence[SetupEffectReadiness],
+    deficits: Sequence[EngineeringEvidenceDeficit],
+) -> tuple[SetupEffectReadiness, ...]:
+    return tuple(
+        item.model_copy(
+            update={
+                "deficit_ids": tuple(
+                    deficit.deficit_id
+                    for deficit in deficits
+                    if item.effect_id in deficit.affected_effect_ids
+                )
+            }
+        )
+        for item in readiness
+    )
+
+
+def build_engineering_mission(
+    terminal_decision: Any,
+    *,
+    response_artifacts: Sequence[EngineeringResponseArtifact],
+    strongest_contradiction: str | None,
+    completion_criteria: str,
+) -> EngineeringMission:
+    """Project one display mission by exact mirroring of the P19 terminal object."""
+
+    artifact = response_artifacts[0] if response_artifacts else None
+    where = (
+        f"{artifact.phase} · {artifact.lap_pct_start:.1f}–{artifact.lap_pct_end:.1f}%"
+        if artifact is not None
+        else "Current exact run scope"
+    )
+    authority = getattr(terminal_decision, "authority", "context_only")
+    source_authority = (
+        "p19_exact_mirror"
+        if authority == "p19_projection_only"
+        else "p19_measurement_mirror"
+        if authority == "measurement_only"
+        else "navigation_only"
+    )
+    terminal_hash = canonical_json_sha256(terminal_decision)
+    blockers = tuple(getattr(terminal_decision, "blocker_reasons", ()))
+    return EngineeringMission(
+        what=str(getattr(terminal_decision, "title", "Current engineering case")),
+        where=where,
+        why_it_matters=(
+            "This is the current exact-scope P19 terminal decision."
+            if source_authority != "navigation_only"
+            else "Current evidence does not authorize a controlled setup action."
+        ),
+        uncertain=(
+            strongest_contradiction
+            or (blockers[0] if blockers else "No stronger causal claim is authorized.")
+        ),
+        next=str(getattr(terminal_decision, "instruction", "Hold the current setup.")),
+        done_when=completion_criteria,
+        source_authority=source_authority,
+        terminal_move_sha256=terminal_hash,
+        source_artifact_ids=tuple(
+            dict.fromkeys(
+                (
+                    *tuple(getattr(terminal_decision, "source_event_ids", ())),
+                    *(item.artifact_id for item in response_artifacts),
                 )
             )
-            text = missing.casefold()
-            if "tire" in text and any(
-                token in text for token in ("wear", "pressure", "temperature", "carcass")
-            ):
-                status = "pit_snapshot_only"
-                recovery = "Capture the required tire state at a verified pit boundary."
-            elif required and set(required) <= available_channels:
-                status = "available_now"
-                recovery = "Open the admitted response artifact in Telemetry Capabilities."
-            elif required:
-                status = "requires_new_run"
-                recovery = "Record another exact-context run with the required healthy channels."
-            else:
-                status = "structurally_unavailable"
-                recovery = "No current typed channel contract can satisfy this requirement."
-            identity = canonical_json_sha256([missing, required, status, recovery])
-            resolutions.setdefault(
-                identity,
-                CapabilityEvidenceResolution(
-                    resolution_id=f"p3543cap_{identity[:24]}",
-                    missing_evidence=missing,
-                    required_channel_ids=required,
-                    status=status,
-                    recovery=recovery,
-                    source_artifact_ids=tuple(
-                        artifact.artifact_id
-                        for artifact in response_artifacts
-                        if set(artifact.operational_evidence.source_channels)
-                        & set(required)
-                    ),
-                ),
-            )
+        ),
+        setup_authorized=source_authority == "p19_exact_mirror",
+    )
+
+
+def build_capability_resolutions(
+    deficits: Sequence[EngineeringEvidenceDeficit],
+    response_artifacts: Sequence[EngineeringResponseArtifact],
+) -> tuple[CapabilityEvidenceResolution, ...]:
+    resolutions: dict[str, CapabilityEvidenceResolution] = {}
+    for deficit in deficits:
+        status = {
+            "use_current_data": "available_now",
+            "collect_more_laps": "requires_more_laps",
+            "collect_new_run": "requires_new_run",
+            "pit_snapshot": "pit_snapshot_only",
+            "controlled_test": "controlled_test_required",
+            "unavailable": "structurally_unavailable",
+        }[deficit.recovery_mode]
+        recovery = {
+            "use_current_data": "Open the exact current artifact in Telemetry Capabilities.",
+            "collect_more_laps": "Record more eligible exact-context laps with the setup unchanged.",
+            "collect_new_run": "Record another exact-context run with the required healthy channels.",
+            "pit_snapshot": "Capture the required state at a verified pit boundary.",
+            "controlled_test": "Return to the exact P19 workflow boundary before testing.",
+            "unavailable": "No current typed measurement contract can satisfy this requirement.",
+        }[deficit.recovery_mode]
+        identity = canonical_json_sha256(
+            [deficit.deficit_id, deficit.required_channel_ids, status, recovery]
+        )
+        resolutions[identity] = CapabilityEvidenceResolution(
+            resolution_id=f"p3543cap_{identity[:24]}",
+            missing_evidence=deficit.blocker_reasons[0],
+            deficit_id=deficit.deficit_id,
+            deficit_code=deficit.code,
+            required_channel_ids=deficit.required_channel_ids,
+            status=status,
+            recovery=recovery,
+            recovery_mode=deficit.recovery_mode,
+            source_artifact_ids=tuple(
+                artifact.artifact_id
+                for artifact in response_artifacts
+                if set(artifact.operational_evidence.source_channels)
+                & set(deficit.required_channel_ids)
+            ),
+        )
     return tuple(resolutions.values())
 
 
@@ -336,16 +523,39 @@ def build_canonical_engineering_case(
     evidence_index_sha256: str,
     p351_projection: Any,
     response_artifacts: Sequence[EngineeringResponseArtifact],
+    response_expectation_contracts: Sequence[ResponseExpectationContract],
+    response_expectation_evaluations: Sequence[ResponseExpectationEvaluation],
     p19_admissions: Sequence[P19ResponseAdmission],
     p35: Any,
     p26: Any,
     terminal_decision: Any,
     effect_readiness: Sequence[SetupEffectReadiness],
+    evidence_deficits: Sequence[EngineeringEvidenceDeficit],
     capability_resolutions: Sequence[CapabilityEvidenceResolution],
     investigation_id: str | None,
+    mission: EngineeringMission,
+    driver_intent: DriverIntent | None = None,
+    crew_event_head_sha256: str | None = None,
+    crew_current_subgoal: str | None = None,
+    crew_critic_state: str = "unavailable",
 ) -> CanonicalEngineeringCase:
-    case_id = engineering_case_id(identity.workspace_revision)
-    first_artifact = response_artifacts[0] if response_artifacts else None
+    global _CASE_PROJECTION_BUILD_COUNT
+    with _CASE_BUILD_LOCK:
+        _CASE_PROJECTION_BUILD_COUNT += 1
+    case_id = engineering_case_id(run_id=identity.run_id, session_id=identity.session_id)
+    admitted_artifact_ids = {
+        item.response_artifact_id
+        for item in p19_admissions
+        if item.state == "admitted"
+    }
+    first_artifact = next(
+        (
+            item
+            for item in response_artifacts
+            if item.artifact_id in admitted_artifact_ids
+        ),
+        response_artifacts[0] if response_artifacts else None,
+    )
     relation = first_artifact.relation if first_artifact is not None else None
     semantic = semantic_entry(relation) if relation is not None else None
     effect_ids = tuple(
@@ -386,11 +596,43 @@ def build_canonical_engineering_case(
     primary_opportunity_id = next(iter(p35.performance_opportunity_ids), None)
     terminal_hash = canonical_json_sha256(terminal_decision)
     quantities: dict[str, CaseQuantityObservability] = {}
+    quantity_channel_groups: dict[str, tuple[tuple[str, ...], ...]] = {
+        "quantity:brake_input": (("brake_pct",),),
+        "quantity:four_corner_brake_pressure": (
+            ("lf_brake_line_pressure_bar",),
+            ("rf_brake_line_pressure_bar",),
+            ("lr_brake_line_pressure_bar",),
+            ("rr_brake_line_pressure_bar",),
+        ),
+        "quantity:longitudinal_acceleration": (("long_accel", "long_accel_g"),),
+        "quantity:shock_deflection": (
+            ("lf_shock_defl_in",),
+            ("rf_shock_defl_in",),
+            ("lr_shock_defl_in",),
+            ("rr_shock_defl_in",),
+        ),
+        "quantity:shock_velocity": (
+            ("lf_shock_vel_in_s",),
+            ("rf_shock_vel_in_s",),
+            ("lr_shock_vel_in_s",),
+            ("rr_shock_vel_in_s",),
+        ),
+        "quantity:steering_wheel_demand": (("steering_deg", "abs_steering_deg"),),
+        "quantity:throttle_input": (("throttle_pct",),),
+        "quantity:vertical_acceleration": (("vert_accel_g", "vertical_accel"),),
+        "quantity:yaw_rate": (("yaw_rate",),),
+    }
     for artifact in response_artifacts:
         relation_entry = semantic_entry(artifact.relation)
         if relation_entry is None:
             continue
         for quantity_id in relation_entry.p26_quantity_ids:
+            channel_groups = quantity_channel_groups.get(quantity_id)
+            source_channels = set(artifact.operational_evidence.source_channels)
+            if channel_groups is None or not all(
+                source_channels.intersection(group) for group in channel_groups
+            ):
+                continue
             existing = quantities.get(quantity_id)
             artifact_ids = tuple(
                 dict.fromkeys(
@@ -406,6 +648,7 @@ def build_canonical_engineering_case(
                 response_artifact_ids=artifact_ids,
             )
     return CanonicalEngineeringCase.build(
+        case_id=case_id,
         case_revision_sha256=identity.workspace_revision,
         run_id=identity.run_id,
         session_id=identity.session_id,
@@ -421,9 +664,18 @@ def build_canonical_engineering_case(
         p35_assessment_sha256=identity.p35_assessment_sha256,
         p351_projection_sha256=p351_projection.projection_sha256,
         p33_projection_sha256=identity.learning_projection_sha256,
+        semantic_registry_sha256=compile_engineering_semantic_registry().registry_sha256,
         evidence_index_sha256=evidence_index_sha256,
+        driver_intent=driver_intent,
+        crew_event_head_sha256=crew_event_head_sha256,
+        crew_current_subgoal=crew_current_subgoal,
+        crew_critic_state=crew_critic_state,
+        active_workflow_id=getattr(identity, "active_workflow_id", None),
+        active_workflow_revision=getattr(identity, "active_workflow_revision", None),
         primary_opportunity_id=primary_opportunity_id,
         response_artifacts=tuple(response_artifacts),
+        response_expectation_contracts=tuple(response_expectation_contracts),
+        response_expectation_evaluations=tuple(response_expectation_evaluations),
         p19_response_admissions=tuple(p19_admissions),
         mechanism_ids=tuple(item.mechanism_id for item in p35.mechanism_separation),
         component_ids=tuple(item.component_id for item in p26.component_states),
@@ -432,6 +684,8 @@ def build_canonical_engineering_case(
         investigation_id=investigation_id,
         workspace_revision=identity.workspace_revision,
         terminal_move_sha256=terminal_hash,
+        mission=mission,
+        evidence_deficits=tuple(evidence_deficits),
         capability_resolutions=tuple(capability_resolutions),
         quantity_observability=tuple(quantities.values()),
         semantic_focus=focus,
@@ -444,11 +698,21 @@ def build_canonical_engineering_case(
     )
 
 
+def engineering_case_projection_stats() -> dict[str, int]:
+    with _CASE_BUILD_LOCK:
+        return {"build_count": _CASE_PROJECTION_BUILD_COUNT}
+
+
 __all__ = [
+    "attach_deficits_to_readiness",
     "build_capability_resolutions",
     "build_canonical_engineering_case",
+    "build_evidence_deficits",
+    "build_engineering_mission",
     "build_engineering_response_artifacts",
     "build_p19_response_admissions",
+    "build_response_expectation_contracts",
     "build_setup_effect_readiness",
     "engineering_case_id",
+    "engineering_case_projection_stats",
 ]

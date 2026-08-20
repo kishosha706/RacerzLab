@@ -202,9 +202,11 @@ def test_narrow_priority_rail_keeps_an_accessible_attention_trigger_and_focus_re
     assert "Priority evidence needs attention; expand Priority Rail" in app
     assert "priorityRailTriggerRef" in app
     assert "priorityRailTriggerRef.current?.focus()" in app
-    assert 'event.key !== "Escape"' in app
+    assert 'event.key === "Escape"' in app
+    assert 'event.key !== "Tab"' in app
+    assert 'element.setAttribute("inert", "")' in app
     assert "closePriorityRail();" in app
-    assert 'document.querySelector(\'[role="dialog"][aria-modal="true"]\')' in app
+    assert "'.cockpit-body > .priority-rail[role=\"dialog\"]'" in app
     assert '<AlertTriangle size={16} aria-hidden="true" />' in app
     assert "shell-attention" in app
     assert ".priority-rail.collapsed.shell-attention .rail-collapse-btn" in styles

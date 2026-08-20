@@ -58,7 +58,7 @@ const controlledResponseReceipt = (value: unknown, workflowId: string): boolean 
     || !Array.isArray(value.stages)
     || value.stages.length !== 3
     || !Array.isArray(value.expected_response_relation_ids)
-    || value.expected_response_relation_ids.length === 0
+    || !Array.isArray(value.expected_response_contract_ids)
     || !Array.isArray(value.observed_metric_deltas)
     || !["ready", "blocked"].includes(String(value.state))
     || !safeTexts(value.blocker_reasons)
@@ -76,13 +76,21 @@ const controlledResponseReceipt = (value: unknown, workflowId: string): boolean 
     && typeof item.setup_snapshot_sha256 === "string"
     && hash.test(item.setup_snapshot_sha256)
     && uniqueStrings(item.response_artifact_ids)
+    && uniqueStrings(item.response_artifact_sha256s)
+    && item.response_artifact_sha256s.length === item.response_artifact_ids.length
+    && item.response_artifact_sha256s.every((digest) => hash.test(digest))
+    && nonempty(item.producer_version)
+    && item.canonical_clock_contract === "qualified_session_tick"
     && uniqueStrings(item.source_channels)
     && Array.isArray(item.eligible_lap_numbers)
     && item.eligible_lap_numbers.length >= 3
   )) && new Set(runIds).size === 3
     && new Set(recordings).size === 3
     && (value.state === "ready"
-      ? value.observed_metric_deltas.length > 0 && value.blocker_reasons.length === 0
+      ? value.observed_metric_deltas.length > 0
+        && value.expected_response_relation_ids.length > 0
+        && value.expected_response_contract_ids.length > 0
+        && value.blocker_reasons.length === 0
       : value.observed_metric_deltas.length === 0 && value.blocker_reasons.length > 0);
 };
 

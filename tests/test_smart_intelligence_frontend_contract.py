@@ -54,6 +54,7 @@ def test_next_move_navigation_fails_closed_on_identity_scope_and_authority() -> 
     helper = _read("ui/src/utils/intelligenceNavigation.ts")
     app = _read("ui/src/App.tsx")
     engineer = _read("ui/src/tabs/EngineerTab.tsx")
+    mission = _read("ui/src/components/EngineeringMissionStrip.tsx")
 
     assert "move.run_id !== runId" in helper
     assert "workflowRevisionIsCanonical" in helper
@@ -74,11 +75,11 @@ def test_next_move_navigation_fails_closed_on_identity_scope_and_authority() -> 
     assert "projection.run_id === requestedRunId" in app
     assert "(projection.session_id ?? null) === requestedSessionId" in app
     assert 'projection.next_trustworthy_move?.authority === "navigation_only"' in app
-    assert 'data-authority={currentIntelligenceShellMove.authority}' in app
-    assert 'data-scope={intelligenceShellScope.kind}' in app
-    assert "Opens the evidence view only" in app
-    assert "openIntelligenceShellMove" in app
-    assert "focusEvidence({" in app
+    assert "<EngineeringMissionStrip />" in app
+    assert 'data-authority={mission.source_authority}' in mission
+    assert 'data-case-sha256={engineeringCase.case_sha256}' in mission
+    assert "Focus decision scope" in mission
+    assert "focusEvidence({" in mission
 
     assert "setupActionAuthorized={actionAuthorized}" in engineer
     assert "authorizedSetupAction={authorizedSetupAction}" in engineer

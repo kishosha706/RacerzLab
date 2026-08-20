@@ -3540,6 +3540,193 @@ td {
   }
 }
 
+/* P35.4.4 — one product-wide Engineering Case voice. */
+.engineering-mission-strip {
+  display: grid;
+  gap: 8px;
+  padding: 10px 14px;
+  border-block: 1px solid rgba(56, 189, 248, 0.28);
+  background: linear-gradient(90deg, rgba(8, 47, 73, 0.94), rgba(9, 16, 27, 0.97));
+  color: #e6f4ff;
+}
+
+.engineering-mission-strip > header,
+.engineering-scope-stack {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.engineering-mission-strip > header span,
+.engineering-mission-fields article > span,
+.engineering-scope-stack small {
+  color: #7dd3fc;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.engineering-mission-strip > header strong {
+  color: #a8bfd3;
+  font-size: 12px;
+}
+
+.engineering-mission-fields {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.engineering-mission-fields article {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid rgba(125, 211, 252, 0.14);
+  border-radius: 6px;
+  background: rgba(2, 8, 23, 0.56);
+}
+
+.engineering-mission-fields article > strong {
+  color: #edf8ff;
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.engineering-mission-fields .mission-next {
+  border-color: rgba(34, 197, 94, 0.42);
+  background: rgba(20, 83, 45, 0.24);
+}
+
+.engineering-scope-stack {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.engineering-scope-stack > span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  padding-right: 10px;
+  border-right: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.engineering-scope-stack button,
+.engineering-mission-strip.error button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid rgba(56, 189, 248, 0.42);
+  border-radius: 5px;
+  color: #dff6ff;
+  background: rgba(14, 116, 144, 0.2);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.engineering-mission-strip.loading,
+.engineering-mission-strip.error {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 54px;
+  font-size: 14px;
+}
+
+.engineering-mission-strip.error > div {
+  display: grid;
+  gap: 3px;
+}
+
+.engineering-mission-strip.error span {
+  color: #fca5a5;
+  font-size: 12px;
+}
+
+.gr-row.is-selectable {
+  width: 100%;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.gr-row.is-selectable:hover,
+.gr-row.is-selectable:focus-visible {
+  background: rgba(56, 189, 248, 0.08);
+  outline: 1px solid rgba(56, 189, 248, 0.42);
+  outline-offset: -1px;
+}
+
+.engineer-learning-section-nav {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+  padding: 7px;
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  background: rgba(5, 12, 22, 0.96);
+}
+
+.engineer-learning-section-nav button {
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: #9fb2c6;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.engineer-learning-section-nav button.active {
+  border-color: rgba(56, 189, 248, 0.48);
+  color: #e6f7ff;
+  background: rgba(14, 116, 144, 0.22);
+}
+
+@media screen and (max-width: 700px) {
+  .engineer-learning-section-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media screen and (max-width: 1180px) {
+  .engineering-mission-fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media screen and (max-width: 700px) {
+  .engineering-mission-strip {
+    padding: 8px;
+  }
+
+  .engineering-mission-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .engineering-mission-fields article:nth-child(3),
+  .engineering-mission-fields article:nth-child(4) {
+    display: none;
+  }
+
+  .engineering-mission-strip > header,
+  .engineering-scope-stack {
+    align-items: flex-start;
+  }
+}
+
 @media (max-width: 760px) {
   .track-map-overlay {
     max-width: calc(100vw - 20px);
@@ -8573,6 +8760,44 @@ td {
   text-align: center;
 }
 
+.session-list-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.session-list-tools label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(8, 15, 24, 0.88);
+}
+
+.session-list-tools input {
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  font-size: 12px;
+}
+
+.session-list-tools button,
+.session-card-rename button {
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  background: rgba(15, 23, 42, 0.8);
+  font-size: 12px;
+}
+
 @media (max-width: 680px) {
   .start-shell {
     padding: 18px 14px 26px;
@@ -8621,6 +8846,7 @@ td {
 }
 
 .session-card {
+  position: relative;
   display: flex;
   flex-shrink: 0;
   align-items: stretch;
@@ -8675,6 +8901,45 @@ td {
   align-items: center;
   padding: 0 12px;
   flex-shrink: 0;
+  gap: 3px;
+}
+
+.session-card-rename {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.session-card-rename input {
+  width: 160px;
+  min-height: 34px;
+  padding: 5px 7px;
+  border: 1px solid var(--cyan);
+  border-radius: 5px;
+  color: var(--text);
+  background: #07101b;
+  font-size: 12px;
+}
+
+@media (max-width: 680px) {
+  .session-list-tools {
+    grid-template-columns: 1fr;
+  }
+
+  .session-card-actions {
+    flex-direction: column;
+    justify-content: center;
+    padding: 6px;
+  }
+
+  .session-card-rename {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    z-index: 2;
+    padding: 8px;
+    background: #07101b;
+  }
 }
 
 .session-delete-btn {
@@ -12720,6 +12985,17 @@ button:focus:not(:focus-visible) {
     isolation: isolate;
   }
 
+  .priority-modal-backdrop {
+    position: absolute;
+    z-index: 29;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: rgba(0, 0, 0, 0.66);
+  }
+
   .cockpit-body[data-priority-rail-layout="overlay"] > .priority-rail {
     position: absolute;
     z-index: 30;
@@ -16559,4 +16835,94 @@ button:focus:not(:focus-visible) {
   padding-left: 1.15rem;
   color: var(--muted);
   font-size: 0.75rem;
+}
+
+/* P35.4.4 readability floor: density changes spacing, never legibility. */
+.tab-decision-broadcast p,
+.tab-decision-broadcast h2,
+.tab-decision-broadcast h3,
+.tab-decision-broadcast .tab-handoff-actions button,
+.engineer-briefing p,
+.engineer-decision-action strong,
+.crew-chief-deck > header,
+.crew-chief-deck .speed-story-next,
+.dialin-panel p,
+.garage-board .gr-row .gr-value,
+.garage-board .gr-row .gr-label {
+  font-size: max(14px, 0.875rem);
+  line-height: 1.4;
+}
+
+.tab-decision-facts,
+.tab-decision-facts span,
+.engineering-awareness,
+.vehicle-systems-panel,
+.engineer-smart-list,
+.engineer-check-list,
+.priority-rail .priority-title,
+.priority-rail .priority-description,
+.session-card-date,
+.section-note,
+.muted {
+  font-size: max(12px, 0.75rem);
+  line-height: 1.4;
+}
+
+.cockpit-shell svg text,
+.platform-chart svg text,
+.platform-local-trace svg text,
+.track-map-overlay svg text {
+  font-size: 11px !important;
+}
+
+.cockpit-shell .context-control-label,
+.cockpit-shell .context-control-position,
+.cockpit-shell .context-bar small,
+.cockpit-shell .mode-badge span,
+.cockpit-shell .workspace-nav-rail span,
+.cockpit-shell .workspace-nav-rail small,
+.cockpit-shell .priority-rail span,
+.cockpit-shell .priority-rail small,
+.cockpit-shell .priority-rail p,
+.cockpit-shell .workspace-toolbar span,
+.cockpit-shell .workspace-toolbar small,
+.cockpit-shell .event-timeline span,
+.cockpit-shell .event-timeline small {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.cockpit-shell .context-item-primary,
+.cockpit-shell .session-info-trigger,
+.cockpit-shell .context-tag-badge,
+.cockpit-shell .mode-badge strong,
+.cockpit-shell .nav-rail-item strong,
+.cockpit-shell .priority-rail button,
+.cockpit-shell .priority-rail strong,
+.cockpit-shell .nbc-action {
+  font-size: 12px;
+}
+
+.cockpit-shell .context-item strong,
+.cockpit-shell .shell-toolbar-action,
+.cockpit-shell .shell-session-name,
+.cockpit-shell .shell-workspace-name,
+.cockpit-shell .shell-workspace-broadcast strong,
+.cockpit-shell .eyebrow,
+.cockpit-shell .engineer-header-badges span,
+.cockpit-shell .crew-chief-authority,
+.cockpit-shell .speed-story-grid span {
+  font-size: 12px;
+}
+
+.cockpit-shell .speed-story p b {
+  font-size: 12px;
+}
+
+.cockpit-workspace-main > div,
+.smart-engineer-workspace {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }

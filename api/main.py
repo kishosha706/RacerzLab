@@ -11,6 +11,7 @@ from api.routes_crew_chief import router as crew_chief_router
 from api.routes_analysis_contracts import router as analysis_contracts_router
 from api.routes_events import router as events_router
 from api.routes_engineering import router as engineering_router
+from api.routes_engineering_case import router as engineering_case_router
 from api.routes_engineering_awareness import router as engineering_awareness_router
 from api.routes_evaluation import router as evaluation_router
 from api.routes_imports import router as imports_router
@@ -82,6 +83,7 @@ app.include_router(stints_router)
 app.include_router(events_router)
 app.include_router(intelligence_router)
 app.include_router(engineering_router)
+app.include_router(engineering_case_router)
 app.include_router(engineering_awareness_router)
 app.include_router(evaluation_router)
 app.include_router(p3_engineering_router)

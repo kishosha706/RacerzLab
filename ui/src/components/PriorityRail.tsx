@@ -22,6 +22,7 @@ type PriorityRailProps = {
   loadStatus?: "idle" | "loading" | "ready" | "clear" | "unavailable" | "error";
   loadError?: string | null;
   eventVisibilityMode: PlatformEventVisibilityMode;
+  modal?: boolean;
 };
 
 export function PriorityRail({
@@ -34,6 +35,7 @@ export function PriorityRail({
   loadStatus = "ready",
   loadError,
   eventVisibilityMode,
+  modal = false,
 }: PriorityRailProps) {
   const { selection, setWorkspace, focusEvidence } = useTelemetrySelection();
   const internalRequestKey = `${runId}:${selectedLap ?? "all"}`;
@@ -188,7 +190,12 @@ export function PriorityRail({
   }, [valid, selection]);
 
   return (
-    <aside className={`priority-rail${collapsed ? " collapsed" : ""}`} aria-label="Priority evidence">
+    <aside
+      className={`priority-rail${collapsed ? " collapsed" : ""}`}
+      aria-label="Priority evidence"
+      role={modal ? "dialog" : "complementary"}
+      aria-modal={modal ? "true" : undefined}
+    >
       <button
         type="button"
         className="rail-collapse-btn"

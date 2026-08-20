@@ -1,16 +1,16 @@
 import { AlertTriangle, CheckCircle2, Circle, ClipboardList, Crosshair, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  analyzeRunDialIn,
   attachControlledWorkflowStage,
   cancelControlledWorkflow,
   fetchControlledWorkflowReport,
   fetchControlledWorkflows,
   scoreControlledWorkflow,
-  startControlledWorkflow,
+  submitAtomicDriverIntentWorkflow,
 } from "../api/client";
 import { useCompareBasket } from "../store/CompareBasketContext";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
+import { useEngineeringCase } from "../store/EngineeringCaseContext";
 import { setupSnapshotMatchesRun } from "../utils/evidenceTrust";
 import { evidenceStrengthOutOf100 } from "../utils/evidenceScore";
 import {
@@ -652,6 +652,7 @@ export function DialInTab({
   intelligenceAuthorityStatus,
   intelligenceAuthorityRecovery,
 }: DialInTabProps) {
+  const { engineeringCase, replaceRevision, invalidate: invalidateEngineeringCase } = useEngineeringCase();
   const { basket } = useCompareBasket();
   const { selection, setWorkspace } = useTelemetrySelection();
   const dialRequestSeqRef = useRef(0);
@@ -1110,25 +1111,19 @@ export function DialInTab({
     setResponse(null);
     setResponseRequestBinding(null);
     try {
-      const [dialResult, workflowResult] = await Promise.allSettled([
-        analyzeRunDialIn(overview.run_id, {
-          complaint: trimmed,
-          session_id: sessionId,
-          selected_lap: selectedLapForRequest,
-          ...decisionContext,
-          baseline_run_id: usableBaseline,
-          limit: DIAL_IN_REQUEST_LIMIT,
-          include_debug_evidence: false,
-        }),
-        startControlledWorkflow({
-          run_id: overview.run_id,
-          session_id: sessionId,
-          complaint: trimmed,
-          selected_lap: selectedLapForRequest,
-          ...workflowLapContext,
-          ...decisionContext,
-        }),
-      ]);
+      if (engineeringCase == null) {
+        throw new Error("Open the current Engineering Case before submitting driver intent.");
+      }
+      const result = await submitAtomicDriverIntentWorkflow({
+        run_id: overview.run_id,
+        session_id: sessionId,
+        complaint: trimmed,
+        expected_case_sha256: engineeringCase.case_sha256,
+        baseline_run_id: usableBaseline,
+        selected_lap: selectedLapForRequest,
+        ...workflowLapContext,
+        ...decisionContext,
+      });
       if (
         requestSeq !== dialRequestSeqRef.current
         || workflowRequestSeq !== workflowRequestSeqRef.current
@@ -1139,27 +1134,25 @@ export function DialInTab({
         setWorkflowIdentityError(message);
         throw new Error(message);
       }
-      if (dialResult.status === "fulfilled" && (
-        dialResult.value.run_id !== requestedRunId
-        || normalizeComplaint(dialResult.value.complaint_raw) !== requestedBinding.normalized_complaint
-      )) {
+      if (
+        result.advisory.run_id !== requestedRunId
+        || normalizeComplaint(result.advisory.complaint_raw) !== requestedBinding.normalized_complaint
+        || result.case_revision.case.case_sha256 !== result.case_revision.case_sha256
+      ) {
         const message = "The symptom response did not match the requested run and complaint. Nothing was updated, and exact targets are hidden. Reopen Dial-In before continuing.";
         setWorkflowIdentityError(message);
         throw new Error(message);
       }
-      const dialResponse = dialResult.status === "fulfilled" ? dialResult.value : null;
+      const dialResponse = result.advisory;
       setResponse(dialResponse);
-      setResponseRequestBinding(dialResponse ? requestedBinding : null);
-      if (workflowResult.status === "rejected") {
-        setWorkflowError(
-          workflowResult.reason instanceof Error
-            ? workflowResult.reason.message
-            : "P19 did not authorize a controlled workflow for this evidence.",
-        );
-        if (dialResult.status === "rejected") throw dialResult.reason;
+      setResponseRequestBinding(requestedBinding);
+      replaceRevision(result.case_revision);
+      if (result.workflow == null) {
+        setWorkflow(null);
+        setWorkflowError(result.withholding_reason);
         return;
       }
-      const nextWorkflow = workflowResult.value;
+      const nextWorkflow = result.workflow;
       const canonicalKnowledge = dialResponse?.engineering_knowledge ?? null;
       if (
         !nextWorkflow.workflow_id
@@ -1183,6 +1176,7 @@ export function DialInTab({
       if (requestSeq !== dialRequestSeqRef.current || currentRunIdRef.current !== requestedRunId) return;
       setResponse(null);
       setResponseRequestBinding(null);
+      invalidateEngineeringCase();
       const message = caught instanceof Error ? caught.message : "Dial-in request failed.";
       setWorkflowError(message);
       setError(message);
@@ -1191,7 +1185,7 @@ export function DialInTab({
         setLoading(false);
       }
     }
-  }, [activeWorkflow, basket.baseline, complaint, currentRequestBinding, decisionContext, loading, overview, selectedLapForRequest, sessionId, workflowAuthorityBlocked, workflowCatalogReady, workflowLapContext]);
+  }, [activeWorkflow, basket.baseline, complaint, currentRequestBinding, decisionContext, engineeringCase, loading, overview, replaceRevision, selectedLapForRequest, sessionId, workflowAuthorityBlocked, workflowCatalogReady, workflowLapContext]);
 
   const clearDialIn = useCallback(() => {
     if (workflowBusy || !workflowCatalogReady) return;
@@ -1210,7 +1204,7 @@ export function DialInTab({
   }, [activeWorkflow, workflow, workflowBusy, workflowCatalogReady]);
 
   const buildVerifiedWorkflow = useCallback(async () => {
-    if (!overview || !sessionId || !workflowCatalogReady || workflowBusy || activeWorkflow || workflowAuthorityBlocked) return;
+    if (!overview || !sessionId || !engineeringCase || !workflowCatalogReady || workflowBusy || activeWorkflow || workflowAuthorityBlocked) return;
     const requestedRunId = overview.run_id;
     const requestedBinding = currentRequestBinding;
     if (!requestedBinding?.normalized_complaint) return;
@@ -1218,17 +1212,20 @@ export function DialInTab({
     setWorkflowBusy(true);
     setWorkflowError(null);
     try {
-      const nextWorkflow = await startControlledWorkflow({
+      const result = await submitAtomicDriverIntentWorkflow({
         run_id: overview.run_id,
         session_id: sessionId,
         complaint: complaint.trim(),
+        expected_case_sha256: engineeringCase.case_sha256,
         selected_lap: selectedLapForRequest,
         ...workflowLapContext,
         ...decisionContext,
       });
+      const nextWorkflow = result.workflow;
       if (requestSeq !== workflowRequestSeqRef.current || currentRunIdRef.current !== requestedRunId) return;
       if (
-        !requestBindingsMatch(currentRequestBindingRef.current, requestedBinding)
+        nextWorkflow == null
+        || !requestBindingsMatch(currentRequestBindingRef.current, requestedBinding)
         || !nextWorkflow.workflow_id
         || nextWorkflow.workflow_id !== nextWorkflow.workflow_id.trim()
         || nextWorkflow.source_run_id !== requestedRunId
@@ -1240,6 +1237,9 @@ export function DialInTab({
         setResponseRequestBinding(null);
         throw new Error(message);
       }
+      replaceRevision(result.case_revision);
+      setResponse(result.advisory);
+      setResponseRequestBinding(requestedBinding);
       setWorkflow(nextWorkflow);
     } catch (caught) {
       if (requestSeq !== workflowRequestSeqRef.current || currentRunIdRef.current !== requestedRunId) return;
@@ -1249,7 +1249,7 @@ export function DialInTab({
         setWorkflowBusy(false);
       }
     }
-  }, [activeWorkflow, complaint, currentRequestBinding, decisionContext, overview, selectedLapForRequest, sessionId, workflowAuthorityBlocked, workflowBusy, workflowCatalogReady, workflowLapContext]);
+  }, [activeWorkflow, complaint, currentRequestBinding, decisionContext, engineeringCase, overview, replaceRevision, selectedLapForRequest, sessionId, workflowAuthorityBlocked, workflowBusy, workflowCatalogReady, workflowLapContext]);
 
   const nextWorkflowStage = activeControlledTest
     ? (["A", "B", "A2"] as const).find((stage) => !workflow.stage_run_ids[stage])
@@ -1306,6 +1306,7 @@ export function DialInTab({
       }
       setResponse(null);
       setResponseRequestBinding(null);
+      invalidateEngineeringCase();
     } catch (caught) {
       if (requestSeq !== workflowRequestSeqRef.current || currentRunIdRef.current !== requestedRunId) return;
       setWorkflowError(caught instanceof Error ? caught.message : "The workflow could not be abandoned.");
@@ -1314,7 +1315,7 @@ export function DialInTab({
         setWorkflowBusy(false);
       }
     }
-  }, [activeWorkflow, ambiguousActiveWorkflows, overview?.run_id, workflow, workflowBusy]);
+  }, [activeWorkflow, ambiguousActiveWorkflows, invalidateEngineeringCase, overview?.run_id, workflow, workflowBusy]);
 
   const recordCurrentRun = useCallback(async () => {
     if (
@@ -1366,6 +1367,7 @@ export function DialInTab({
         throw new Error(message);
       }
       setWorkflow(nextWorkflow);
+      invalidateEngineeringCase();
     } catch (caught) {
       if (requestSeq !== workflowRequestSeqRef.current || currentRunIdRef.current !== requestedRunId) return;
       setWorkflowError(caught instanceof Error ? caught.message : "The current run did not pass stage verification.");
@@ -1374,7 +1376,7 @@ export function DialInTab({
         setWorkflowBusy(false);
       }
     }
-  }, [exactSourceRunIntelligenceAuthority, nextWorkflowStage, overview, workflow, workflowAuthorityBlocked, workflowBusy, workflowContextMatches]);
+  }, [exactSourceRunIntelligenceAuthority, invalidateEngineeringCase, nextWorkflowStage, overview, workflow, workflowAuthorityBlocked, workflowBusy, workflowContextMatches]);
 
   const scoreVerifiedWorkflow = useCallback(async () => {
     if (!workflow || workflow.status !== "a2_recorded" || workflowBusy || !workflowContextMatches || workflowAuthorityBlocked) return;
@@ -1415,6 +1417,7 @@ export function DialInTab({
         throw new Error(message);
       }
       setWorkflow(nextWorkflow);
+      invalidateEngineeringCase();
     } catch (caught) {
       if (requestSeq !== workflowRequestSeqRef.current || currentRunIdRef.current !== requestedRunId) return;
       setWorkflowError(caught instanceof Error ? caught.message : "Controlled test scoring failed.");
@@ -1423,7 +1426,7 @@ export function DialInTab({
         setWorkflowBusy(false);
       }
     }
-  }, [overview?.run_id, workflow, workflowAuthorityBlocked, workflowBusy, workflowContextMatches]);
+  }, [invalidateEngineeringCase, overview?.run_id, workflow, workflowAuthorityBlocked, workflowBusy, workflowContextMatches]);
 
   const chooseClarification = useCallback((option: string) => {
     const base = response?.complaint_raw.trim() || complaint.trim();

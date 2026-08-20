@@ -1337,6 +1337,28 @@ class CrewChiefToolEligibility(CrewChiefModel):
         return self
 
 
+class InspectionEvidenceQualification(CrewChiefModel):
+    tool_id: str = Field(min_length=1)
+    case_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    requirement_ids: tuple[str, ...] = ()
+    accepted_artifact_ids: tuple[str, ...] = ()
+    rejected_artifact_ids: tuple[str, ...] = ()
+    rejection_reasons: tuple[str, ...] = ()
+    requirement_complete: bool
+    authority: Literal["measurement_only"] = "measurement_only"
+    setup_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def completion_requires_usable_artifact(self) -> InspectionEvidenceQualification:
+        if set(self.accepted_artifact_ids) & set(self.rejected_artifact_ids):
+            raise ValueError("inspection evidence cannot be accepted and rejected")
+        if self.requirement_complete != bool(self.accepted_artifact_ids):
+            raise ValueError("inspection completion requires accepted exact evidence")
+        if self.rejected_artifact_ids and not self.rejection_reasons:
+            raise ValueError("rejected inspection evidence requires exact reasons")
+        return self
+
+
 class CrewChiefToolResult(CrewChiefModel):
     inspection_request_id: str | None = Field(
         default=None, pattern=r"^ccir_[0-9a-f]{24}$"
@@ -1735,6 +1757,9 @@ class CrewChiefWorkspace(CrewChiefModel):
     engineering_case: CanonicalEngineeringCase
     available_tools: tuple[CrewChiefToolDefinition, ...]
     tool_eligibility: tuple[CrewChiefToolEligibility, ...] = ()
+    inspection_evidence_qualifications: tuple[
+        InspectionEvidenceQualification, ...
+    ] = ()
     current_subgoal: InvestigationSubgoal | None = None
     latest_tool_result: CrewChiefToolResult | None = None
     critique: CrewChiefCritique
@@ -1770,6 +1795,21 @@ class CrewChiefWorkspace(CrewChiefModel):
         if self.evidence_index.workspace_revision != self.identity.workspace_revision:
             raise ValueError("evidence index must match the workspace revision")
         case = self.engineering_case
+        qualification_tool_ids = tuple(
+            item.tool_id for item in self.inspection_evidence_qualifications
+        )
+        if (
+            len(qualification_tool_ids) != len(set(qualification_tool_ids))
+            or set(qualification_tool_ids)
+            != {item.tool_id for item in self.available_tools}
+            or any(
+                item.case_sha256 != case.case_sha256
+                for item in self.inspection_evidence_qualifications
+            )
+        ):
+            raise ValueError(
+                "inspection evidence qualification must cover each current-case Crew tool"
+            )
         if (
             case.case_revision_sha256 != self.identity.workspace_revision
             or case.workspace_revision != self.identity.workspace_revision
@@ -2929,7 +2969,10 @@ class CrewChiefWorkspace(CrewChiefModel):
                 "P35.1 knowledge must equal its canonical producer-derived projection"
             )
         from racelab_engine.services.engineering_case_service import (
+            attach_deficits_to_readiness,
             build_capability_resolutions,
+            build_evidence_deficits,
+            build_response_expectation_contracts,
             build_setup_effect_readiness,
         )
 
@@ -2938,13 +2981,24 @@ class CrewChiefWorkspace(CrewChiefModel):
             case.response_artifacts,
             case.p19_response_admissions,
         )
-        expected_capability_resolutions = build_capability_resolutions(
+        expected_contracts = build_response_expectation_contracts(
+            knowledge.hypotheses
+        )
+        expected_deficits = build_evidence_deficits(
             expected_effect_readiness,
             case.response_artifacts,
         )
+        expected_effect_readiness = attach_deficits_to_readiness(
+            expected_effect_readiness, expected_deficits
+        )
+        expected_capability_resolutions = build_capability_resolutions(
+            expected_deficits, case.response_artifacts
+        )
         if (
             case.p351_projection_sha256 != knowledge.projection_sha256
+            or case.response_expectation_contracts != expected_contracts
             or case.effect_readiness != expected_effect_readiness
+            or case.evidence_deficits != expected_deficits
             or case.capability_resolutions != expected_capability_resolutions
             or case.terminal_move_sha256
             != canonical_json_sha256(self.terminal_decision)

@@ -13,6 +13,7 @@ import {
   type ControlMechanismTraceResponse,
   type VehicleSystemsProjection,
 } from "../types/vehicleSystems";
+import { useEngineeringCase } from "../store/EngineeringCaseContext";
 
 type Props = {
   runId: string;
@@ -74,6 +75,7 @@ export function VehicleSystemsPanel({
   expectedSetupId,
   initialProjection,
 }: Props) {
+  const { engineeringCase } = useEngineeringCase();
   const [retryToken, setRetryToken] = useState(0);
   const embeddedKey = initialProjection === undefined
     ? "fetch"
@@ -87,6 +89,7 @@ export function VehicleSystemsPanel({
     retryToken,
     expectedSetupId,
     embeddedKey,
+    caseSha256: engineeringCase?.case_sha256 ?? null,
   });
   const [state, setState] = useState<LoadState>({
     key,
@@ -125,6 +128,10 @@ export function VehicleSystemsPanel({
     setInspection({ key: null, status: "idle", response: null, error: null });
     setTrace({ key: null, status: "idle", response: null, error: null });
     const expectation = { runId, sessionId, setupId: expectedSetupId };
+    if (engineeringCase == null) {
+      setState({ key, status: "loading", projection: null, error: null });
+      return () => { cancelled = true; };
+    }
     if (initialProjection !== undefined) {
       if (initialProjection === null) {
         setState({
@@ -133,7 +140,9 @@ export function VehicleSystemsPanel({
           projection: null,
           error: "Vehicle Systems is unavailable in this exact report.",
         });
-      } else if (embeddedProjection) {
+      } else if (embeddedProjection
+        && embeddedProjection.reasoning_snapshot_sha256 === engineeringCase.p19_reasoning_snapshot_sha256
+        && embeddedProjection.knowledge_graph_sha256 === engineeringCase.p26_knowledge_graph_sha256) {
         setState({ key, status: "ready", projection: embeddedProjection, error: null });
       } else {
         setState({
@@ -153,7 +162,9 @@ export function VehicleSystemsPanel({
     })
       .then((projection) => {
         if (cancelled) return;
-        if (!isVehicleSystemsProjection(projection, expectation)) {
+        if (!isVehicleSystemsProjection(projection, expectation)
+          || projection.reasoning_snapshot_sha256 !== engineeringCase.p19_reasoning_snapshot_sha256
+          || projection.knowledge_graph_sha256 !== engineeringCase.p26_knowledge_graph_sha256) {
           setState({
             key,
             status: "error",
@@ -164,17 +175,17 @@ export function VehicleSystemsPanel({
         }
         setState({ key, status: "ready", projection, error: null });
       })
-      .catch(() => {
+      .catch((reason: unknown) => {
         if (cancelled) return;
         setState({
           key,
           status: "error",
           projection: null,
-          error: "Vehicle Systems is unavailable for this exact run. You can retry safely.",
+          error: reason instanceof Error ? reason.message : "Vehicle Systems is unavailable for this exact case.",
         });
       });
     return () => { cancelled = true; };
-  }, [embeddedProjection, expectedSetupId, initialProjection, key, refreshKey, retryToken, runId, sessionId]);
+  }, [embeddedProjection, engineeringCase, expectedSetupId, initialProjection, key, refreshKey, retryToken, runId, sessionId]);
 
   const projection = initialProjection === undefined
     ? state.key === key ? state.projection : null

@@ -555,6 +555,11 @@ const synchronizeEngineeringKnowledge = async (value) => {
   value.engineering_case.p351_projection_sha256 = value.engineering_knowledge.projection_sha256;
   value.engineering_case.p35_assessment_sha256 = value.vehicle_dynamics.p35_assessment_sha256;
 };
+const stableCaseId = `p3543case_${(await canonicalJsonSha256({
+  schema: "p3544.engineering-case-lifecycle.v1",
+  run_id: "run-1",
+  session_id: "session-1",
+})).slice(0, 24)}`;
 const workspace = {
   schema_version: "p352.crew-chief-workspace.v1",
   generated_at: "2026-08-15T09:05:00Z",
@@ -576,8 +581,8 @@ const workspace = {
     workspace_revision: h("c"), index_hash: await canonicalJsonSha256([]), entries: [],
   },
   engineering_case: {
-    schema_version: "p3543.canonical-engineering-case.v1",
-    case_id: `p3543case_${h("c").slice(0, 24)}`,
+    schema_version: "p3544.unified-engineering-case.v1",
+    case_id: stableCaseId,
     case_sha256: h("9"), case_revision_sha256: h("c"),
     run_id: "run-1", session_id: "session-1", recording_sha256: h("8"),
     setup_id: "setup-1", setup_snapshot_sha256: h("b"), objective_id: "race_long_run",
@@ -585,8 +590,12 @@ const workspace = {
     p20_state_revision: h("d"), p26_knowledge_graph_sha256: h("e"),
     p32_projection_sha256: h("7"), p35_assessment_sha256: vehicleDynamics.p35_assessment_sha256,
     p351_projection_sha256: engineeringKnowledge.projection_sha256,
-    p33_projection_sha256: h("2"), evidence_index_sha256: await canonicalJsonSha256([]),
-    primary_opportunity_id: null, response_artifacts: [], p19_response_admissions: [],
+    p33_projection_sha256: h("2"), semantic_registry_sha256: h("4"),
+    evidence_index_sha256: await canonicalJsonSha256([]), driver_intent: null,
+    crew_event_head_sha256: null, crew_current_subgoal: null, crew_critic_state: "pass",
+    active_workflow_id: null, active_workflow_revision: null,
+    primary_opportunity_id: null, response_artifacts: [], response_expectation_contracts: [],
+    response_expectation_evaluations: [], p19_response_admissions: [],
     mechanism_ids: [], component_ids: [...new Set(ENGINEERING_KNOWLEDGE_STATIC_REGISTRY.flatMap(
       (item) => item.possibleComponentFamilyIds,
     ))],
@@ -594,13 +603,22 @@ const workspace = {
       effect_id: item.effect_id, bridge_id: item.bridge_id, state: "knowledge_only",
       response_artifact_ids: [], expected_response_relation_ids: [], exact_control_keys: [],
       experiment_factor_id: item.experiment_factor_id, countereffect_measurement_ids: [],
-      missing_evidence: [...item.missing_evidence], authority: "knowledge_only",
+      missing_evidence: [...item.missing_evidence], deficit_ids: [], authority: "knowledge_only",
       setup_authorized: false,
     })),
     active_discriminator_id: null, investigation_id: null, workspace_revision: h("c"),
-    terminal_move_sha256: h("7"), capability_resolutions: [], quantity_observability: [],
+    terminal_move_sha256: h("7"),
+    mission: {
+      what: "Measure", where: "Current exact run scope",
+      why_it_matters: "Current P19 evidence requires measurement.",
+      uncertain: "No stronger causal claim is authorized.",
+      next: "Collect three eligible laps.", done_when: "Repeat the metric.",
+      source_authority: "p19_measurement_mirror", terminal_move_sha256: h("7"),
+      source_artifact_ids: [], setup_authorized: false,
+    },
+    evidence_deficits: [], capability_resolutions: [], quantity_observability: [],
     semantic_focus: {
-      case_id: `p3543case_${h("c").slice(0, 24)}`, case_revision_sha256: h("c"),
+      case_id: stableCaseId, case_revision_sha256: h("c"),
       artifact_id: null, lap_numbers: [], lap_pct_start: null, lap_pct_end: null,
       phase: null, mechanism_ids: [], response_relation_id: null, component_ids: [],
       effect_ids: [], control_keys: [], p19_cause_ids: [], authority: "navigation_only",
@@ -624,6 +642,11 @@ const workspace = {
     cost_class: "cheap",
     safe_priority_tier: "p19_terminal",
     skip_reason: "Investigation is not open.",
+  })),
+  inspection_evidence_qualifications: availableTools.map((tool) => ({
+    tool_id: tool.tool_id, case_sha256: h("9"), requirement_ids: [],
+    accepted_artifact_ids: [], rejected_artifact_ids: [], rejection_reasons: [],
+    requirement_complete: false, authority: "measurement_only", setup_authorized: false,
   })),
   p19_mission_contract: null,
   engineering_awareness: engineeringAwareness,
@@ -1571,6 +1594,18 @@ controlled.terminal_decision = {
   proposed_value: "52.0%", source_event_ids: ["event-1"], workflow_id: "workflow-1",
   workflow_revision: "revision-1", blocker_reasons: [],
 };
+controlled.engineering_case.active_workflow_id = "workflow-1";
+controlled.engineering_case.active_workflow_revision = "revision-1";
+controlled.engineering_case.terminal_move_sha256 = await canonicalJsonSha256(controlled.terminal_decision);
+controlled.engineering_case.mission = {
+  what: "One P19 test", where: "Current exact run scope",
+  why_it_matters: "This is the current exact-scope P19 terminal decision.",
+  uncertain: "No stronger causal claim is authorized.",
+  next: "Set the exact card.", done_when: "Repeat the metric.",
+  source_authority: "p19_exact_mirror",
+  terminal_move_sha256: controlled.engineering_case.terminal_move_sha256,
+  source_artifact_ids: ["event-1"], setup_authorized: true,
+};
 controlled.performance_intelligence.speed_story.next = "Set the exact card.";
 controlled.performance_intelligence.explanation_chain.p19_next_move = "Set the exact card.";
 controlled.run_sentinel.p19_plan_kind = "controlled_test";
@@ -1736,6 +1771,8 @@ historicalMemory.learning_prior.car_response_history = [{
     phase_time_effect_s: null, carry_effect_s: null, recovery_surrender: "unavailable", countereffects: [],
     p19_mechanism_assessment: "inconclusive", control_response_assessment: "inconclusive",
     policy_verdict: "retest", source_workflow_id: "workflow-history", source_response_record_id: null,
+    response_expectation_contract_ids: [], response_metric_delta_ids: [],
+    stage_response_artifact_ids: [], response_phase: null, response_speed_band_mps: null,
     source_artifact_ids: [], setup_authorized: false,
   },
   counts: { ...counts(2), independent_workflow_count: 2 },

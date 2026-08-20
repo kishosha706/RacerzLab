@@ -6,6 +6,7 @@ authorize setup, or replace P19, P33, P34, or P36 ownership.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -24,6 +25,390 @@ class EngineeringCaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
 
+EvidenceDeficitCode = Literal[
+    "CHANNEL_MISSING",
+    "CHANNEL_UNHEALTHY",
+    "WRONG_UPDATE_SEMANTIC",
+    "PIT_SNAPSHOT_ONLY",
+    "INSUFFICIENT_REPETITION",
+    "INSUFFICIENT_CLEAN_LAPS",
+    "TRAFFIC_CONTAMINATED",
+    "SPEED_BAND_MISMATCH",
+    "PHASE_MISMATCH",
+    "SETUP_MISMATCH",
+    "CASE_REVISION_MISMATCH",
+    "RECORDING_NOT_INDEPENDENT",
+    "REQUIRED_COUNTEREFFECT_MISSING",
+    "EXACT_SEMANTIC_BRIDGE_MISSING",
+    "EXACT_LEGAL_OPTION_MISSING",
+    "P19_AUTHORITY_REQUIRED",
+    "BUILD_APPLICABILITY_BLOCKED",
+    "STRUCTURALLY_UNAVAILABLE",
+]
+
+
+class EngineeringEvidenceDeficit(EngineeringCaseModel):
+    """Typed evidence debt.  Planner behavior must never depend on prose parsing."""
+
+    deficit_id: str = Field(pattern=r"^p3544deficit_[0-9a-f]{24}$")
+    deficit_sha256: str = Field(pattern=_SHA)
+    code: EvidenceDeficitCode
+    affected_contract_ids: tuple[str, ...] = ()
+    affected_effect_ids: tuple[str, ...] = ()
+    affected_mechanism_ids: tuple[str, ...] = ()
+    affected_tool_ids: tuple[str, ...] = ()
+    required_channel_ids: tuple[str, ...] = ()
+    current_channel_capability_ids: tuple[str, ...] = ()
+    blocker_reasons: tuple[str, ...] = Field(min_length=1)
+    recovery_mode: Literal[
+        "use_current_data",
+        "collect_more_laps",
+        "collect_new_run",
+        "pit_snapshot",
+        "controlled_test",
+        "unavailable",
+    ]
+    mission_eligible: bool
+    authority: Literal["measurement_routing_only"] = "measurement_routing_only"
+    setup_authorized: Literal[False] = False
+
+    @classmethod
+    def build(cls, **values: Any) -> Self:
+        body = dict(values)
+        body.pop("deficit_id", None)
+        body.pop("deficit_sha256", None)
+        draft = cls.model_construct(
+            **body,
+            deficit_id="p3544deficit_" + ("0" * 24),
+            deficit_sha256="0" * 64,
+        )
+        normalized = draft.model_dump(mode="json")
+        normalized.pop("deficit_id", None)
+        normalized.pop("deficit_sha256", None)
+        digest = canonical_json_sha256(normalized)
+        return cls.model_validate(
+            {
+                **normalized,
+                "deficit_id": f"p3544deficit_{digest[:24]}",
+                "deficit_sha256": digest,
+            }
+        )
+
+    @model_validator(mode="after")
+    def deficit_is_typed_and_content_addressed(self) -> Self:
+        for values in (
+            self.affected_contract_ids,
+            self.affected_effect_ids,
+            self.affected_mechanism_ids,
+            self.affected_tool_ids,
+            self.required_channel_ids,
+            self.current_channel_capability_ids,
+            self.blocker_reasons,
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError("engineering deficit identities must be unique")
+        body = self.model_dump(
+            mode="json", exclude={"deficit_id", "deficit_sha256"}
+        )
+        expected = canonical_json_sha256(body)
+        if self.deficit_sha256 != expected or self.deficit_id != (
+            f"p3544deficit_{expected[:24]}"
+        ):
+            raise ValueError("engineering deficit identity is corrupt")
+        return self
+
+
+class ResponseCountereffectContract(EngineeringCaseModel):
+    metric_id: str = Field(pattern=_ID)
+    accepted_min: float | None = Field(default=None, allow_inf_nan=False)
+    accepted_max: float | None = Field(default=None, allow_inf_nan=False)
+    required: bool = True
+
+    @model_validator(mode="after")
+    def countereffect_range_is_complete(self) -> Self:
+        if (self.accepted_min is None) != (self.accepted_max is None):
+            raise ValueError("countereffect accepted range must be complete")
+        if (
+            self.accepted_min is not None
+            and self.accepted_max is not None
+            and self.accepted_max < self.accepted_min
+        ):
+            raise ValueError("countereffect accepted range is reversed")
+        return self
+
+
+class ResponseExpectationContract(EngineeringCaseModel):
+    """Reviewed response expectation; relationship alone can never satisfy it."""
+
+    expectation_contract_id: str = Field(pattern=r"^p3544expect_[0-9a-f]{24}$")
+    expectation_sha256: str = Field(pattern=_SHA)
+    owning_effect_id: str = Field(pattern=_ID)
+    owning_mechanism_ids: tuple[str, ...] = Field(min_length=1)
+    experiment_factor_id: str = Field(pattern=_ID)
+    control_key: str = Field(pattern=_ID)
+    direction_sign: Literal[-1, 1]
+    relation_id: str = Field(pattern=_ID)
+    metric_id: str = Field(pattern=_ID)
+    expected_sign: Literal[-1, 1] | None = None
+    accepted_min: float | None = Field(default=None, allow_inf_nan=False)
+    accepted_max: float | None = Field(default=None, allow_inf_nan=False)
+    units: str = Field(min_length=1)
+    phase: str = Field(min_length=1)
+    lap_pct_start: float | None = Field(default=None, ge=0.0, le=100.0)
+    lap_pct_end: float | None = Field(default=None, ge=0.0, le=100.0)
+    speed_min_mps: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    speed_max_mps: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    minimum_independent_repetitions: int = Field(ge=2)
+    minimum_absolute_signal: float = Field(ge=0.0, allow_inf_nan=False)
+    required_channel_ids: tuple[str, ...] = Field(min_length=1)
+    required_context_states: tuple[str, ...] = Field(min_length=1)
+    allowed_evidence_states: tuple[
+        Literal["calculated", "observed_correlation"], ...
+    ] = Field(min_length=1)
+    countereffect_contracts: tuple[ResponseCountereffectContract, ...] = ()
+    protected_outcomes: tuple[str, ...] = Field(min_length=1)
+    car_applicability: tuple[str, ...] = Field(min_length=1)
+    build_applicability: tuple[str, ...] = Field(min_length=1)
+    authority_ceiling: Literal["relationship_only"] = "relationship_only"
+    setup_authorized: Literal[False] = False
+
+    @classmethod
+    def build(cls, **values: Any) -> Self:
+        body = dict(values)
+        body.pop("expectation_contract_id", None)
+        body.pop("expectation_sha256", None)
+        draft = cls.model_construct(
+            **body,
+            expectation_contract_id="p3544expect_" + ("0" * 24),
+            expectation_sha256="0" * 64,
+        )
+        normalized = draft.model_dump(mode="json")
+        normalized.pop("expectation_contract_id", None)
+        normalized.pop("expectation_sha256", None)
+        digest = canonical_json_sha256(normalized)
+        return cls.model_validate(
+            {
+                **normalized,
+                "expectation_contract_id": f"p3544expect_{digest[:24]}",
+                "expectation_sha256": digest,
+            }
+        )
+
+    @model_validator(mode="after")
+    def expectation_is_exact_and_non_authoritative(self) -> Self:
+        range_supplied = self.accepted_min is not None or self.accepted_max is not None
+        if (self.accepted_min is None) != (self.accepted_max is None):
+            raise ValueError("response expectation accepted range must be complete")
+        if self.expected_sign is None and not range_supplied:
+            raise ValueError("response expectation requires an exact sign or range")
+        if self.expected_sign is not None and range_supplied:
+            raise ValueError("response expectation sign and range are mutually exclusive")
+        if (
+            self.accepted_min is not None
+            and self.accepted_max is not None
+            and self.accepted_max < self.accepted_min
+        ):
+            raise ValueError("response expectation accepted range is reversed")
+        for lower, upper, label in (
+            (self.lap_pct_start, self.lap_pct_end, "physical scope"),
+            (self.speed_min_mps, self.speed_max_mps, "speed band"),
+        ):
+            if (lower is None) != (upper is None):
+                raise ValueError(f"response expectation {label} must be complete")
+            if lower is not None and upper is not None and upper < lower:
+                raise ValueError(f"response expectation {label} is reversed")
+        for values in (
+            self.owning_mechanism_ids,
+            self.required_channel_ids,
+            self.required_context_states,
+            self.allowed_evidence_states,
+            self.protected_outcomes,
+            self.car_applicability,
+            self.build_applicability,
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError("response expectation identities must be unique")
+        countereffect_ids = tuple(
+            item.metric_id for item in self.countereffect_contracts
+        )
+        if len(countereffect_ids) != len(set(countereffect_ids)):
+            raise ValueError("response expectation countereffects must be unique")
+        body = self.model_dump(
+            mode="json",
+            exclude={"expectation_contract_id", "expectation_sha256"},
+        )
+        expected = canonical_json_sha256(body)
+        if self.expectation_sha256 != expected or self.expectation_contract_id != (
+            f"p3544expect_{expected[:24]}"
+        ):
+            raise ValueError("response expectation identity is corrupt")
+        return self
+
+
+class ResponseExpectationEvaluation(EngineeringCaseModel):
+    evaluation_id: str = Field(pattern=r"^p3544evaluation_[0-9a-f]{24}$")
+    evaluation_sha256: str = Field(pattern=_SHA)
+    expectation_contract_id: str = Field(pattern=r"^p3544expect_[0-9a-f]{24}$")
+    response_artifact_id: str = Field(pattern=r"^p3542\.response:[0-9a-f]{24}$")
+    result: Literal["matched", "contradicted", "inconclusive", "blocked", "unavailable"]
+    matched_metric_ids: tuple[str, ...] = ()
+    blocker_reasons: tuple[str, ...] = ()
+    authority: Literal["p19_response_evaluation_only"] = (
+        "p19_response_evaluation_only"
+    )
+    rank_modified: Literal[False] = False
+    setup_authorized: Literal[False] = False
+
+    @classmethod
+    def build(cls, **values: Any) -> Self:
+        body = dict(values)
+        body.pop("evaluation_id", None)
+        body.pop("evaluation_sha256", None)
+        draft = cls.model_construct(
+            **body,
+            evaluation_id="p3544evaluation_" + ("0" * 24),
+            evaluation_sha256="0" * 64,
+        )
+        normalized = draft.model_dump(mode="json")
+        normalized.pop("evaluation_id", None)
+        normalized.pop("evaluation_sha256", None)
+        digest = canonical_json_sha256(normalized)
+        return cls.model_validate(
+            {
+                **normalized,
+                "evaluation_id": f"p3544evaluation_{digest[:24]}",
+                "evaluation_sha256": digest,
+            }
+        )
+
+    @model_validator(mode="after")
+    def evaluation_is_content_addressed(self) -> Self:
+        if self.result in {"matched", "contradicted"} and not self.matched_metric_ids:
+            raise ValueError("decisive response evaluation requires exact metrics")
+        if self.result in {"blocked", "unavailable"} and not self.blocker_reasons:
+            raise ValueError("blocked response evaluation requires exact blockers")
+        body = self.model_dump(
+            mode="json", exclude={"evaluation_id", "evaluation_sha256"}
+        )
+        expected = canonical_json_sha256(body)
+        if self.evaluation_sha256 != expected or self.evaluation_id != (
+            f"p3544evaluation_{expected[:24]}"
+        ):
+            raise ValueError("response evaluation identity is corrupt")
+        return self
+
+
+class DriverIntent(EngineeringCaseModel):
+    schema_version: Literal["p3544.driver-intent.v1"] = "p3544.driver-intent.v1"
+    intent_id: str = Field(pattern=r"^p3544intent_[0-9a-f]{24}$")
+    intent_sha256: str = Field(pattern=_SHA)
+    case_id: str = Field(pattern=r"^p3543case_[0-9a-f]{24}$")
+    intent_revision: int = Field(ge=1)
+    raw_driver_wording: str = Field(min_length=1, max_length=2000)
+    canonical_symptom: str | None = Field(default=None, pattern=_ID)
+    phase_scope: str | None = None
+    response_regime_scope: Literal[
+        "transient", "steady_state", "migration", "unknown", "context_only"
+    ] = "unknown"
+    traffic_context: Literal["clear", "exposed", "unknown", "context_only"] = (
+        "unknown"
+    )
+    stint_context: str | None = None
+    power_state_context: str | None = None
+    time_origin_scope: str | None = None
+    driver_demand_scope: str | None = None
+    objective: str = Field(min_length=1)
+    source: Literal[
+        "manual",
+        "crew_question",
+        "dial_in",
+        "smart_engineer",
+        "session_restore",
+    ]
+    created_at: datetime
+    supersedes_intent_id: str | None = Field(
+        default=None, pattern=r"^p3544intent_[0-9a-f]{24}$"
+    )
+    typed_interpretation_provenance: tuple[str, ...] = ()
+    authority: Literal["driver_context_only"] = "driver_context_only"
+    physical_truth_modified: Literal[False] = False
+    setup_authorized: Literal[False] = False
+
+    @classmethod
+    def build(cls, **values: Any) -> Self:
+        body = dict(values)
+        body.pop("intent_id", None)
+        body.pop("intent_sha256", None)
+        draft = cls.model_construct(
+            **body,
+            intent_id="p3544intent_" + ("0" * 24),
+            intent_sha256="0" * 64,
+        )
+        normalized = draft.model_dump(mode="json")
+        normalized.pop("intent_id", None)
+        normalized.pop("intent_sha256", None)
+        digest = canonical_json_sha256(normalized)
+        return cls.model_validate(
+            {
+                **normalized,
+                "intent_id": f"p3544intent_{digest[:24]}",
+                "intent_sha256": digest,
+            }
+        )
+
+    @model_validator(mode="after")
+    def intent_is_content_addressed(self) -> Self:
+        if self.intent_revision == 1 and self.supersedes_intent_id is not None:
+            raise ValueError("first driver intent cannot supersede another intent")
+        if self.intent_revision > 1 and self.supersedes_intent_id is None:
+            raise ValueError("driver intent refinement requires its predecessor")
+        if len(self.typed_interpretation_provenance) != len(
+            set(self.typed_interpretation_provenance)
+        ):
+            raise ValueError("driver intent provenance must be unique")
+        body = self.model_dump(
+            mode="json", exclude={"intent_id", "intent_sha256"}
+        )
+        expected = canonical_json_sha256(body)
+        if self.intent_sha256 != expected or self.intent_id != (
+            f"p3544intent_{expected[:24]}"
+        ):
+            raise ValueError("driver intent identity is corrupt")
+        return self
+
+
+class EngineeringMission(EngineeringCaseModel):
+    what: str = Field(min_length=1)
+    where: str = Field(min_length=1)
+    why_it_matters: str = Field(min_length=1)
+    uncertain: str = Field(min_length=1)
+    next: str = Field(min_length=1)
+    done_when: str = Field(min_length=1)
+    source_authority: Literal[
+        "p19_exact_mirror", "p19_measurement_mirror", "navigation_only"
+    ]
+    terminal_move_sha256: str = Field(pattern=_SHA)
+    source_artifact_ids: tuple[str, ...] = ()
+    setup_authorized: bool = False
+
+    @model_validator(mode="after")
+    def mission_cannot_invent_authority(self) -> Self:
+        if self.setup_authorized != (self.source_authority == "p19_exact_mirror"):
+            raise ValueError("mission setup authority must exactly mirror P19")
+        return self
+
+
+class ResponseChannelLineage(EngineeringCaseModel):
+    metric_id: str = Field(pattern=_ID)
+    source_channel_ids: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def lineage_is_unique(self) -> Self:
+        if len(self.source_channel_ids) != len(set(self.source_channel_ids)):
+            raise ValueError("response metric channel lineage must be unique")
+        return self
+
+
 class EngineeringResponseArtifact(EngineeringCaseModel):
     """Globally addressable envelope for one P35.4 response observation."""
 
@@ -37,6 +422,7 @@ class EngineeringResponseArtifact(EngineeringCaseModel):
     setup_id: str = Field(min_length=1)
     source_recording_sha256: str = Field(pattern=_SHA)
     source_producer_id: str = Field(pattern=_ID)
+    source_producer_version: str = Field(min_length=1)
     relation: str = Field(pattern=_ID)
     lap_pct_start: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
     lap_pct_end: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
@@ -47,7 +433,13 @@ class EngineeringResponseArtifact(EngineeringCaseModel):
     source_lap_numbers: tuple[int, ...] = Field(min_length=2)
     reference_lap_numbers: tuple[int, ...] = ()
     independence_unit_ids: tuple[str, ...] = Field(min_length=2)
+    physical_episode_sha256: str = Field(pattern=_SHA)
+    speed_min_mps: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    speed_median_mps: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    speed_max_mps: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    metric_channel_lineage: tuple[ResponseChannelLineage, ...] = Field(min_length=1)
     operational_evidence: OperationalResponseEvidence
+    evidence_state: Literal["calculated", "observed_correlation"]
     applicability: Literal["exact_current_case"] = "exact_current_case"
     blocker_reasons: tuple[str, ...] = ()
     authority_ceiling: Literal["observation_only"] = "observation_only"
@@ -78,6 +470,10 @@ class EngineeringResponseArtifact(EngineeringCaseModel):
             or self.lap_pct_end != evidence.lap_pct_end
             or self.phase != evidence.phase
             or self.source_lap_numbers != evidence.source_lap_numbers
+            or self.speed_min_mps != evidence.speed_min_mps
+            or self.speed_median_mps != evidence.speed_median_mps
+            or self.speed_max_mps != evidence.speed_max_mps
+            or self.evidence_state != evidence.evidence_state
         ):
             raise ValueError("response artifact must exactly mirror producer evidence")
         if self.lap_pct_end < self.lap_pct_start:
@@ -94,6 +490,33 @@ class EngineeringResponseArtifact(EngineeringCaseModel):
             raise ValueError("response source and reference laps must be distinct")
         if len(self.independence_unit_ids) != evidence.repetition_count:
             raise ValueError("response independence units must equal repetition count")
+        metric_ids = tuple(item.metric_id for item in evidence.metrics)
+        lineage_ids = tuple(item.metric_id for item in self.metric_channel_lineage)
+        if len(lineage_ids) != len(set(lineage_ids)) or set(lineage_ids) != set(
+            metric_ids
+        ):
+            raise ValueError("response artifact must preserve every metric lineage")
+        lineage = {
+            item.metric_id: item.source_channel_ids
+            for item in self.metric_channel_lineage
+        }
+        if any(
+            lineage[item.metric_id] != item.source_channels
+            for item in evidence.metrics
+        ):
+            raise ValueError("response artifact metric lineage changed")
+        episode_payload = {
+            "recording": self.source_recording_sha256,
+            "producer": self.source_producer_id,
+            "relation": self.relation,
+            "phase": self.phase,
+            "lap_pct_start": self.lap_pct_start,
+            "lap_pct_end": self.lap_pct_end,
+            "source_artifact_ids": list(evidence.source_artifact_ids),
+            "independence_unit_ids": list(self.independence_unit_ids),
+        }
+        if canonical_json_sha256(episode_payload) != self.physical_episode_sha256:
+            raise ValueError("response physical episode identity is corrupt")
         body = self.model_dump(mode="json", exclude={"artifact_sha256"})
         if canonical_json_sha256(body) != self.artifact_sha256:
             raise ValueError("response artifact content identity is corrupt")
@@ -103,12 +526,9 @@ class EngineeringResponseArtifact(EngineeringCaseModel):
 class P19ResponseCauseAssessment(EngineeringCaseModel):
     cause_id: str = Field(min_length=1)
     matched_mechanism_ids: tuple[str, ...] = Field(min_length=1)
-    result: Literal[
-        "supports_existing_contract",
-        "contradicts_existing_contract",
-        "unresolved",
-        "blocked",
-    ]
+    expectation_contract_ids: tuple[str, ...] = ()
+    evaluation_ids: tuple[str, ...] = ()
+    result: Literal["support", "contradiction", "unresolved", "blocked"]
     basis: str = Field(min_length=1)
     blocker_reasons: tuple[str, ...] = ()
     rank_modified: Literal[False] = False
@@ -164,7 +584,7 @@ class P19ResponseAdmission(EngineeringCaseModel):
             or self.blocker_reasons
             or not any(
                 item.result
-                in {"supports_existing_contract", "contradicts_existing_contract"}
+                in {"support", "contradiction"}
                 for item in self.assessments
             )
         ):
@@ -193,6 +613,11 @@ class ControlledStageResponseReceipt(EngineeringCaseModel):
     source_recording_sha256: str = Field(pattern=_SHA)
     setup_snapshot_sha256: str = Field(pattern=_SHA)
     response_artifact_ids: tuple[str, ...] = ()
+    response_artifact_sha256s: tuple[str, ...] = ()
+    producer_version: str = "p35.4.4.controlled-response-stage.v1"
+    canonical_clock_contract: Literal["qualified_session_tick"] = (
+        "qualified_session_tick"
+    )
     source_channels: tuple[str, ...] = ()
     eligible_lap_numbers: tuple[int, ...] = Field(min_length=3)
     phase: str = Field(min_length=1)
@@ -210,6 +635,8 @@ class ControlledStageResponseReceipt(EngineeringCaseModel):
             raise ValueError("controlled response laps must be unique")
         if len(self.response_artifact_ids) != len(set(self.response_artifact_ids)):
             raise ValueError("controlled response artifact identities must be unique")
+        if len(self.response_artifact_sha256s) != len(self.response_artifact_ids):
+            raise ValueError("controlled response artifact hashes must resolve every artifact")
         if len(self.source_channels) != len(set(self.source_channels)):
             raise ValueError("controlled response source channels must be unique")
         if (self.speed_min_mps is None) != (self.speed_max_mps is None):
@@ -251,7 +678,8 @@ class ControlledResponseReceipt(EngineeringCaseModel):
     stages: tuple[ControlledStageResponseReceipt, ...] = Field(
         min_length=3, max_length=3
     )
-    expected_response_relation_ids: tuple[str, ...] = Field(min_length=1)
+    expected_response_relation_ids: tuple[str, ...] = ()
+    expected_response_contract_ids: tuple[str, ...] = ()
     observed_metric_deltas: tuple[ControlledResponseMetricDelta, ...] = ()
     performance_effect_s: float | None = Field(default=None, allow_inf_nan=False)
     time_origin_phase: str | None = None
@@ -332,7 +760,10 @@ class ControlledResponseReceipt(EngineeringCaseModel):
         if len(all_artifacts) != len(set(all_artifacts)):
             raise ValueError("one physical response artifact cannot count twice")
         if self.state == "ready" and (
-            self.blocker_reasons or not self.observed_metric_deltas
+            self.blocker_reasons
+            or not self.observed_metric_deltas
+            or not self.expected_response_relation_ids
+            or not self.expected_response_contract_ids
         ):
             raise ValueError("ready controlled response requires metric deltas")
         if self.state == "blocked" and (
@@ -371,6 +802,7 @@ class SetupEffectReadiness(EngineeringCaseModel):
     experiment_factor_id: str | None = Field(default=None, pattern=_ID)
     countereffect_measurement_ids: tuple[str, ...] = ()
     missing_evidence: tuple[str, ...] = ()
+    deficit_ids: tuple[str, ...] = ()
     authority: Literal[
         "knowledge_only", "measurement_only", "exact_p19_projection"
     ]
@@ -393,11 +825,26 @@ class SetupEffectReadiness(EngineeringCaseModel):
 class CapabilityEvidenceResolution(EngineeringCaseModel):
     resolution_id: str = Field(pattern=r"^p3543cap_[0-9a-f]{24}$")
     missing_evidence: str = Field(min_length=1)
+    deficit_id: str = Field(pattern=r"^p3544deficit_[0-9a-f]{24}$")
+    deficit_code: EvidenceDeficitCode
     required_channel_ids: tuple[str, ...] = ()
     status: Literal[
-        "available_now", "requires_new_run", "pit_snapshot_only", "structurally_unavailable"
+        "available_now",
+        "requires_more_laps",
+        "requires_new_run",
+        "pit_snapshot_only",
+        "controlled_test_required",
+        "structurally_unavailable",
     ]
     recovery: str = Field(min_length=1)
+    recovery_mode: Literal[
+        "use_current_data",
+        "collect_more_laps",
+        "collect_new_run",
+        "pit_snapshot",
+        "controlled_test",
+        "unavailable",
+    ]
     source_artifact_ids: tuple[str, ...] = ()
     authority: Literal["measurement_routing_only"] = "measurement_routing_only"
     setup_authorized: Literal[False] = False
@@ -447,8 +894,8 @@ class EngineeringCaseCampaignCapture(EngineeringCaseModel):
 
 
 class CanonicalEngineeringCase(EngineeringCaseModel):
-    schema_version: Literal["p3543.canonical-engineering-case.v1"] = (
-        "p3543.canonical-engineering-case.v1"
+    schema_version: Literal["p3544.unified-engineering-case.v1"] = (
+        "p3544.unified-engineering-case.v1"
     )
     case_id: str = Field(pattern=r"^p3543case_[0-9a-f]{24}$")
     case_sha256: str = Field(pattern=_SHA)
@@ -467,9 +914,20 @@ class CanonicalEngineeringCase(EngineeringCaseModel):
     p35_assessment_sha256: str = Field(pattern=_SHA)
     p351_projection_sha256: str = Field(pattern=_SHA)
     p33_projection_sha256: str = Field(pattern=_SHA)
+    semantic_registry_sha256: str = Field(pattern=_SHA)
     evidence_index_sha256: str = Field(pattern=_SHA)
+    driver_intent: DriverIntent | None = None
+    crew_event_head_sha256: str | None = Field(default=None, pattern=_SHA)
+    crew_current_subgoal: str | None = None
+    crew_critic_state: Literal[
+        "pass", "blocked", "reinvestigate", "ask_driver", "unavailable"
+    ] = "unavailable"
+    active_workflow_id: str | None = None
+    active_workflow_revision: str | None = Field(default=None, pattern=_SHA)
     primary_opportunity_id: str | None = None
     response_artifacts: tuple[EngineeringResponseArtifact, ...] = ()
+    response_expectation_contracts: tuple[ResponseExpectationContract, ...] = ()
+    response_expectation_evaluations: tuple[ResponseExpectationEvaluation, ...] = ()
     p19_response_admissions: tuple[P19ResponseAdmission, ...] = ()
     mechanism_ids: tuple[str, ...] = ()
     component_ids: tuple[str, ...] = ()
@@ -478,6 +936,8 @@ class CanonicalEngineeringCase(EngineeringCaseModel):
     investigation_id: str | None = None
     workspace_revision: str = Field(pattern=_SHA)
     terminal_move_sha256: str = Field(pattern=_SHA)
+    mission: EngineeringMission
+    evidence_deficits: tuple[EngineeringEvidenceDeficit, ...] = ()
     capability_resolutions: tuple[CapabilityEvidenceResolution, ...] = ()
     quantity_observability: tuple[CaseQuantityObservability, ...] = ()
     semantic_focus: EngineeringSemanticFocusState
@@ -489,7 +949,7 @@ class CanonicalEngineeringCase(EngineeringCaseModel):
     @classmethod
     def build(cls, **values: Any) -> Self:
         body = dict(values)
-        body.pop("case_id", None)
+        provided_case_id = body.pop("case_id", None)
         body.pop("case_sha256", None)
         draft = cls.model_construct(
             **body,
@@ -500,15 +960,31 @@ class CanonicalEngineeringCase(EngineeringCaseModel):
         normalized.pop("case_id", None)
         normalized.pop("case_sha256", None)
         digest = canonical_json_sha256(normalized)
-        expected_case_id = f"p3543case_{values['case_revision_sha256'][:24]}"
+        expected_case_id = provided_case_id or (
+            "p3543case_"
+            + canonical_json_sha256(
+                {
+                    "schema": "p3544.engineering-case-lifecycle.v1",
+                    "run_id": values["run_id"],
+                    "session_id": values["session_id"],
+                }
+            )[:24]
+        )
         return cls.model_validate(
             {**normalized, "case_id": expected_case_id, "case_sha256": digest}
         )
 
     @model_validator(mode="after")
     def case_is_atomic(self) -> Self:
-        if self.case_id != f"p3543case_{self.case_revision_sha256[:24]}":
-            raise ValueError("engineering case ID must bind its atomic revision")
+        expected_case_id = "p3543case_" + canonical_json_sha256(
+            {
+                "schema": "p3544.engineering-case-lifecycle.v1",
+                "run_id": self.run_id,
+                "session_id": self.session_id,
+            }
+        )[:24]
+        if self.case_id != expected_case_id:
+            raise ValueError("engineering case ID must bind its stable run/session lifecycle")
         artifact_ids = tuple(item.artifact_id for item in self.response_artifacts)
         if len(artifact_ids) != len(set(artifact_ids)):
             raise ValueError("engineering case response artifacts must be unique")
@@ -531,6 +1007,21 @@ class CanonicalEngineeringCase(EngineeringCaseModel):
             for item in self.p19_response_admissions
         ):
             raise ValueError("P19 response admission belongs to another case")
+        expectation_ids = tuple(
+            item.expectation_contract_id
+            for item in self.response_expectation_contracts
+        )
+        if len(expectation_ids) != len(set(expectation_ids)):
+            raise ValueError("engineering response expectations must be unique")
+        evaluation_ids = tuple(
+            item.evaluation_id for item in self.response_expectation_evaluations
+        )
+        if len(evaluation_ids) != len(set(evaluation_ids)) or any(
+            item.expectation_contract_id not in expectation_ids
+            or item.response_artifact_id not in artifact_ids
+            for item in self.response_expectation_evaluations
+        ):
+            raise ValueError("response evaluations must resolve current case contracts and artifacts")
         admission_response_ids = tuple(
             item.response_artifact_id for item in self.p19_response_admissions
         )
@@ -562,10 +1053,88 @@ class CanonicalEngineeringCase(EngineeringCaseModel):
             raise ValueError(
                 "case quantity observability must resolve through response artifacts"
             )
+        deficit_ids = tuple(item.deficit_id for item in self.evidence_deficits)
+        if len(deficit_ids) != len(set(deficit_ids)) or any(
+            item.deficit_id not in deficit_ids for item in self.capability_resolutions
+        ):
+            raise ValueError("capability resolutions must resolve typed current-case deficits")
+        if self.driver_intent is not None and self.driver_intent.case_id != self.case_id:
+            raise ValueError("driver intent belongs to another engineering case")
+        if (self.active_workflow_id is None) != (self.active_workflow_revision is None):
+            raise ValueError("engineering case workflow identity must be complete")
+        if self.mission.terminal_move_sha256 != self.terminal_move_sha256:
+            raise ValueError("engineering mission must exactly mirror the terminal move")
         body = self.model_dump(mode="json", exclude={"case_id", "case_sha256"})
         if canonical_json_sha256(body) != self.case_sha256:
             raise ValueError("engineering case content identity is corrupt")
         return self
+
+
+CaseChangeCategory = Literal[
+    "initial",
+    "evidence",
+    "driver_intent",
+    "investigation",
+    "workflow",
+    "controlled_outcome",
+    "history",
+    "setup",
+    "scope",
+    "rebuild",
+]
+
+
+class EngineeringCaseRevision(EngineeringCaseModel):
+    schema_version: Literal["p3544.engineering-case-revision.v1"] = (
+        "p3544.engineering-case-revision.v1"
+    )
+    case_id: str = Field(pattern=r"^p3543case_[0-9a-f]{24}$")
+    case_revision: int = Field(ge=1)
+    case_sha256: str = Field(pattern=_SHA)
+    previous_case_sha256: str | None = Field(default=None, pattern=_SHA)
+    created_at: datetime
+    change_category: CaseChangeCategory
+    source_workspace_revision: str = Field(pattern=_SHA)
+    case: CanonicalEngineeringCase
+    delivery_diagnostics: EngineeringCaseDeliveryDiagnostics | None = None
+
+    @model_validator(mode="after")
+    def revision_is_exact(self) -> Self:
+        if (
+            self.case.case_id != self.case_id
+            or self.case.case_sha256 != self.case_sha256
+            or self.case.workspace_revision != self.source_workspace_revision
+        ):
+            raise ValueError("engineering case revision and projection disagree")
+        if self.case_revision == 1 and self.previous_case_sha256 is not None:
+            raise ValueError("first engineering case revision cannot have a predecessor")
+        if self.case_revision > 1 and self.previous_case_sha256 is None:
+            raise ValueError("later engineering case revisions require a predecessor")
+        if self.previous_case_sha256 == self.case_sha256:
+            raise ValueError("engineering case revision cannot point to itself")
+        return self
+
+
+class EngineeringCaseRevisionSummary(EngineeringCaseModel):
+    case_id: str = Field(pattern=r"^p3543case_[0-9a-f]{24}$")
+    case_revision: int = Field(ge=1)
+    case_sha256: str = Field(pattern=_SHA)
+    previous_case_sha256: str | None = Field(default=None, pattern=_SHA)
+    created_at: datetime
+    change_category: CaseChangeCategory
+    source_workspace_revision: str = Field(pattern=_SHA)
+
+
+class EngineeringCaseDeliveryDiagnostics(EngineeringCaseModel):
+    route_duration_ms: float = Field(ge=0.0, allow_inf_nan=False)
+    run_intelligence_build_count_delta: int = Field(ge=0)
+    crew_workspace_build_count_delta: int = Field(ge=0)
+    case_projection_build_count_delta: int = Field(ge=0)
+    response_bytes: int | None = Field(default=None, ge=0)
+    authority: Literal["delivery_only"] = "delivery_only"
+
+
+EngineeringCaseRevision.model_rebuild()
 
 
 __all__ = [name for name in globals() if not name.startswith("_")]

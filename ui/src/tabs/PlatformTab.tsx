@@ -1513,8 +1513,7 @@ function PlatformTraceWorkbench({
   const [workbenchView, setWorkbenchView] = useState<WorkbenchView>(normalizedInitialView);
   useEffect(() => {
     setWorkbenchView(normalizedInitialView);
-    setWholeLapExpanded(selection.selectedMode === "learning");
-  }, [normalizedInitialView, overviewTrace.lap, overviewTrace.run_id, selection.selectedMode]);
+  }, [normalizedInitialView, overviewTrace.lap, overviewTrace.run_id]);
   useEffect(() => {
     const restored = readPersistedZoomRange(zoomStorageKey);
     zoomRangeRef.current = restored;

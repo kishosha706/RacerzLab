@@ -284,6 +284,17 @@ export type CrewChiefWorkspace = {
     safe_priority_tier: string;
     skip_reason: string | null;
   }>;
+  inspection_evidence_qualifications: Array<{
+    tool_id: string;
+    case_sha256: string;
+    requirement_ids: string[];
+    accepted_artifact_ids: string[];
+    rejected_artifact_ids: string[];
+    rejection_reasons: string[];
+    requirement_complete: boolean;
+    authority: "measurement_only";
+    setup_authorized: false;
+  }>;
   current_subgoal: null | {
     subgoal_id: string;
     title: string;

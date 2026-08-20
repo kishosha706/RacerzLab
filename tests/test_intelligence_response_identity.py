@@ -68,9 +68,11 @@ def _citation() -> IntelligenceCitationResponse:
 
 def _query_payload() -> dict[str, object]:
     return {
-        "schema_version": "p19.intelligence-query.v1",
+        "schema_version": "p3544.engineering-case-query.v1",
         "run_id": "run-1",
         "session_id": "session-1",
+        "case_id": "p3543case_" + "a" * 24,
+        "case_sha256": "b" * 64,
         "reasoning_snapshot_sha256": REASONING_SHA256,
         "setup_id": "setup-1",
         "setup_snapshot_sha256": SETUP_SHA256,

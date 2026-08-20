@@ -186,7 +186,8 @@ def test_race_mode_keeps_secondary_engineering_surfaces_behind_one_disclosure() 
     assert 'aria-expanded={raceSupportOpen}' in engineer
     assert 'aria-controls="engineer-supporting-evidence"' in engineer
     assert "Supporting evidence and tools" in engineer
-    assert "{(learning || raceSupportOpen) && (" in engineer
+    assert '{((learning && learningSection !== "decision") || raceSupportOpen) && (' in engineer
+    assert 'aria-label="Learning Mode sections"' in engineer
     assert 'id="engineer-supporting-evidence"' in engineer
     assert ".engineer-race-support-toggle" in styles
     assert '.engineer-race-support-toggle[aria-expanded="true"] svg' in styles

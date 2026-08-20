@@ -27,6 +27,9 @@ import { ControlledTestRibbon } from "./components/ControlledTestRibbon";
 import { RunContextBar } from "./components/RunContextBar";
 import { StartupScreen } from "./components/StartupScreen";
 import { TelemetrySelectionProvider, useTelemetrySelection } from "./store/TelemetrySelectionContext";
+import { EngineeringCaseProvider } from "./store/EngineeringCaseContext";
+import { EngineeringMissionStrip } from "./components/EngineeringMissionStrip";
+import { WorkspaceErrorBoundary } from "./components/WorkspaceErrorBoundary";
 import { CompareBasketProvider, useCompareBasket } from "./store/CompareBasketContext";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { humanizeWorkspaceLabel } from "./constants/ui";
@@ -66,8 +69,6 @@ import type {
 import type { LearningEvidenceReference } from "./types/engineeringLearning";
 import { canonicalJsonSha256 } from "./utils/canonicalJsonSha256";
 import {
-  intelligenceMoveScope,
-  intelligenceWorkspaceTarget,
   moveScopeLabel,
   trustedNavigationMove,
 } from "./utils/intelligenceNavigation";
@@ -337,7 +338,11 @@ function CockpitShell() {
   const [importOutcome, setImportOutcome] = useState<"run" | "map" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sessionOpenError, setSessionOpenError] = useState<string | null>(null);
-  const [priorityRailOpen, setPriorityRailOpen] = useState(true);
+  const [priorityRailOpen, setPriorityRailOpen] = useState(() => !(
+    typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia(PRIORITY_RAIL_OVERLAY_QUERY).matches
+  ));
   const [priorityRailUsesOverlay, setPriorityRailUsesOverlay] = useState(() => (
     typeof window !== "undefined"
     && typeof window.matchMedia === "function"
@@ -461,17 +466,45 @@ function CockpitShell() {
   useEffect(() => {
     if (!priorityRailUsesOverlay || !priorityRailExpanded) return undefined;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (
-        event.key !== "Escape"
-        || event.defaultPrevented
-        || document.querySelector('[role="dialog"][aria-modal="true"]')
-      ) return;
-      event.preventDefault();
-      closePriorityRail();
+      const rail = document.querySelector<HTMLElement>(
+        '.cockpit-body > .priority-rail[role="dialog"]',
+      );
+      if (!rail) return;
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        event.preventDefault();
+        closePriorityRail();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [...rail.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )].filter((item) => !item.hasAttribute("hidden"));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [closePriorityRail, priorityRailExpanded, priorityRailUsesOverlay]);
+
+  useEffect(() => {
+    const covered = priorityRailUsesOverlay && priorityRailExpanded;
+    const elements = document.querySelectorAll<HTMLElement>(
+      ".cockpit-body > .workspace-nav-rail, .cockpit-body > .cockpit-workspace, .cockpit-body > .evidence-inspector",
+    );
+    elements.forEach((element) => {
+      if (covered) element.setAttribute("inert", "");
+      else element.removeAttribute("inert");
+    });
+    return () => elements.forEach((element) => element.removeAttribute("inert"));
+  }, [priorityRailExpanded, priorityRailUsesOverlay]);
   const traceStateOwnsRequest = traceLoadState.requestKey === platformRequestKey;
   const currentTrace = traceStateOwnsRequest && traceLoadState.status === "ready" ? trace : null;
   const currentTraceLoadStatus: PlatformLoadStatus = platformRequestKey == null
@@ -827,38 +860,6 @@ function CockpitShell() {
     setMapOverlayOpen(false);
     selectRun(null);
   }, [invalidateIntelligenceAuthority, selectRun]);
-
-  const openIntelligenceShellMove = useCallback(() => {
-    if (!overview || !currentIntelligenceShellMove || !trustedNavigationMove(currentIntelligenceShellMove, overview.run_id, {
-      workflowId: currentGuidanceWorkflow?.workflow_id ?? null,
-      workflowUpdatedAt: currentGuidanceWorkflowUpdatedAt,
-    })) return;
-    const target = intelligenceWorkspaceTarget(currentIntelligenceShellMove.workspace);
-    const scope = intelligenceMoveScope(currentIntelligenceShellMove);
-    if (!target || !scope) return;
-    focusEvidence({
-      runId: overview.run_id,
-      lapNumber: scope.lap,
-      lapScope: scope.kind,
-      lapWindowStart: scope.windowStart,
-      lapWindowEnd: scope.windowEnd,
-      representativeLap: scope.kind === "lap_window" ? scope.lap : null,
-      eventId: null,
-      sampleIndex: null,
-      lapDistFt: null,
-      lapPct: null,
-      zoneId: null,
-      zoneLabel: scope.pctStart != null ? "Server-ranked window" : null,
-      zoneStartPct: scope.pctStart,
-      zoneEndPct: scope.pctEnd,
-      channelId: null,
-      system: null,
-      selectionSource: "engineer",
-      lockState: scope.pctStart != null ? "locked" : "none",
-      trustTier: currentIntelligenceShellMove.authority,
-      valueBasis: scope.kind === "lap_window" ? "selected_window" : scope.kind === "single_lap" ? "full_lap" : "run_level",
-    }, target);
-  }, [currentGuidanceWorkflow?.workflow_id, currentGuidanceWorkflowUpdatedAt, currentIntelligenceShellMove, focusEvidence, overview]);
 
   const handleMapOverlayZoomRangeChange = useCallback((nextRange: { startValue?: number; endValue?: number } | null) => {
     latestMapOverlayZoomRangeRef.current = nextRange;
@@ -2130,10 +2131,6 @@ function CockpitShell() {
     );
   }
 
-  const intelligenceShellScope = currentIntelligenceShellMove
-    ? intelligenceMoveScope(currentIntelligenceShellMove)
-    : null;
-
   // ── no session yet → show startup screen ───────────────────
   if (!sessionId) {
     return <StartupScreen onSessionSelected={handleSessionSelected} />;
@@ -2212,6 +2209,7 @@ function CockpitShell() {
 
   // ── cockpit layout ──────────────────────────────────────────
   return (
+    <EngineeringCaseProvider runId={overview.run_id} sessionId={sessionId!}>
     <div className="cockpit-shell" data-mode={selection.selectedMode}>
       <a className="shell-skip-link" href="#primary-workspace">Skip to workspace</a>
       <RunContextBar
@@ -2222,6 +2220,7 @@ function CockpitShell() {
           selectLap(lap);
         }}
       />
+      <EngineeringMissionStrip />
       {currentControlledWorkflow?.packet.decision === "test" && (
         <ControlledTestRibbon
           workflow={currentControlledWorkflow}
@@ -2237,36 +2236,6 @@ function CockpitShell() {
             setWorkspace("dial_in", "manual");
           }}
         />
-      )}
-      {currentIntelligenceShellMove
-        && intelligenceShellScope
-        && selection.selectedWorkspace !== "engineer"
-        && currentControlledWorkflow?.packet.decision !== "test"
-        && (
-        <aside
-          className="shell-next-trustworthy-move"
-          data-authority={currentIntelligenceShellMove.authority}
-          data-run-id={currentIntelligenceShellMove.run_id}
-          data-scope={intelligenceShellScope.kind}
-          role="status"
-          aria-label="Next trustworthy move"
-        >
-          <BrainCircuit size={16} aria-hidden="true" />
-          <div className="shell-next-move-copy">
-            <span>Next trustworthy move</span>
-            <strong>{currentIntelligenceShellMove.title}</strong>
-            <small>{currentIntelligenceShellMove.instruction}</small>
-          </div>
-          <div className="shell-next-move-scope">
-            <span>{moveScopeLabel(intelligenceShellScope)}</span>
-            <strong>{currentIntelligenceShellMove.authority === "setup_authorized" ? "Controlled-test authority" : "Navigation only"}</strong>
-            <small>Opens the evidence view only</small>
-          </div>
-          <button type="button" onClick={openIntelligenceShellMove}>
-            Open {currentIntelligenceShellMove.workspace === "dial_in" ? "Dial-In" : currentIntelligenceShellMove.workspace.replace(/_/g, " ")}
-            <ChevronRight size={14} aria-hidden="true" />
-          </button>
-        </aside>
       )}
 
       <div
@@ -2324,6 +2293,16 @@ function CockpitShell() {
           </button>
         </nav>
 
+        {priorityRailUsesOverlay && priorityRailExpanded && (
+          <button
+            type="button"
+            className="priority-modal-backdrop"
+            onClick={closePriorityRail}
+            tabIndex={-1}
+            aria-label="Close Priority evidence"
+          />
+        )}
+
         {priorityRailExpanded ? (
           <Suspense fallback={<aside className="priority-rail" aria-hidden="true" />}>
             <PriorityRail
@@ -2336,6 +2315,7 @@ function CockpitShell() {
               loadStatus={currentPlatformEventsLoadStatus}
               loadError={currentPlatformEventsLoadError}
               eventVisibilityMode={platformEventVisibilityMode}
+              modal={priorityRailUsesOverlay}
             />
           </Suspense>
         ) : (
@@ -2419,6 +2399,10 @@ function CockpitShell() {
           {error && <p className="error-text" role="alert">{error}</p>}
           <div className="cockpit-workspace-body">
             <div className="cockpit-workspace-main">
+              <WorkspaceErrorBoundary
+                workspaceKey={`${overview.run_id}:${selection.selectedWorkspace}`}
+                onReturnToOverview={() => setWorkspace("overview", "manual")}
+              >
               <Suspense fallback={(
                 <div className="workspace-placeholder shell-workspace-loading" role="status" aria-live="polite" aria-busy="true">
                   <span className="eyebrow">{currentWorkspaceLabel}</span>
@@ -2430,6 +2414,7 @@ function CockpitShell() {
               >
                 {workspaceContent}
               </Suspense>
+              </WorkspaceErrorBoundary>
             </div>
           </div>
         </main>
@@ -2542,6 +2527,7 @@ function CockpitShell() {
         </div>
       )}
     </div>
+    </EngineeringCaseProvider>
   );
 }
 

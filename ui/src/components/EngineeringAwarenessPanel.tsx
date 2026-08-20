@@ -2,6 +2,7 @@ import { Activity, AlertTriangle, BrainCircuit, CheckCircle2, ShieldCheck } from
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchEngineeringAwareness } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
+import { useEngineeringCase } from "../store/EngineeringCaseContext";
 import type { EngineeringAwarenessProjection, TrustAxis } from "../types/engineeringAwareness";
 
 type AwarenessSurface = "overview" | "laps" | "platform" | "setup" | "compare" | "engineer";
@@ -28,14 +29,17 @@ function Axis({ label, axis, learning }: { label: string; axis: TrustAxis; learn
 }
 
 export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: Props) {
+  const { engineeringCase } = useEngineeringCase();
   const { selection, focusEvidence } = useTelemetrySelection();
   const learning = selection.selectedMode === "learning";
   const [projection, setProjection] = useState<EngineeringAwarenessProjection | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [retryToken, setRetryToken] = useState(0);
   const requestSequence = useRef(0);
 
   useEffect(() => {
+    if (engineeringCase == null) return undefined;
     const sequence = ++requestSequence.current;
     const requestedRunId = runId;
     const requestedSessionId = sessionId;
@@ -50,6 +54,7 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
           || response.request_identity.run_id !== requestedRunId
           || response.session_id !== requestedSessionId
           || response.request_identity.session_id !== requestedSessionId
+          || response.state_revision !== engineeringCase.p20_state_revision
         ) return;
         setProjection(response);
       })
@@ -61,7 +66,7 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
         if (sequence === requestSequence.current) setLoading(false);
       });
     return () => { requestSequence.current += 1; };
-  }, [runId, sessionId]);
+  }, [engineeringCase, retryToken, runId, sessionId]);
 
   const focusPrimary = useCallback(() => {
     const primary = projection?.primary_state;
@@ -99,6 +104,7 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
       <section className="engineering-awareness engineering-awareness--blocked" role="status">
         <AlertTriangle size={16} />
         <div><strong>Whole-car awareness unavailable</strong><p>{error ?? "No exact projection was returned."}</p></div>
+        <button type="button" onClick={() => setRetryToken((value) => value + 1)}>Retry current case</button>
       </section>
     );
   }

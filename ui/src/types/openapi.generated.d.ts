@@ -882,6 +882,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/{run_id}/engineering-case": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Current Engineering Case */
+        get: operations["get_current_engineering_case_api_runs__run_id__engineering_case_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engineering-cases/{case_id}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Engineering Case Revisions */
+        get: operations["list_engineering_case_revisions_api_engineering_cases__case_id__revisions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/engineering-case/driver-intent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Append Engineering Case Driver Intent */
+        post: operations["append_engineering_case_driver_intent_api_runs__run_id__engineering_case_driver_intent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/engineering-case/driver-intent-workflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Atomic Driver Intent Workflow */
+        post: operations["submit_atomic_driver_intent_workflow_api_runs__run_id__engineering_case_driver_intent_workflow_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/{run_id}/engineering-awareness": {
         parameters: {
             query?: never;
@@ -1860,6 +1928,63 @@ export interface components {
              */
             blocker_reasons: string[];
         };
+        /** AtomicDriverIntentWorkflowRequest */
+        AtomicDriverIntentWorkflowRequest: {
+            /** Run Id */
+            run_id: string;
+            /** Session Id */
+            session_id: string;
+            /** Complaint */
+            complaint: string;
+            /** Selected Lap */
+            selected_lap?: number | null;
+            /** Lap Scope */
+            lap_scope?: ("run" | "single_lap" | "lap_window" | "track_zone") | null;
+            /** Window Start Lap */
+            window_start_lap?: number | null;
+            /** Window End Lap */
+            window_end_lap?: number | null;
+            /** Representative Lap */
+            representative_lap?: number | null;
+            /** Selected Zone Start Pct */
+            selected_zone_start_pct?: number | null;
+            /** Selected Zone End Pct */
+            selected_zone_end_pct?: number | null;
+            /** Selected Zone Label */
+            selected_zone_label?: string | null;
+            /** Selected Phase */
+            selected_phase?: string | null;
+            /**
+             * Objective
+             * @default race-pace
+             * @enum {string}
+             */
+            objective: "race-pace" | "qualifying" | "long-run" | "tire-conservation" | "driver-confidence";
+            /**
+             * Priority
+             * @default overall-pace
+             * @enum {string}
+             */
+            priority: "overall-pace" | "entry-security" | "center-rotation" | "exit-drive" | "tire-life" | "platform-margin";
+            /** Expected Case Sha256 */
+            expected_case_sha256: string;
+            /** Baseline Run Id */
+            baseline_run_id?: string | null;
+        };
+        /** AtomicDriverIntentWorkflowResponse */
+        AtomicDriverIntentWorkflowResponse: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "workflow_created" | "measurement_required" | "blocked" | "no_current_problem" | "insufficient_evidence" | "unsupported_context";
+            case_revision: components["schemas"]["EngineeringCaseRevision"];
+            driver_intent: components["schemas"]["DriverIntent"];
+            advisory: components["schemas"]["DialInHypothesisResponse"];
+            workflow?: components["schemas"]["ControlledWorkflow"] | null;
+            /** Withholding Reason */
+            withholding_reason?: string | null;
+        };
         /** AttentionItem */
         AttentionItem: {
             /** Attention Id */
@@ -2415,10 +2540,10 @@ export interface components {
         CanonicalEngineeringCase: {
             /**
              * Schema Version
-             * @default p3543.canonical-engineering-case.v1
+             * @default p3544.unified-engineering-case.v1
              * @constant
              */
-            schema_version: "p3543.canonical-engineering-case.v1";
+            schema_version: "p3544.unified-engineering-case.v1";
             /** Case Id */
             case_id: string;
             /** Case Sha256 */
@@ -2453,8 +2578,25 @@ export interface components {
             p351_projection_sha256: string;
             /** P33 Projection Sha256 */
             p33_projection_sha256: string;
+            /** Semantic Registry Sha256 */
+            semantic_registry_sha256: string;
             /** Evidence Index Sha256 */
             evidence_index_sha256: string;
+            driver_intent?: components["schemas"]["DriverIntent"] | null;
+            /** Crew Event Head Sha256 */
+            crew_event_head_sha256?: string | null;
+            /** Crew Current Subgoal */
+            crew_current_subgoal?: string | null;
+            /**
+             * Crew Critic State
+             * @default unavailable
+             * @enum {string}
+             */
+            crew_critic_state: "pass" | "blocked" | "reinvestigate" | "ask_driver" | "unavailable";
+            /** Active Workflow Id */
+            active_workflow_id?: string | null;
+            /** Active Workflow Revision */
+            active_workflow_revision?: string | null;
             /** Primary Opportunity Id */
             primary_opportunity_id?: string | null;
             /**
@@ -2462,6 +2604,16 @@ export interface components {
              * @default []
              */
             response_artifacts: components["schemas"]["EngineeringResponseArtifact"][];
+            /**
+             * Response Expectation Contracts
+             * @default []
+             */
+            response_expectation_contracts: components["schemas"]["ResponseExpectationContract"][];
+            /**
+             * Response Expectation Evaluations
+             * @default []
+             */
+            response_expectation_evaluations: components["schemas"]["ResponseExpectationEvaluation"][];
             /**
              * P19 Response Admissions
              * @default []
@@ -2487,6 +2639,12 @@ export interface components {
             workspace_revision: string;
             /** Terminal Move Sha256 */
             terminal_move_sha256: string;
+            mission: components["schemas"]["EngineeringMission"];
+            /**
+             * Evidence Deficits
+             * @default []
+             */
+            evidence_deficits: components["schemas"]["EngineeringEvidenceDeficit"][];
             /**
              * Capability Resolutions
              * @default []
@@ -2580,6 +2738,13 @@ export interface components {
             resolution_id: string;
             /** Missing Evidence */
             missing_evidence: string;
+            /** Deficit Id */
+            deficit_id: string;
+            /**
+             * Deficit Code
+             * @enum {string}
+             */
+            deficit_code: "CHANNEL_MISSING" | "CHANNEL_UNHEALTHY" | "WRONG_UPDATE_SEMANTIC" | "PIT_SNAPSHOT_ONLY" | "INSUFFICIENT_REPETITION" | "INSUFFICIENT_CLEAN_LAPS" | "TRAFFIC_CONTAMINATED" | "SPEED_BAND_MISMATCH" | "PHASE_MISMATCH" | "SETUP_MISMATCH" | "CASE_REVISION_MISMATCH" | "RECORDING_NOT_INDEPENDENT" | "REQUIRED_COUNTEREFFECT_MISSING" | "EXACT_SEMANTIC_BRIDGE_MISSING" | "EXACT_LEGAL_OPTION_MISSING" | "P19_AUTHORITY_REQUIRED" | "BUILD_APPLICABILITY_BLOCKED" | "STRUCTURALLY_UNAVAILABLE";
             /**
              * Required Channel Ids
              * @default []
@@ -2589,9 +2754,14 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "available_now" | "requires_new_run" | "pit_snapshot_only" | "structurally_unavailable";
+            status: "available_now" | "requires_more_laps" | "requires_new_run" | "pit_snapshot_only" | "controlled_test_required" | "structurally_unavailable";
             /** Recovery */
             recovery: string;
+            /**
+             * Recovery Mode
+             * @enum {string}
+             */
+            recovery_mode: "use_current_data" | "collect_more_laps" | "collect_new_run" | "pit_snapshot" | "controlled_test" | "unavailable";
             /**
              * Source Artifact Ids
              * @default []
@@ -2717,6 +2887,31 @@ export interface components {
             source_workflow_id: string;
             /** Source Response Record Id */
             source_response_record_id?: string | null;
+            /**
+             * Response Expectation Contract Ids
+             * @default []
+             */
+            response_expectation_contract_ids: string[];
+            /**
+             * Response Metric Delta Ids
+             * @default []
+             */
+            response_metric_delta_ids: string[];
+            /**
+             * Stage Response Artifact Ids
+             * @default []
+             */
+            stage_response_artifact_ids: [
+                string,
+                string[]
+            ][];
+            /** Response Phase */
+            response_phase?: string | null;
+            /** Response Speed Band Mps */
+            response_speed_band_mps?: [
+                number,
+                number
+            ] | null;
             /**
              * Source Artifact Ids
              * @default []
@@ -3765,8 +3960,16 @@ export interface components {
             direction_sign: -1 | 1;
             /** Stages */
             stages: components["schemas"]["ControlledStageResponseReceipt"][];
-            /** Expected Response Relation Ids */
+            /**
+             * Expected Response Relation Ids
+             * @default []
+             */
             expected_response_relation_ids: string[];
+            /**
+             * Expected Response Contract Ids
+             * @default []
+             */
+            expected_response_contract_ids: string[];
             /**
              * Observed Metric Deltas
              * @default []
@@ -3841,6 +4044,22 @@ export interface components {
              * @default []
              */
             response_artifact_ids: string[];
+            /**
+             * Response Artifact Sha256S
+             * @default []
+             */
+            response_artifact_sha256s: string[];
+            /**
+             * Producer Version
+             * @default p35.4.4.controlled-response-stage.v1
+             */
+            producer_version: string;
+            /**
+             * Canonical Clock Contract
+             * @default qualified_session_tick
+             * @constant
+             */
+            canonical_clock_contract: "qualified_session_tick";
             /**
              * Source Channels
              * @default []
@@ -4734,6 +4953,11 @@ export interface components {
              * @default []
              */
             tool_eligibility: components["schemas"]["CrewChiefToolEligibility"][];
+            /**
+             * Inspection Evidence Qualifications
+             * @default []
+             */
+            inspection_evidence_qualifications: components["schemas"]["InspectionEvidenceQualification"][];
             current_subgoal?: components["schemas"]["InvestigationSubgoal"] | null;
             latest_tool_result?: components["schemas"]["CrewChiefToolResult"] | null;
             critique: components["schemas"]["CrewChiefCritique"];
@@ -5650,6 +5874,132 @@ export interface components {
              */
             setup_authorized: false;
         };
+        /** DriverIntent */
+        DriverIntent: {
+            /**
+             * Schema Version
+             * @default p3544.driver-intent.v1
+             * @constant
+             */
+            schema_version: "p3544.driver-intent.v1";
+            /** Intent Id */
+            intent_id: string;
+            /** Intent Sha256 */
+            intent_sha256: string;
+            /** Case Id */
+            case_id: string;
+            /** Intent Revision */
+            intent_revision: number;
+            /** Raw Driver Wording */
+            raw_driver_wording: string;
+            /** Canonical Symptom */
+            canonical_symptom?: string | null;
+            /** Phase Scope */
+            phase_scope?: string | null;
+            /**
+             * Response Regime Scope
+             * @default unknown
+             * @enum {string}
+             */
+            response_regime_scope: "transient" | "steady_state" | "migration" | "unknown" | "context_only";
+            /**
+             * Traffic Context
+             * @default unknown
+             * @enum {string}
+             */
+            traffic_context: "clear" | "exposed" | "unknown" | "context_only";
+            /** Stint Context */
+            stint_context?: string | null;
+            /** Power State Context */
+            power_state_context?: string | null;
+            /** Time Origin Scope */
+            time_origin_scope?: string | null;
+            /** Driver Demand Scope */
+            driver_demand_scope?: string | null;
+            /** Objective */
+            objective: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "manual" | "crew_question" | "dial_in" | "smart_engineer" | "session_restore";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Supersedes Intent Id */
+            supersedes_intent_id?: string | null;
+            /**
+             * Typed Interpretation Provenance
+             * @default []
+             */
+            typed_interpretation_provenance: string[];
+            /**
+             * Authority
+             * @default driver_context_only
+             * @constant
+             */
+            authority: "driver_context_only";
+            /**
+             * Physical Truth Modified
+             * @default false
+             * @constant
+             */
+            physical_truth_modified: false;
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
+        };
+        /** DriverIntentRequest */
+        DriverIntentRequest: {
+            /** Session Id */
+            session_id: string;
+            /** Expected Case Sha256 */
+            expected_case_sha256: string;
+            /** Raw Driver Wording */
+            raw_driver_wording: string;
+            /** Canonical Symptom */
+            canonical_symptom?: string | null;
+            /** Phase Scope */
+            phase_scope?: string | null;
+            /**
+             * Response Regime Scope
+             * @default unknown
+             * @enum {string}
+             */
+            response_regime_scope: "transient" | "steady_state" | "migration" | "unknown" | "context_only";
+            /**
+             * Traffic Context
+             * @default unknown
+             * @enum {string}
+             */
+            traffic_context: "clear" | "exposed" | "unknown" | "context_only";
+            /** Stint Context */
+            stint_context?: string | null;
+            /** Power State Context */
+            power_state_context?: string | null;
+            /** Time Origin Scope */
+            time_origin_scope?: string | null;
+            /** Driver Demand Scope */
+            driver_demand_scope?: string | null;
+            /** @default race_long_run */
+            objective: components["schemas"]["EngineeringObjective"];
+            /**
+             * Source
+             * @default manual
+             * @enum {string}
+             */
+            source: "manual" | "crew_question" | "dial_in" | "smart_engineer" | "session_restore";
+            /**
+             * Typed Interpretation Provenance
+             * @default []
+             */
+            typed_interpretation_provenance: string[];
+        };
         /** DriverLineReport */
         DriverLineReport: {
             gate: components["schemas"]["EngineGate"];
@@ -6016,6 +6366,79 @@ export interface components {
              */
             authority: "qualification_only";
         };
+        /** EngineeringCaseDeliveryDiagnostics */
+        EngineeringCaseDeliveryDiagnostics: {
+            /** Route Duration Ms */
+            route_duration_ms: number;
+            /** Run Intelligence Build Count Delta */
+            run_intelligence_build_count_delta: number;
+            /** Crew Workspace Build Count Delta */
+            crew_workspace_build_count_delta: number;
+            /** Case Projection Build Count Delta */
+            case_projection_build_count_delta: number;
+            /** Response Bytes */
+            response_bytes?: number | null;
+            /**
+             * Authority
+             * @default delivery_only
+             * @constant
+             */
+            authority: "delivery_only";
+        };
+        /** EngineeringCaseRevision */
+        EngineeringCaseRevision: {
+            /**
+             * Schema Version
+             * @default p3544.engineering-case-revision.v1
+             * @constant
+             */
+            schema_version: "p3544.engineering-case-revision.v1";
+            /** Case Id */
+            case_id: string;
+            /** Case Revision */
+            case_revision: number;
+            /** Case Sha256 */
+            case_sha256: string;
+            /** Previous Case Sha256 */
+            previous_case_sha256?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Change Category
+             * @enum {string}
+             */
+            change_category: "initial" | "evidence" | "driver_intent" | "investigation" | "workflow" | "controlled_outcome" | "history" | "setup" | "scope" | "rebuild";
+            /** Source Workspace Revision */
+            source_workspace_revision: string;
+            case: components["schemas"]["CanonicalEngineeringCase"];
+            delivery_diagnostics?: components["schemas"]["EngineeringCaseDeliveryDiagnostics"] | null;
+        };
+        /** EngineeringCaseRevisionSummary */
+        EngineeringCaseRevisionSummary: {
+            /** Case Id */
+            case_id: string;
+            /** Case Revision */
+            case_revision: number;
+            /** Case Sha256 */
+            case_sha256: string;
+            /** Previous Case Sha256 */
+            previous_case_sha256?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Change Category
+             * @enum {string}
+             */
+            change_category: "initial" | "evidence" | "driver_intent" | "investigation" | "workflow" | "controlled_outcome" | "history" | "setup" | "scope" | "rebuild";
+            /** Source Workspace Revision */
+            source_workspace_revision: string;
+        };
         /** EngineeringConclusion */
         EngineeringConclusion: {
             /** Key */
@@ -6053,6 +6476,72 @@ export interface components {
              * @constant
              */
             may_veto_current_evidence: false;
+        };
+        /**
+         * EngineeringEvidenceDeficit
+         * @description Typed evidence debt.  Planner behavior must never depend on prose parsing.
+         */
+        EngineeringEvidenceDeficit: {
+            /** Deficit Id */
+            deficit_id: string;
+            /** Deficit Sha256 */
+            deficit_sha256: string;
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "CHANNEL_MISSING" | "CHANNEL_UNHEALTHY" | "WRONG_UPDATE_SEMANTIC" | "PIT_SNAPSHOT_ONLY" | "INSUFFICIENT_REPETITION" | "INSUFFICIENT_CLEAN_LAPS" | "TRAFFIC_CONTAMINATED" | "SPEED_BAND_MISMATCH" | "PHASE_MISMATCH" | "SETUP_MISMATCH" | "CASE_REVISION_MISMATCH" | "RECORDING_NOT_INDEPENDENT" | "REQUIRED_COUNTEREFFECT_MISSING" | "EXACT_SEMANTIC_BRIDGE_MISSING" | "EXACT_LEGAL_OPTION_MISSING" | "P19_AUTHORITY_REQUIRED" | "BUILD_APPLICABILITY_BLOCKED" | "STRUCTURALLY_UNAVAILABLE";
+            /**
+             * Affected Contract Ids
+             * @default []
+             */
+            affected_contract_ids: string[];
+            /**
+             * Affected Effect Ids
+             * @default []
+             */
+            affected_effect_ids: string[];
+            /**
+             * Affected Mechanism Ids
+             * @default []
+             */
+            affected_mechanism_ids: string[];
+            /**
+             * Affected Tool Ids
+             * @default []
+             */
+            affected_tool_ids: string[];
+            /**
+             * Required Channel Ids
+             * @default []
+             */
+            required_channel_ids: string[];
+            /**
+             * Current Channel Capability Ids
+             * @default []
+             */
+            current_channel_capability_ids: string[];
+            /** Blocker Reasons */
+            blocker_reasons: string[];
+            /**
+             * Recovery Mode
+             * @enum {string}
+             */
+            recovery_mode: "use_current_data" | "collect_more_laps" | "collect_new_run" | "pit_snapshot" | "controlled_test" | "unavailable";
+            /** Mission Eligible */
+            mission_eligible: boolean;
+            /**
+             * Authority
+             * @default measurement_routing_only
+             * @constant
+             */
+            authority: "measurement_routing_only";
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
         };
         /** EngineeringEvidenceIndex */
         EngineeringEvidenceIndex: {
@@ -6194,6 +6683,38 @@ export interface components {
              */
             claims_lap_time_improvement: false;
         };
+        /** EngineeringMission */
+        EngineeringMission: {
+            /** What */
+            what: string;
+            /** Where */
+            where: string;
+            /** Why It Matters */
+            why_it_matters: string;
+            /** Uncertain */
+            uncertain: string;
+            /** Next */
+            next: string;
+            /** Done When */
+            done_when: string;
+            /**
+             * Source Authority
+             * @enum {string}
+             */
+            source_authority: "p19_exact_mirror" | "p19_measurement_mirror" | "navigation_only";
+            /** Terminal Move Sha256 */
+            terminal_move_sha256: string;
+            /**
+             * Source Artifact Ids
+             * @default []
+             */
+            source_artifact_ids: string[];
+            /**
+             * Setup Authorized
+             * @default false
+             */
+            setup_authorized: boolean;
+        };
         /**
          * EngineeringObjective
          * @enum {string}
@@ -6228,6 +6749,8 @@ export interface components {
             source_recording_sha256: string;
             /** Source Producer Id */
             source_producer_id: string;
+            /** Source Producer Version */
+            source_producer_version: string;
             /** Relation */
             relation: string;
             /** Lap Pct Start */
@@ -6251,7 +6774,22 @@ export interface components {
             reference_lap_numbers: number[];
             /** Independence Unit Ids */
             independence_unit_ids: string[];
+            /** Physical Episode Sha256 */
+            physical_episode_sha256: string;
+            /** Speed Min Mps */
+            speed_min_mps?: number | null;
+            /** Speed Median Mps */
+            speed_median_mps?: number | null;
+            /** Speed Max Mps */
+            speed_max_mps?: number | null;
+            /** Metric Channel Lineage */
+            metric_channel_lineage: components["schemas"]["ResponseChannelLineage"][];
             operational_evidence: components["schemas"]["OperationalResponseEvidence"];
+            /**
+             * Evidence State
+             * @enum {string}
+             */
+            evidence_state: "calculated" | "observed_correlation";
             /**
              * Applicability
              * @default exact_current_case
@@ -7066,6 +7604,47 @@ export interface components {
             /** Channels */
             channels?: string[] | null;
         };
+        /** InspectionEvidenceQualification */
+        InspectionEvidenceQualification: {
+            /** Tool Id */
+            tool_id: string;
+            /** Case Sha256 */
+            case_sha256: string;
+            /**
+             * Requirement Ids
+             * @default []
+             */
+            requirement_ids: string[];
+            /**
+             * Accepted Artifact Ids
+             * @default []
+             */
+            accepted_artifact_ids: string[];
+            /**
+             * Rejected Artifact Ids
+             * @default []
+             */
+            rejected_artifact_ids: string[];
+            /**
+             * Rejection Reasons
+             * @default []
+             */
+            rejection_reasons: string[];
+            /** Requirement Complete */
+            requirement_complete: boolean;
+            /**
+             * Authority
+             * @default measurement_only
+             * @constant
+             */
+            authority: "measurement_only";
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
+        };
         /** IntegrityCheck */
         IntegrityCheck: {
             /** Key */
@@ -7433,7 +8012,11 @@ export interface components {
             /** Question */
             question: string;
             /** Session Id */
-            session_id?: string | null;
+            session_id: string;
+            /** Case Id */
+            case_id: string;
+            /** Case Sha256 */
+            case_sha256: string;
             /** Selected Lap */
             selected_lap?: number | null;
             /** Selected Window Start Lap */
@@ -7451,11 +8034,15 @@ export interface components {
              * Schema Version
              * @constant
              */
-            schema_version: "p19.intelligence-query.v1";
+            schema_version: "p3544.engineering-case-query.v1";
             /** Run Id */
             run_id: string;
             /** Session Id */
-            session_id?: string | null;
+            session_id: string;
+            /** Case Id */
+            case_id: string;
+            /** Case Sha256 */
+            case_sha256: string;
             /** Reasoning Snapshot Sha256 */
             reasoning_snapshot_sha256: string;
             /** Setup Id */
@@ -7507,6 +8094,14 @@ export interface components {
             action_authorized: boolean;
             /** Action Source Event Ids */
             action_source_event_ids?: string[];
+            /** Source Artifact Ids */
+            source_artifact_ids?: string[];
+            /**
+             * Authority Ceiling
+             * @default evidence_only
+             * @enum {string}
+             */
+            authority_ceiling: "evidence_only" | "attention_only" | "navigation_only" | "p19_measurement_mirror" | "p19_exact_mirror";
             evidence_state: components["schemas"]["EvidenceState"];
             /** Citations */
             citations?: components["schemas"]["IntelligenceCitationResponse"][];
@@ -9803,10 +10398,20 @@ export interface components {
             /** Matched Mechanism Ids */
             matched_mechanism_ids: string[];
             /**
+             * Expectation Contract Ids
+             * @default []
+             */
+            expectation_contract_ids: string[];
+            /**
+             * Evaluation Ids
+             * @default []
+             */
+            evaluation_ids: string[];
+            /**
              * Result
              * @enum {string}
              */
-            result: "supports_existing_contract" | "contradicts_existing_contract" | "unresolved" | "blocked";
+            result: "support" | "contradiction" | "unresolved" | "blocked";
             /** Basis */
             basis: string;
             /**
@@ -12098,6 +12703,149 @@ export interface components {
             ] | null;
             proximity: components["schemas"]["ProximityContext"];
         };
+        /** ResponseChannelLineage */
+        ResponseChannelLineage: {
+            /** Metric Id */
+            metric_id: string;
+            /** Source Channel Ids */
+            source_channel_ids: string[];
+        };
+        /** ResponseCountereffectContract */
+        ResponseCountereffectContract: {
+            /** Metric Id */
+            metric_id: string;
+            /** Accepted Min */
+            accepted_min?: number | null;
+            /** Accepted Max */
+            accepted_max?: number | null;
+            /**
+             * Required
+             * @default true
+             */
+            required: boolean;
+        };
+        /**
+         * ResponseExpectationContract
+         * @description Reviewed response expectation; relationship alone can never satisfy it.
+         */
+        ResponseExpectationContract: {
+            /** Expectation Contract Id */
+            expectation_contract_id: string;
+            /** Expectation Sha256 */
+            expectation_sha256: string;
+            /** Owning Effect Id */
+            owning_effect_id: string;
+            /** Owning Mechanism Ids */
+            owning_mechanism_ids: string[];
+            /** Experiment Factor Id */
+            experiment_factor_id: string;
+            /** Control Key */
+            control_key: string;
+            /**
+             * Direction Sign
+             * @enum {integer}
+             */
+            direction_sign: -1 | 1;
+            /** Relation Id */
+            relation_id: string;
+            /** Metric Id */
+            metric_id: string;
+            /** Expected Sign */
+            expected_sign?: (-1 | 1) | null;
+            /** Accepted Min */
+            accepted_min?: number | null;
+            /** Accepted Max */
+            accepted_max?: number | null;
+            /** Units */
+            units: string;
+            /** Phase */
+            phase: string;
+            /** Lap Pct Start */
+            lap_pct_start?: number | null;
+            /** Lap Pct End */
+            lap_pct_end?: number | null;
+            /** Speed Min Mps */
+            speed_min_mps?: number | null;
+            /** Speed Max Mps */
+            speed_max_mps?: number | null;
+            /** Minimum Independent Repetitions */
+            minimum_independent_repetitions: number;
+            /** Minimum Absolute Signal */
+            minimum_absolute_signal: number;
+            /** Required Channel Ids */
+            required_channel_ids: string[];
+            /** Required Context States */
+            required_context_states: string[];
+            /** Allowed Evidence States */
+            allowed_evidence_states: ("calculated" | "observed_correlation")[];
+            /**
+             * Countereffect Contracts
+             * @default []
+             */
+            countereffect_contracts: components["schemas"]["ResponseCountereffectContract"][];
+            /** Protected Outcomes */
+            protected_outcomes: string[];
+            /** Car Applicability */
+            car_applicability: string[];
+            /** Build Applicability */
+            build_applicability: string[];
+            /**
+             * Authority Ceiling
+             * @default relationship_only
+             * @constant
+             */
+            authority_ceiling: "relationship_only";
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
+        };
+        /** ResponseExpectationEvaluation */
+        ResponseExpectationEvaluation: {
+            /** Evaluation Id */
+            evaluation_id: string;
+            /** Evaluation Sha256 */
+            evaluation_sha256: string;
+            /** Expectation Contract Id */
+            expectation_contract_id: string;
+            /** Response Artifact Id */
+            response_artifact_id: string;
+            /**
+             * Result
+             * @enum {string}
+             */
+            result: "matched" | "contradicted" | "inconclusive" | "blocked" | "unavailable";
+            /**
+             * Matched Metric Ids
+             * @default []
+             */
+            matched_metric_ids: string[];
+            /**
+             * Blocker Reasons
+             * @default []
+             */
+            blocker_reasons: string[];
+            /**
+             * Authority
+             * @default p19_response_evaluation_only
+             * @constant
+             */
+            authority: "p19_response_evaluation_only";
+            /**
+             * Rank Modified
+             * @default false
+             * @constant
+             */
+            rank_modified: false;
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
+        };
         /** RevisionRequest */
         RevisionRequest: {
             /** Session Id */
@@ -12820,6 +13568,11 @@ export interface components {
              * @default []
              */
             missing_evidence: string[];
+            /**
+             * Deficit Ids
+             * @default []
+             */
+            deficit_ids: string[];
             /**
              * Authority
              * @enum {string}
@@ -16878,6 +17631,144 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ControlledWorkflow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_current_engineering_case_api_runs__run_id__engineering_case_get: {
+        parameters: {
+            query: {
+                session_id: string;
+                objective?: components["schemas"]["EngineeringObjective"];
+                expected_case_sha256?: string | null;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngineeringCaseRevision"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_engineering_case_revisions_api_engineering_cases__case_id__revisions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngineeringCaseRevisionSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    append_engineering_case_driver_intent_api_runs__run_id__engineering_case_driver_intent_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DriverIntentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngineeringCaseRevision"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_atomic_driver_intent_workflow_api_runs__run_id__engineering_case_driver_intent_workflow_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AtomicDriverIntentWorkflowRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AtomicDriverIntentWorkflowResponse"];
                 };
             };
             /** @description Validation Error */
