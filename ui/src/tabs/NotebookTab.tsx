@@ -1,24 +1,11 @@
 import { AlertTriangle, BarChart3, BookOpen, CheckCircle2, Clipboard, Layers, MapPin, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { requestJson } from "../api/client";
 import { useCompareBasket } from "../store/CompareBasketContext";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { NotebookFinding } from "../types/compare";
 import { findingToMarkdown } from "../utils/exportUtils";
 import { evidenceStrengthOutOf100 } from "../utils/evidenceScore";
-
-const API_BASE =
-  import.meta.env.VITE_RACELAB_API_BASE_URL ??
-  import.meta.env.VITE_API_BASE_URL ??
-  "http://127.0.0.1:8010";
-
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
 
 type NotebookView = "findings" | "finding-detail";
 type FindingSectorSummary = {
@@ -60,7 +47,7 @@ export function NotebookTab() {
       if (filterTrack) params.set("track_name", filterTrack);
       if (filterStatus) params.set("status", filterStatus);
       const suffix = params.toString() ? `?${params.toString()}` : "";
-      setFindings(await req<NotebookFinding[]>(`/api/notebook/findings${suffix}`));
+      setFindings(await requestJson<NotebookFinding[]>(`/api/notebook/findings${suffix}`));
     } catch {
       setFindings([]);
     } finally {
@@ -89,7 +76,7 @@ export function NotebookTab() {
   ) => {
     if (!selectedFinding) return;
     try {
-      const updated = await req<NotebookFinding>(`/api/notebook/findings/${findingId}`, {
+      const updated = await requestJson<NotebookFinding>(`/api/notebook/findings/${findingId}`, {
         method: "PATCH",
         body: JSON.stringify({ status }),
       });
@@ -107,7 +94,7 @@ export function NotebookTab() {
     setDetailStatus(null);
     try {
       const tags = editTags.split(",").map((tag) => tag.trim()).filter(Boolean);
-      const updated = await req<NotebookFinding>(
+      const updated = await requestJson<NotebookFinding>(
         `/api/notebook/findings/${selectedFinding.finding_id}`,
         {
           method: "PATCH",

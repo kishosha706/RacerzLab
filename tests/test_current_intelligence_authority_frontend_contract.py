@@ -153,9 +153,10 @@ def test_ribbon_never_uses_stored_exact_change_as_stage_b_authority() -> None:
 
     assert "currentIntelligenceAuthorityMatchesWorkflow(" in ribbon
     assert "workflow.packet.primary_test?.exact_change" not in ribbon
-    assert "detail: authority.instruction" in ribbon
-    assert 'label: authorityStatus === "checking" ? "Rechecking Stage B" : "Review Stage B authority"' in ribbon
-    assert "The stored target stays hidden" in ribbon
+    assert "authority.instruction" not in ribbon
+    assert 'label: authorityStatus === "checking" ? "Stage B authority checking" : "Stage B authority unavailable"' in ribbon
+    assert "stored target stays hidden" in ribbon
+    assert "Review workflow evidence" in ribbon
     assert 'data-authority={nextStage === "B" && exactSourceRunAuthority ? "source-run-card" : "non-authorizing-progress"}' in ribbon
 
 

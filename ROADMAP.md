@@ -2917,6 +2917,20 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
   searchable/renameable/archiveable session picker with created/updated time and
   stable short identity. Presentation metadata does not enter scientific case
   identity.
+- [x] Close the case-publication boundary around every state-changing Crew and
+  controlled-workflow operation. DriverIntent/event truth, exact successor case,
+  workflow/P33 state where applicable, and a content-addressed replay receipt now
+  commit together; stale heads, conflicting retries, corrupt lineage, and
+  post-commit partial success fail closed.
+- [x] Bind selected-run scope, recording/runtime/build identity, P35.1 projection,
+  semantic registry, evidence index, readiness, capability, and active workflow
+  identity into the persisted case graph. Server and client validate exact
+  cross-references before adopting a mutation or navigating semantic focus.
+- [x] Give the installed desktop one stable app-local database/data/log root,
+  storage-aware readiness, and an OS-random local API capability boundary. The
+  current release package proves persistence across a full shell/backend restart
+  from arbitrary working directories, single-instance ownership, and clean
+  shutdown.
 - [ ] Populate reviewed numeric `ResponseExpectationContract` instances only
   after source-backed sign/range/noise/countereffect contracts are reviewed.
   Current static P35.1 targets are intentionally insufficient for a matched
@@ -2963,6 +2977,55 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
   remains sole exact setup/Keep/Undo/Retest/terminal authority; P33 remains
   attention-only; P34 remains frozen; P36 is not activated and all real evidence
   counts remain unchanged.
+
+### P35.4.4 adversarial closure - 2026-08-26
+
+- Backend: the complete 2,929-test collection passed with 2,925 successes, four
+  protected/environment-dependent skips, and zero failures. Hostile coverage now
+  includes complete revision-chain continuity, transactional Crew and
+  controlled-workflow replay, case/intent/objective coherence, exact
+  response-envelope provenance, migration
+  ledger tamper/upgrade rejection through v7, storage-readiness failure, and
+  local-API capability isolation. A P32-bound cancel now preserves only its
+  minimal projection-identity receipt and replays the exact authority-withheld
+  response; warm readiness revalidates every ordered migration checksum. The
+  focused frozen P34/release/prospective authority slice passed 61/61.
+- Frontend/API: 25 Vitest files / 101 rendered tests, TypeScript, generated OpenAPI
+  parity at 92 paths / 394 schemas, two Chromium journeys, and the 2,235-module
+  production build passed. Entry measured 215.37 KiB raw / 58.05 KiB gzip and
+  all configured bundle budgets passed. Exact-case successor adoption requires
+  one provider-owned initial request and no refetch for a valid mutation result;
+  no comparable pre-change runtime request trace was retained.
+- Interconnectivity: DriverIntent, Crew events, controlled workflows, P33 capture,
+  response artifacts/admissions, typed deficits, semantic focus, mission, and
+  specialist handoffs now share one immutable case/revision lineage. The client
+  rejects foreign scope, runtime identity, predecessor, receipt, artifact, or
+  reasoning-snapshot truth instead of mixing specialist realities. Whole-car
+  awareness binds exact P19 and P20 snapshots, and the mission strip is the only
+  terminal Next voice; specialist panels label their copies as evidence/status.
+- Authority: P19 remains the sole cause, exact setup, controlled-test,
+  Keep/Undo/Retest, and terminal authority. P33 remains attention-only, P34 is
+  frozen, and P36 remains inactive. Historical evidence counts remain **0/9**,
+  same-setup null **0/10**, negative controls **0/8**, and subgroups **0/9**.
+- Real evidence: the protected source SHA
+  `3e347305740a5ad3d7831bec650727e49494dc28e4e031fd2820f677e7d6bccd`
+  passed at 26,556 records, 277/277 declared channels, 11 useful laps, qualified
+  SessionTick, and schema
+  `5565017159206c0b2f4407add6f97b66dfcd28b38c3ded62a78899b5428441af`.
+  Context contamination still blocks setup attribution.
+- Performance: the current real Atlanta case measured 8,916.093 ms server-side
+  for a true first construction, 684.190 ms after process restart with persisted
+  intelligence, and 89.071-97.383 ms warm. The 145,815-byte warm response caused
+  zero fresh intelligence, Crew, or case builds; restart caused one Crew and one
+  case projection build and zero intelligence builds. P33 bounded retrieval over
+  10,001 records remained below its 100 ms budgets (18.673 ms warm, 32.353 ms
+  prior, 4.343 ms cached).
+- Delivery: Ruff, bytecode compilation, Cargo's four locked library tests and
+  locked check, permanent synthetic trust, protected real-fixture trust, and
+  diff integrity passed. A 100.764-second current-source Tauri release produced
+  MSI/NSIS installers, then completed the real arbitrary-CWD storage/restart/
+  single-instance/shutdown smoke in 18.493 seconds without a leaked listener,
+  temporary launch root, process, or smoke marker.
 
 ## P35.5 - Field-Ready Alpha Hardening
 
@@ -3160,3 +3223,4 @@ Implementation queue completed in this pass:
 | 2026-08-18 | Verified P35.5 field-ready alpha hardening locally | Next Gen oval scope and ordinal evidence wording are honest; one compact cached shell move replaces eager full-intelligence run-open work; returning-session resume, continuous lap playback, exact zoom persistence, grouped evidence debt, shortcut disablement, generated contracts, locked dependencies, single-instance sidecar identity/restart, semantic real-file gates, Windows packaging, and lifecycle smoke are wired without changing P19 authority. The current 2,850-test Python collection is covered by the green definitive 2,847-test run plus focused closure of the three later additions, 43 UI behaviors, two Chromium flows, TypeScript, Ruff, Cargo, zero npm advisories, generated 88-path/96-operation OpenAPI parity, the 2,228-module budgeted build, MSI/NSIS bundles, and packaged ownership/shutdown smoke. Shell access is 13.173 ms unbuilt / 28.376 ms cached without starting intelligence; full first construction remains measured at 12.226 s, while digest-verified exact-semantic restart reuse is 104.327 ms with zero fresh build count. Null Session 01, real A/B/A2, P23/P36 evidence, and every statistical activation remain unearned. |
 | 2026-08-19 | Verified P35.4.3 closed-loop engineering interconnectivity locally | Operational responses are now first-class case/index artifacts; one atomic Engineering Case binds all current producer revisions; P19 owns non-mutating response admission; A/B/A2 scoring can retain exact response receipts; the semantic registry connects response/mechanism/quantity/component/Crew vocabularies; all 92 effects expose readiness; capability debt routes to current channels, new runs, pit snapshots, or structural unavailability; P33 retains controlled response provenance; and one semantic focus reuses canonical evidence navigation. The complete 3,331-test Python collection passed with three protected skips, plus five dedicated hostiles, 44 UI behaviors, executable client guards, whole-repo Ruff, TypeScript, generated 88-path/376-schema OpenAPI parity, the 2,228-module budgeted build, and diff integrity. P19 remains sole cause/setup/terminal authority and P36 counts remain 0/9, 0/10, 0/8, and 0/9. |
 | 2026-08-20 | Verified P35.4.4 unified Engineering Case experience locally | Stable case lifecycles and immutable revisions, one DriverIntent, exact response expectations, typed deficits, usable-evidence Crew qualification, fail-closed A/B/A2 response scoring, exact-case Smart Engineer queries, one provider/mission/scope voice, revision-safe specialist handoffs, compact sectioned Learning, modal narrow Priority, semantic Setup/Compare focus, and distinct session management passed the complete 2,868-test Python collection with three protected skips, 49 rendered UI behaviors, seven runtime guards, Ruff, TypeScript, OpenAPI 92-path/390-schema parity, the 2,232-module budgeted build, two Chromium flows, Cargo locked check, permanent synthetic trust, and the protected 26,556-record/277-channel Atlanta audit. Persisted restart case delivery is 560.775 ms server-side; warm is 88.85-94.32 ms with zero fresh intelligence/Crew/case builds. P19/P33/P34/P36 authority and 0/9, 0/10, 0/8, 0/9 field counts remain unchanged. |
+| 2026-08-26 | Adversarially closed P35.4.4 end to end | Every Crew and controlled-workflow mutation now publishes DriverIntent/event/workflow/P33 truth, an exact immutable Engineering Case successor, and a durable replay receipt atomically; late projection identities, selected-run/runtime scope, response envelopes, and client handoffs fail closed across server and UI. Stable app-local storage, checksum-complete warm readiness, a private local-API capability, and a real installed restart smoke close the desktop boundary. The complete 2,929-test collection passed with 2,925 successes and four protected/environment-dependent skips, plus 101 rendered UI tests, TypeScript, Ruff, 92-path/394-schema OpenAPI parity, the 2,235-module budgeted build, two Chromium flows, Cargo, current-source MSI/NSIS packaging, arbitrary-CWD persistence/restart/single-instance/shutdown, and the protected Atlanta audit. P19/P33/P34/P36 authority and 0/9, 0/10, 0/8, 0/9 field counts remain unchanged. |

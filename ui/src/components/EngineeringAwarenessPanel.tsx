@@ -39,10 +39,18 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
   const requestSequence = useRef(0);
 
   useEffect(() => {
-    if (engineeringCase == null) return undefined;
+    if (engineeringCase == null) {
+      requestSequence.current += 1;
+      setProjection(null);
+      setError(null);
+      setLoading(true);
+      return undefined;
+    }
     const sequence = ++requestSequence.current;
     const requestedRunId = runId;
     const requestedSessionId = sessionId;
+    const requestedReasoningSnapshotId = engineeringCase.p19_reasoning_snapshot_sha256;
+    const requestedStateRevision = engineeringCase.p20_state_revision;
     setLoading(true);
     setError(null);
     setProjection(null);
@@ -54,7 +62,10 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
           || response.request_identity.run_id !== requestedRunId
           || response.session_id !== requestedSessionId
           || response.request_identity.session_id !== requestedSessionId
-          || response.state_revision !== engineeringCase.p20_state_revision
+          || response.reasoning_snapshot_id !== requestedReasoningSnapshotId
+          || response.request_identity.reasoning_snapshot_id !== requestedReasoningSnapshotId
+          || response.state_revision !== requestedStateRevision
+          || response.request_identity.state_revision !== requestedStateRevision
         ) return;
         setProjection(response);
       })

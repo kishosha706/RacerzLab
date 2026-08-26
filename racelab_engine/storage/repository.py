@@ -300,22 +300,39 @@ class RaceLabRepository:
         workflow = ControlledWorkflowModel.model_validate(
             workflow.model_dump(mode="python")
         )
+        controlled_response_receipt_json = (
+            workflow.controlled_response_receipt.model_dump_json()
+            if workflow.controlled_response_receipt is not None
+            else None
+        )
+        controlled_response_receipt_state = (
+            "persisted"
+            if controlled_response_receipt_json is not None
+            else ("legacy_unavailable" if workflow.status == "scored" else "not_applicable")
+        )
         connection.execute(
                 """
                 INSERT INTO controlled_test_workflows (
                   workflow_id, created_at, updated_at, status, source_run_id,
-                  complaint, packet_json, stage_run_ids_json, stage_eligible_lap_numbers_json,
+                  complaint, packet_json, p32_opportunity_id,
+                  p32_projection_sha256, engineering_knowledge_projection_sha256,
+                  stage_run_ids_json, stage_eligible_lap_numbers_json,
                   stage_experiment_contexts_json,
                   analysis_version, execution_json, reproduction_snapshot_json,
-                  quality_json, learning_admitted, learning_capture_state,
+                  quality_json, controlled_response_receipt_json,
+                  controlled_response_receipt_state,
+                  learning_admitted, learning_capture_state,
                   learning_capture_experience_id,
                   learning_capture_experience_sha256,
                   learning_capture_blocker_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(workflow_id) DO UPDATE SET
                   updated_at=excluded.updated_at,
                   status=excluded.status,
                   packet_json=excluded.packet_json,
+                  p32_opportunity_id=excluded.p32_opportunity_id,
+                  p32_projection_sha256=excluded.p32_projection_sha256,
+                  engineering_knowledge_projection_sha256=excluded.engineering_knowledge_projection_sha256,
                   stage_run_ids_json=excluded.stage_run_ids_json,
                   stage_eligible_lap_numbers_json=excluded.stage_eligible_lap_numbers_json,
                   stage_experiment_contexts_json=excluded.stage_experiment_contexts_json,
@@ -323,6 +340,8 @@ class RaceLabRepository:
                   execution_json=excluded.execution_json,
                   reproduction_snapshot_json=excluded.reproduction_snapshot_json,
                   quality_json=excluded.quality_json,
+                  controlled_response_receipt_json=excluded.controlled_response_receipt_json,
+                  controlled_response_receipt_state=excluded.controlled_response_receipt_state,
                   learning_admitted=excluded.learning_admitted,
                   learning_capture_state=excluded.learning_capture_state,
                   learning_capture_experience_id=excluded.learning_capture_experience_id,
@@ -337,6 +356,9 @@ class RaceLabRepository:
                     workflow.source_run_id,
                     workflow.complaint,
                     workflow.packet.model_dump_json(),
+                    workflow.p32_opportunity_id,
+                    workflow.p32_projection_sha256,
+                    workflow.engineering_knowledge_projection_sha256,
                     _json(workflow.stage_run_ids),
                     _json(workflow.stage_eligible_lap_numbers),
                     _json({
@@ -347,6 +369,8 @@ class RaceLabRepository:
                     workflow.execution.model_dump_json() if workflow.execution else None,
                     _json(workflow.reproduction_snapshot),
                     workflow.quality.model_dump_json() if workflow.quality else None,
+                    controlled_response_receipt_json,
+                    controlled_response_receipt_state,
                     None if workflow.learning_admitted is None else int(workflow.learning_admitted),
                     workflow.learning_capture_state,
                     workflow.learning_capture_experience_id,
@@ -426,26 +450,33 @@ class RaceLabRepository:
         self,
         workflow: ControlledWorkflow,
         scope_run_ids: tuple[str, ...],
+        *,
+        connection: Any | None = None,
     ) -> None:
         """Atomically recheck scope exclusivity and persist an active transition."""
         scope = {run_id for run_id in scope_run_ids if run_id}
         if not scope:
             raise ValueError("A controlled workflow transition requires an explicit run scope.")
-        connection = initialize_database(self.db_path)
+        owns_transaction = connection is None
+        connection = connection or initialize_database(self.db_path)
         try:
-            connection.execute("BEGIN IMMEDIATE")
+            if owns_transaction:
+                connection.execute("BEGIN IMMEDIATE")
             self._assert_controlled_workflow_scope_exclusive(
                 connection,
                 workflow,
                 scope,
             )
             self._write_controlled_workflow(connection, workflow)
-            connection.commit()
+            if owns_transaction:
+                connection.commit()
         except Exception:
-            connection.rollback()
+            if owns_transaction:
+                connection.rollback()
             raise
         finally:
-            connection.close()
+            if owns_transaction:
+                connection.close()
 
     @staticmethod
     def _assert_controlled_workflow_scope_exclusive(
@@ -474,6 +505,8 @@ class RaceLabRepository:
         workflow: ControlledWorkflow,
         scope_run_ids: tuple[str, ...],
         experience: EngineeringExperienceRecord,
+        *,
+        connection: Any | None = None,
     ) -> ControlledWorkflow:
         """Commit the final P19-bound score and its P33 fact atomically."""
 
@@ -513,9 +546,11 @@ class RaceLabRepository:
             state="blocked",
             blocker_reason=LEARNING_CAPTURE_INTEGRITY_BLOCKER,
         )
-        connection = initialize_database(self.db_path)
+        owns_transaction = connection is None
+        connection = connection or initialize_database(self.db_path)
         try:
-            connection.execute("BEGIN IMMEDIATE")
+            if owns_transaction:
+                connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
                 "SELECT * FROM controlled_test_workflows WHERE workflow_id = ?",
                 (workflow.workflow_id,),
@@ -524,51 +559,54 @@ class RaceLabRepository:
                 persisted = self._controlled_workflow_from_row(existing)
                 if persisted.learning_capture_state in {"captured", "blocked"}:
                     self._assert_same_learning_capture_attempt(persisted, experience)
-                    connection.rollback()
+                    if owns_transaction:
+                        connection.rollback()
                     return persisted
             # A source may claim capture only after a full mutation-time audit of
             # the append-only P33 chain. GET projections retain their bounded
             # index/head/tail checks; terminal mutations deliberately pay for the
             # stronger proof.
-            EngineeringLearningRepository(self.db_path).stream_state(
-                connection=connection,
-                validate_chain=True,
-            )
-            self._assert_controlled_workflow_scope_exclusive(
-                connection,
-                captured,
-                scope,
-            )
-            self._write_controlled_workflow(connection, captured)
-            EngineeringLearningRepository.append_experience_in_transaction(
-                connection,
-                experience,
-            )
-            connection.commit()
-            return captured
-        except EngineeringLearningIntegrityError:
-            connection.rollback()
-            # P33 is attention-only. A typed integrity failure cannot veto the
-            # already-authorized P19 result, but the exact failed capture attempt
-            # remains durable and cannot later be presented as learned history.
             try:
-                connection.execute("BEGIN IMMEDIATE")
+                connection.execute("SAVEPOINT controlled_workflow_learning_capture")
+                EngineeringLearningRepository(self.db_path).stream_state(
+                    connection=connection,
+                    validate_chain=True,
+                )
+                self._assert_controlled_workflow_scope_exclusive(
+                    connection,
+                    captured,
+                    scope,
+                )
+                self._write_controlled_workflow(connection, captured)
+                EngineeringLearningRepository.append_experience_in_transaction(
+                    connection,
+                    experience,
+                )
+                connection.execute("RELEASE SAVEPOINT controlled_workflow_learning_capture")
+                result = captured
+            except EngineeringLearningIntegrityError:
+                connection.execute("ROLLBACK TO SAVEPOINT controlled_workflow_learning_capture")
+                connection.execute("RELEASE SAVEPOINT controlled_workflow_learning_capture")
+                # P33 is attention-only. A typed integrity failure cannot veto the
+                # already-authorized P19 result, but the exact failed capture attempt
+                # remains durable and cannot later be presented as learned history.
                 self._assert_controlled_workflow_scope_exclusive(
                     connection,
                     blocked,
                     scope,
                 )
                 self._write_controlled_workflow(connection, blocked)
+                result = blocked
+            if owns_transaction:
                 connection.commit()
-                return blocked
-            except Exception:
-                connection.rollback()
-                raise
+            return result
         except Exception:
-            connection.rollback()
+            if owns_transaction:
+                connection.rollback()
             raise
         finally:
-            connection.close()
+            if owns_transaction:
+                connection.close()
 
     @staticmethod
     def _workflow_with_learning_capture(
@@ -613,6 +651,18 @@ class RaceLabRepository:
         ).fetchone()
         connection.close()
         return self._controlled_workflow_from_row(row) if row else None
+
+    @classmethod
+    def get_controlled_workflow_in_transaction(
+        cls,
+        connection: Any,
+        workflow_id: str,
+    ) -> ControlledWorkflow | None:
+        row = connection.execute(
+            "SELECT * FROM controlled_test_workflows WHERE workflow_id = ?",
+            (workflow_id,),
+        ).fetchone()
+        return cls._controlled_workflow_from_row(row) if row else None
 
     def save_measurement_mission_contract(self, contract: MeasurementMissionContract) -> None:
         """Persist one immutable mission identity without replacing its original record."""
@@ -935,6 +985,28 @@ class RaceLabRepository:
             TestQualityResult,
         )
         from racelab_engine.models.controlled_workflow import ControlledWorkflow
+        from racelab_engine.models.engineering_case import ControlledResponseReceipt
+
+        receipt_state = row["controlled_response_receipt_state"]
+        receipt_json = row["controlled_response_receipt_json"]
+        if receipt_state == "persisted" and receipt_json is not None:
+            controlled_response_receipt = ControlledResponseReceipt.model_validate_json(
+                receipt_json
+            )
+        elif (
+            receipt_state == "legacy_unavailable"
+            and row["status"] == "scored"
+            and receipt_json is None
+        ):
+            controlled_response_receipt = None
+        elif (
+            receipt_state == "not_applicable"
+            and row["status"] != "scored"
+            and receipt_json is None
+        ):
+            controlled_response_receipt = None
+        else:
+            raise ValueError("Controlled response receipt persistence state is corrupt.")
 
         return ControlledWorkflow(
             workflow_id=row["workflow_id"],
@@ -944,6 +1016,11 @@ class RaceLabRepository:
             source_run_id=row["source_run_id"],
             complaint=row["complaint"],
             packet=KaizenEvidencePacket.model_validate_json(row["packet_json"]),
+            p32_opportunity_id=row["p32_opportunity_id"],
+            p32_projection_sha256=row["p32_projection_sha256"],
+            engineering_knowledge_projection_sha256=row[
+                "engineering_knowledge_projection_sha256"
+            ],
             stage_run_ids=_load_json(row["stage_run_ids_json"], {}),
             stage_eligible_lap_numbers=_load_json(row["stage_eligible_lap_numbers_json"], {}),
             stage_experiment_contexts=_load_json(row["stage_experiment_contexts_json"], {}),
@@ -957,6 +1034,7 @@ class RaceLabRepository:
                 TestQualityResult.model_validate_json(row["quality_json"])
                 if row["quality_json"] else None
             ),
+            controlled_response_receipt=controlled_response_receipt,
             learning_admitted=(
                 None if row["learning_admitted"] is None else bool(row["learning_admitted"])
             ),

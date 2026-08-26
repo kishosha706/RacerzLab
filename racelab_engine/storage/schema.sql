@@ -345,6 +345,9 @@ CREATE TABLE IF NOT EXISTS controlled_test_workflows (
   source_run_id TEXT NOT NULL,
   complaint TEXT NOT NULL,
   packet_json TEXT NOT NULL,
+  p32_opportunity_id TEXT,
+  p32_projection_sha256 TEXT,
+  engineering_knowledge_projection_sha256 TEXT,
   stage_run_ids_json TEXT NOT NULL DEFAULT '{}',
   stage_eligible_lap_numbers_json TEXT NOT NULL DEFAULT '{}',
   stage_experiment_contexts_json TEXT NOT NULL DEFAULT '{}',
@@ -352,11 +355,25 @@ CREATE TABLE IF NOT EXISTS controlled_test_workflows (
   execution_json TEXT,
   reproduction_snapshot_json TEXT NOT NULL DEFAULT '{}',
   quality_json TEXT,
+  controlled_response_receipt_json TEXT,
+  controlled_response_receipt_state TEXT NOT NULL DEFAULT 'not_applicable'
+    CHECK(controlled_response_receipt_state IN (
+      'not_applicable', 'legacy_unavailable', 'persisted'
+    )),
   learning_admitted INTEGER,
   learning_capture_state TEXT NOT NULL DEFAULT 'not_applicable',
   learning_capture_experience_id TEXT,
   learning_capture_experience_sha256 TEXT,
   learning_capture_blocker_reason TEXT,
+  CHECK (
+    (p32_opportunity_id IS NULL
+      AND p32_projection_sha256 IS NULL
+      AND engineering_knowledge_projection_sha256 IS NULL)
+    OR
+    (p32_opportunity_id IS NOT NULL
+      AND p32_projection_sha256 IS NOT NULL
+      AND engineering_knowledge_projection_sha256 IS NOT NULL)
+  ),
   FOREIGN KEY(source_run_id) REFERENCES runs(run_id) ON DELETE CASCADE
 );
 
@@ -1206,3 +1223,52 @@ CREATE TABLE IF NOT EXISTS engineering_driver_intents (
 
 CREATE INDEX IF NOT EXISTS idx_engineering_driver_intent_current
   ON engineering_driver_intents(case_id, intent_revision DESC);
+
+-- A Crew mutation receipt is published in the same transaction as its event
+-- unit and resulting Engineering Case revision.  It is response-recovery
+-- metadata, not a second source of Crew or P19 truth.
+CREATE TABLE IF NOT EXISTS crew_chief_mutation_receipts (
+  mutation_id TEXT PRIMARY KEY,
+  request_sha256 TEXT NOT NULL,
+  action TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  investigation_id TEXT,
+  expected_workspace_revision TEXT NOT NULL,
+  expected_case_sha256 TEXT,
+  result_workspace_revision TEXT NOT NULL,
+  result_case_sha256 TEXT NOT NULL,
+  result_case_revision INTEGER NOT NULL CHECK(result_case_revision >= 1),
+  previous_case_sha256 TEXT,
+  completed_at TEXT NOT NULL,
+  workspace_json TEXT NOT NULL,
+  FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crew_chief_mutation_scope
+  ON crew_chief_mutation_receipts(run_id, session_id, completed_at, mutation_id);
+
+-- Controlled-workflow mutations publish their exact resulting Engineering Case
+-- revision in the same transaction.  The canonical response is retained so a
+-- lost HTTP response can be replayed without repeating P19/P33 truth changes.
+CREATE TABLE IF NOT EXISTS controlled_workflow_mutation_receipts (
+  mutation_id TEXT PRIMARY KEY,
+  request_sha256 TEXT NOT NULL,
+  action TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  request_workflow_id TEXT,
+  expected_case_sha256 TEXT NOT NULL,
+  result_case_sha256 TEXT NOT NULL,
+  result_workflow_id TEXT,
+  result_workflow_revision_sha256 TEXT,
+  response_sha256 TEXT NOT NULL,
+  completed_at TEXT NOT NULL,
+  response_json TEXT NOT NULL,
+  FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_controlled_workflow_mutation_scope
+  ON controlled_workflow_mutation_receipts(
+    run_id, session_id, completed_at, mutation_id
+  );

@@ -15,7 +15,15 @@ import {
   Sparkles,
   XCircle,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   fetchLearningReadiness,
   freezeProspectivePrediction,
@@ -84,6 +92,7 @@ type ReportLoadState = {
 
 type QueryState = {
   requestKey: string | null;
+  bindingKey: string | null;
   status: "idle" | "loading" | "ready" | "error";
   response: IntelligenceQueryResponse | null;
   error: string | null;
@@ -153,16 +162,6 @@ function narrativeTime(value: string): string {
     minute: "2-digit",
   }).format(parsed);
 }
-
-const ENGINEER_MISSION_HEADLINES: Record<NonNullable<RunIntelligenceReport["mission_stage"]>, string> = {
-  qualify: "Make the run trustworthy",
-  diagnose: "Name the repeatable loss",
-  measure: "Collect the missing proof",
-  test: "Run one controlled change",
-  compare: "Compare A, B, and A2",
-  decide: "Keep, undo, or retest",
-  certified: "Carry forward verified learning",
-};
 
 function citationMeta(citation: IntelligenceCitation): string {
   const parts: string[] = [];
@@ -242,7 +241,7 @@ function DataQualityCard({
       {!learning && quality.status !== "ready" && (firstIssue || firstRecoveryStep) && (
         <div className="engineer-quality-recovery" role="note" aria-label="First evidence recovery step">
           {firstIssue && <p><strong>Blocked by:</strong> {firstIssue}</p>}
-          {firstRecoveryStep && <p><strong>Do next:</strong> {firstRecoveryStep}</p>}
+          {firstRecoveryStep && <p><strong>Recovery requirement:</strong> {firstRecoveryStep}</p>}
         </div>
       )}
       {learning && (
@@ -343,7 +342,7 @@ function LearningReadinessCard({
               <span>Need units <strong>{activeCampaign.progress.remaining_independent_units}</strong></span>
               <span>Rejected <strong>{activeCampaign.latest_assessment?.rejected_lap_numbers.length ?? 0}</strong></span>
             </div>
-            <p>Next recording: {activeCampaign.operation.context.minimum_clean_laps_per_unit} clean laps · exact car/build
+            <p>Collection requirement: {activeCampaign.operation.context.minimum_clean_laps_per_unit} clean laps · exact car/build
               {activeCampaign.operation.context.maximum_traffic_exposure_fraction === 0 ? " · no nearby traffic" : " · bounded nearby traffic"}.</p>
             {activeCampaign.latest_assessment && (
               <small>Latest import: {activeCampaign.latest_assessment.state.replace(/_/g, " ")}
@@ -485,7 +484,7 @@ function LearningReadinessCard({
             <span data-state={projection.p23_acquisition.prospective_status}><strong>Prospective</strong>{stateLabel(projection.p23_acquisition.prospective_status)}</span>
           </div>
           <div className="engineer-p23-next">
-            <span>Next: {stateLabel(projection.p23_acquisition.next_best_collection_kind)}</span>
+            <span>Acquisition priority: {stateLabel(projection.p23_acquisition.next_best_collection_kind)}</span>
             <p>{projection.p23_acquisition.next_best_collection}</p>
           </div>
           {projection.p23_acquisition.latest_certificate_id ? (
@@ -528,7 +527,7 @@ function LearningReadinessCard({
           ) : (
             <div className="engineer-p23-empty">
               <strong>No qualification certificate yet</strong>
-              <span>The next source-owned import will preserve its lap decisions here.</span>
+              <span>A future source-owned import will preserve its lap decisions here.</span>
             </div>
           )}
           {projection.p23_acquisition.latest_null_run_card && (
@@ -601,7 +600,7 @@ function MeasurementCard({
       <header>
         <FlaskConical size={17} aria-hidden="true" />
         <div>
-          <span className="eyebrow">Best next measurement</span>
+          <span className="eyebrow">Measurement evidence priority</span>
           <h3 id="engineer-measurement-heading">{measurement.title}</h3>
         </div>
       </header>
@@ -610,12 +609,12 @@ function MeasurementCard({
         <span className="engineer-measurement-laps">{measurement.required_laps} required laps or passes</span>
       )}
       {visibleProcedure.length > 0 && (
-        <ol className="engineer-measurement-checklist" aria-label="Measurement mission checklist">
+        <ol className="engineer-measurement-checklist" aria-label="Measurement evidence checklist">
           {visibleProcedure.map((step, index) => <li key={step}><span>{index + 1}</span><p>{step}</p></li>)}
         </ol>
       )}
       <div className="engineer-measurement-guardrails">
-        {measurement.acceptance_threshold && <p><strong>Done when:</strong> {measurement.acceptance_threshold}</p>}
+        {measurement.acceptance_threshold && <p><strong>Acceptance threshold:</strong> {measurement.acceptance_threshold}</p>}
         {measurement.stop_rule && <p><strong>Stop and reset:</strong> {measurement.stop_rule}</p>}
       </div>
       {learning && (
@@ -623,7 +622,7 @@ function MeasurementCard({
           {asArray(measurement.controlled_variables).length > 0 && (
             <p><strong>Hold constant:</strong> {measurement.controlled_variables.join(" · ")}</p>
           )}
-          <p><strong>Why this matters:</strong> This mission is the smallest producer-owned measurement that can separate the current evidence. It does not approve a setup change.</p>
+          <p><strong>Why this matters:</strong> This is the smallest producer-owned measurement that can separate the current evidence. It does not approve a setup change.</p>
           <CitationLinks citations={measurement.citations} onNavigate={onNavigate} label="Measurement evidence" />
         </div>
       )}
@@ -637,9 +636,68 @@ function LoadingState() {
       <BrainCircuit size={24} aria-hidden="true" />
       <div>
         <h2>Assembling the grounded briefing…</h2>
-        <p>Checking eligible laps, event provenance, controlled history, and the best next measurement.</p>
+        <p>Checking eligible laps, event provenance, controlled history, and measurement evidence.</p>
       </div>
       <div className="engineer-loading-bars" aria-hidden="true"><span /><span /><span /></div>
+    </div>
+  );
+}
+
+function CaseBindingState({
+  status,
+  error,
+  learning,
+  onRetry,
+}: {
+  status: "loading" | "error";
+  error: string | null;
+  learning: boolean;
+  onRetry: () => void;
+}) {
+  const failed = status === "error";
+  return (
+    <div className="smart-engineer-workspace" data-case-binding-state={status}>
+      <section
+        className={`engineer-state${failed ? " engineer-state-error" : ""}`}
+        role={failed ? "alert" : "status"}
+        aria-live={failed ? undefined : "polite"}
+      >
+        {failed ? <AlertTriangle size={24} aria-hidden="true" /> : <BrainCircuit size={24} aria-hidden="true" />}
+        <div>
+          <span className="eyebrow">Smart Engineer</span>
+          <h2>{failed ? "Current Engineering Case unavailable" : "Binding current case…"}</h2>
+          <p>{failed
+            ? "Retry the current case before using the briefing or questions."
+            : "Briefing and questions stay locked until the exact case revision is ready."}</p>
+          {failed && learning && error && <small>{error}</small>}
+        </div>
+        {failed && (
+          <button type="button" className="secondary-button" onClick={onRetry}>
+            <RefreshCcw size={14} aria-hidden="true" /> Retry current case
+          </button>
+        )}
+      </section>
+      <section className="engineer-question-deck" aria-labelledby="engineer-case-binding-question-heading">
+        <header>
+          <CircleHelp size={16} aria-hidden="true" />
+          <div>
+            <span className="eyebrow">Grounded questions</span>
+            <h2 id="engineer-case-binding-question-heading">Question controls locked</h2>
+          </div>
+        </header>
+        <form>
+          <label htmlFor="engineer-question-disabled">Question about the current case</label>
+          <div>
+            <Search size={15} aria-hidden="true" />
+            <input
+              id="engineer-question-disabled"
+              placeholder={failed ? "Retry the current case to ask" : "Binding current case…"}
+              disabled
+            />
+            <button type="button" disabled>Ask</button>
+          </div>
+        </form>
+      </section>
     </div>
   );
 }
@@ -659,8 +717,53 @@ export function IntelligencePanel({
   onNavigateCrewEvidence,
 }: EngineerTabProps) {
   const { selection, focusEvidence, setWorkspace } = useTelemetrySelection();
-  const { engineeringCase } = useEngineeringCase();
+  const {
+    engineeringCase,
+    revision: engineeringCaseRevision,
+    status: engineeringCaseStatus,
+    error: engineeringCaseError,
+    retry: retryEngineeringCase,
+  } = useEngineeringCase();
   const learning = selection.selectedMode === "learning";
+  const caseMatchesSelection = Boolean(
+    engineeringCaseStatus === "ready"
+    && engineeringCaseRevision
+    && engineeringCase
+    && engineeringCase.run_id === runId
+    && engineeringCase.session_id === sessionId
+    && engineeringCaseRevision.case_id === engineeringCase.case_id
+    && engineeringCaseRevision.case_sha256 === engineeringCase.case_sha256
+    && engineeringCaseRevision.case.case_revision_sha256 === engineeringCase.case_revision_sha256
+    && engineeringCaseRevision.case.p19_reasoning_snapshot_sha256 === engineeringCase.p19_reasoning_snapshot_sha256
+  );
+  const activeCase = caseMatchesSelection ? engineeringCase : null;
+  const activeCaseId = activeCase?.case_id ?? null;
+  const activeCaseSha256 = activeCase?.case_sha256 ?? null;
+  const activeCaseRevisionSha256 = activeCase?.case_revision_sha256 ?? null;
+  const activeCaseReasoningSnapshotSha256 = activeCase?.p19_reasoning_snapshot_sha256 ?? null;
+  const activeCaseSetupId = activeCase?.setup_id ?? null;
+  const activeCaseSetupSnapshotSha256 = activeCase?.setup_snapshot_sha256 ?? null;
+  const focusedContextMatchesCase = Boolean(
+    activeCase
+    && selection.selectedCaseId === activeCase.case_id
+    && selection.selectedCaseRevision === activeCase.case_revision_sha256
+    && selection.selectedCaseSha256 === activeCase.case_sha256
+    && selection.selectedRunId === activeCase.run_id
+    && (selection.selectedSourceRunId == null || selection.selectedSourceRunId === activeCase.run_id)
+    && (selection.selectedSourceSetupId == null || selection.selectedSourceSetupId === activeCase.setup_id)
+    && (selection.selectedWorkflowId == null || (
+      selection.selectedWorkflowId === activeCase.active_workflow_id
+      && selection.selectedWorkflowRevision === activeCase.active_workflow_revision
+    ))
+  );
+  const caseBindingKey = activeCase == null ? null : JSON.stringify({
+    case_id: activeCaseId,
+    case_sha256: activeCaseSha256,
+    case_revision_sha256: activeCaseRevisionSha256,
+    p19_reasoning_snapshot_sha256: activeCaseReasoningSnapshotSha256,
+    run_id: activeCase.run_id,
+    session_id: activeCase.session_id,
+  });
   const workflowRevision = useMemo(() => ({ workflowId, workflowUpdatedAt }), [workflowId, workflowUpdatedAt]);
   const queryNavigationRunIds = useMemo(() => {
     try {
@@ -686,6 +789,8 @@ export function IntelligencePanel({
     session_run_scope: sessionRunScopeKey,
     workflow_id: workflowId,
     workflow_updated_at: workflowUpdatedAt,
+    case_provider_status: engineeringCaseStatus,
+    case_binding: caseBindingKey,
   });
   const candidateRepresentativeLap = selectedRepresentativeLap ?? selectedLap;
   const completeWindowQuestionScope = selectedLapScope === "lap_window"
@@ -714,9 +819,25 @@ export function IntelligencePanel({
     window_start: completeWindowQuestionScope ? selectedLapWindowStart : null,
     window_end: completeWindowQuestionScope ? selectedLapWindowEnd : null,
   });
+  const queryBindingKey = caseBindingKey == null ? null : JSON.stringify({
+    case_binding: caseBindingKey,
+    report_scope: scopeKey,
+    question_scope: questionScopeKey,
+    presentation_mode: learning ? "learning" : "race",
+  });
   const reportSequence = useRef(0);
   const querySequence = useRef(0);
   const readinessSequence = useRef(0);
+  const activeCaseBindingKeyRef = useRef(caseBindingKey);
+  const activeReportScopeKeyRef = useRef(scopeKey);
+  const activeQueryBindingKeyRef = useRef(queryBindingKey);
+  useLayoutEffect(() => {
+    // Async results must compare against committed UI scope. Mutating these
+    // refs during render can expose an abandoned concurrent render as current.
+    activeCaseBindingKeyRef.current = caseBindingKey;
+    activeReportScopeKeyRef.current = scopeKey;
+    activeQueryBindingKeyRef.current = queryBindingKey;
+  }, [caseBindingKey, queryBindingKey, scopeKey]);
   const [retryToken, setRetryToken] = useState(0);
   const [reportState, setReportState] = useState<ReportLoadState>({
     requestKey: scopeKey,
@@ -729,6 +850,7 @@ export function IntelligencePanel({
   const [learningSection, setLearningSection] = useState<"decision" | "evidence" | "causes" | "car" | "history" | "research">("decision");
   const [queryState, setQueryState] = useState<QueryState>({
     requestKey: null,
+    bindingKey: null,
     status: "idle",
     response: null,
     error: null,
@@ -866,35 +988,75 @@ export function IntelligencePanel({
 
   useEffect(() => {
     const sequence = ++reportSequence.current;
+    const requestedScopeKey = scopeKey;
     let cancelled = false;
     querySequence.current += 1;
-    setReportState({ requestKey: scopeKey, status: "loading", report: null, error: null });
+    setReportState({ requestKey: requestedScopeKey, status: "loading", report: null, error: null });
     setQuestion("");
-    setQueryState({ requestKey: null, status: "idle", response: null, error: null });
+    setQueryState({ requestKey: null, bindingKey: null, status: "idle", response: null, error: null });
+    if (
+      caseBindingKey == null
+      || activeCaseId == null
+      || activeCaseSha256 == null
+      || activeCaseRevisionSha256 == null
+      || activeCaseReasoningSnapshotSha256 == null
+      || activeCaseSetupId == null
+      || activeCaseSetupSnapshotSha256 == null
+    ) {
+      return () => {
+        cancelled = true;
+        if (sequence === reportSequence.current) reportSequence.current += 1;
+        querySequence.current += 1;
+      };
+    }
+    const requestedRunId = runId;
+    const requestedSessionId = sessionId;
+    const requestedCaseBindingKey = caseBindingKey;
+    const requestedCaseRevisionSha256 = activeCaseRevisionSha256;
+    const requestedReasoningSnapshotSha256 = activeCaseReasoningSnapshotSha256;
+    const requestedSetupId = activeCaseSetupId;
+    const requestedSetupSnapshotSha256 = activeCaseSetupSnapshotSha256;
     void fetchRunIntelligence(runId, {
       sessionId,
-      refreshKey: `${sessionRunScopeKey}:${workflowId ?? "no-workflow"}:${workflowUpdatedAt ?? "no-revision"}:${retryToken}`,
+      refreshKey: `${sessionRunScopeKey}:${workflowId ?? "no-workflow"}:${workflowUpdatedAt ?? "no-revision"}:${requestedCaseRevisionSha256}:${requestedReasoningSnapshotSha256}:${retryToken}`,
     })
       .then((report) => {
-        if (cancelled || sequence !== reportSequence.current) return;
         if (
-          !scopeMatches(report, runId, sessionId)
-          || !isRunIntelligenceResponse(report, { runId, sessionId })
+          cancelled
+          || sequence !== reportSequence.current
+          || requestedScopeKey !== activeReportScopeKeyRef.current
+          || requestedCaseBindingKey !== activeCaseBindingKeyRef.current
+        ) return;
+        if (
+          !scopeMatches(report, requestedRunId, requestedSessionId)
+          || !isRunIntelligenceResponse(report, {
+            runId: requestedRunId,
+            sessionId: requestedSessionId,
+            reasoningSnapshotSha256: requestedReasoningSnapshotSha256,
+          })
+          || report.reasoning_snapshot_sha256 !== requestedReasoningSnapshotSha256
+          || report.setup_id !== requestedSetupId
+          || report.setup_snapshot_sha256 !== requestedSetupSnapshotSha256
         ) {
           setReportState({
-            requestKey: scopeKey,
+            requestKey: requestedScopeKey,
             status: "error",
             report: null,
-            error: "The engineer returned evidence for a different run or session. Nothing from that response was shown.",
+            error: "The engineer returned evidence for a different case snapshot, run, or session. Nothing from that response was shown.",
           });
           return;
         }
-        setReportState({ requestKey: scopeKey, status: "ready", report, error: null });
+        setReportState({ requestKey: requestedScopeKey, status: "ready", report, error: null });
       })
       .catch((caught: unknown) => {
-        if (cancelled || sequence !== reportSequence.current) return;
+        if (
+          cancelled
+          || sequence !== reportSequence.current
+          || requestedScopeKey !== activeReportScopeKeyRef.current
+          || requestedCaseBindingKey !== activeCaseBindingKeyRef.current
+        ) return;
         setReportState({
-          requestKey: scopeKey,
+          requestKey: requestedScopeKey,
           status: "error",
           report: null,
           error: caught instanceof Error ? caught.message : "The grounded briefing could not be loaded.",
@@ -905,18 +1067,49 @@ export function IntelligencePanel({
       if (sequence === reportSequence.current) reportSequence.current += 1;
       querySequence.current += 1;
     };
-  }, [retryToken, runId, scopeKey, sessionId, sessionRunScopeKey, workflowId, workflowUpdatedAt]);
+  }, [
+    activeCaseId,
+    activeCaseReasoningSnapshotSha256,
+    activeCaseRevisionSha256,
+    activeCaseSetupId,
+    activeCaseSetupSnapshotSha256,
+    activeCaseSha256,
+    caseBindingKey,
+    retryToken,
+    runId,
+    scopeKey,
+    sessionId,
+    sessionRunScopeKey,
+    workflowId,
+    workflowUpdatedAt,
+  ]);
 
   useEffect(() => {
     querySequence.current += 1;
-    setQueryState({ requestKey: null, status: "idle", response: null, error: null });
-  }, [learning, questionScopeKey, scopeKey]);
+    setQueryState({ requestKey: null, bindingKey: null, status: "idle", response: null, error: null });
+  }, [queryBindingKey]);
 
   useEffect(() => {
     setRaceSupportOpen(false);
   }, [learning, scopeKey]);
 
-  const report = reportState.requestKey === scopeKey ? reportState.report : null;
+  const candidateReport = reportState.requestKey === scopeKey && caseBindingKey != null
+    ? reportState.report
+    : null;
+  const report = candidateReport
+    && activeCaseReasoningSnapshotSha256 != null
+    && scopeMatches(candidateReport, runId, sessionId)
+    && candidateReport.reasoning_snapshot_sha256 === activeCaseReasoningSnapshotSha256
+    && candidateReport.setup_id === activeCaseSetupId
+    && candidateReport.setup_snapshot_sha256 === activeCaseSetupSnapshotSha256
+    ? candidateReport
+    : null;
+  const caseControlsEnabled = Boolean(
+    caseBindingKey
+    && reportState.requestKey === scopeKey
+    && reportState.status === "ready"
+    && report
+  );
   const briefing = report?.briefing;
   const action = briefing?.action;
   const decisionStatus = report?.decision_status === "ready"
@@ -971,7 +1164,7 @@ export function IntelligencePanel({
     : null;
 
   const openNextTrustworthyMove = useCallback((move: NonNullable<RunIntelligenceReport["next_trustworthy_move"]>) => {
-    if (!trustedNavigationMove(move, runId, workflowRevision)) return;
+    if (!caseControlsEnabled || !trustedNavigationMove(move, runId, workflowRevision)) return;
     const target = intelligenceWorkspaceTarget(move.workspace);
     const scope = intelligenceMoveScope(move);
     if (!target || !scope) return;
@@ -997,7 +1190,7 @@ export function IntelligencePanel({
       trustTier: move.authority,
       valueBasis: scope.kind === "lap_window" ? "selected_window" : scope.kind === "single_lap" ? "full_lap" : "run_level",
     }, target);
-  }, [focusEvidence, runId, workflowRevision]);
+  }, [caseControlsEnabled, focusEvidence, runId, workflowRevision]);
 
   const contextualQuestions = useMemo(() => {
     if (!report) return [];
@@ -1017,39 +1210,63 @@ export function IntelligencePanel({
   const submitQuestion = useCallback(async (rawQuestion: string) => {
     const nextQuestion = rawQuestion.trim();
     if (nextQuestion.length < 2) return;
-    if (engineeringCase == null) {
+    if (
+      !caseControlsEnabled
+      || activeCaseId == null
+      || activeCaseSha256 == null
+      || activeCaseRevisionSha256 == null
+      || activeCaseReasoningSnapshotSha256 == null
+      || queryBindingKey == null
+      || report == null
+    ) {
       setQueryState({
         requestKey: null,
+        bindingKey: null,
         status: "error",
         response: null,
-        error: "Open the current Engineering Case before asking Smart Engineer.",
+        error: "Bind the current Engineering Case before asking Smart Engineer.",
       });
       return;
     }
     const sequence = ++querySequence.current;
+    const requestedQueryBindingKey = queryBindingKey;
+    const requestedReport = report;
+    const requestedRunId = runId;
+    const requestedSessionId = sessionId;
+    const requestedCaseId = activeCaseId;
+    const requestedCaseSha256 = activeCaseSha256;
+    const requestedCaseRevisionSha256 = activeCaseRevisionSha256;
+    const requestedReasoningSnapshotSha256 = activeCaseReasoningSnapshotSha256;
+    const requestedQueryNavigationRunIds = new Set(queryNavigationRunIds);
     const requestKey = JSON.stringify({
-      run_id: runId,
-      session_id: sessionId,
-      case_sha256: engineeringCase.case_sha256,
+      run_id: requestedRunId,
+      session_id: requestedSessionId,
+      case_id: requestedCaseId,
+      case_sha256: requestedCaseSha256,
+      case_revision_sha256: requestedCaseRevisionSha256,
+      p19_reasoning_snapshot_sha256: requestedReasoningSnapshotSha256,
       question: nextQuestion,
       question_scope: questionScopeKey,
       lap: selectedQueryLap,
     });
     setQuestion(nextQuestion);
-    setQueryState({ requestKey, status: "loading", response: null, error: null });
+    setQueryState({ requestKey, bindingKey: requestedQueryBindingKey, status: "loading", response: null, error: null });
     try {
-      const response = await queryRunIntelligence(runId, {
+      const response = await queryRunIntelligence(requestedRunId, {
         question: nextQuestion,
-        session_id: engineeringCase.session_id,
-        case_id: engineeringCase.case_id,
-        case_sha256: engineeringCase.case_sha256,
+        session_id: requestedSessionId!,
+        case_id: requestedCaseId,
+        case_sha256: requestedCaseSha256,
         selected_lap: selectedQueryLap,
         selected_window_start_lap: completeWindowQuestionScope ? selectedLapWindowStart : null,
         selected_window_end_lap: completeWindowQuestionScope ? selectedLapWindowEnd : null,
         selected_window_representative_lap: completeWindowQuestionScope ? selectedQueryLap : null,
         presentation_mode: learning ? "learning" : "race",
       });
-      if (sequence !== querySequence.current) return;
+      if (
+        sequence !== querySequence.current
+        || requestedQueryBindingKey !== activeQueryBindingKeyRef.current
+      ) return;
       const responseWindowMatchesScope = completeWindowQuestionScope
         ? response.interpreted_window_start_lap === selectedLapWindowStart
           && response.interpreted_window_end_lap === selectedLapWindowEnd
@@ -1060,20 +1277,20 @@ export function IntelligencePanel({
       const responseRunScope = Array.isArray(response.scope_run_ids)
         ? response.scope_run_ids
         : [];
-      const responseRunScopeMatches = responseRunScope.length === queryNavigationRunIds.size
+      const responseRunScopeMatches = responseRunScope.length === requestedQueryNavigationRunIds.size
         && new Set(responseRunScope).size === responseRunScope.length
         && responseRunScope.every((scopeRunId) => (
           typeof scopeRunId === "string"
           && scopeRunId.length > 0
           && scopeRunId.trim() === scopeRunId
-          && queryNavigationRunIds.has(scopeRunId)
+          && requestedQueryNavigationRunIds.has(scopeRunId)
         ));
       if (
-        report == null
-        || !isIntelligenceQueryResponseBoundToReport(response, report)
-        || response.case_id !== engineeringCase.case_id
-        || response.case_sha256 !== engineeringCase.case_sha256
-        || !scopeMatches(response, runId, sessionId)
+        !isIntelligenceQueryResponseBoundToReport(response, requestedReport)
+        || response.case_id !== requestedCaseId
+        || response.case_sha256 !== requestedCaseSha256
+        || response.reasoning_snapshot_sha256 !== requestedReasoningSnapshotSha256
+        || !scopeMatches(response, requestedRunId, requestedSessionId)
         || !responseRunScopeMatches
         || (response.selected_lap ?? null) !== selectedQueryLap
         || !responseWindowMatchesScope
@@ -1083,26 +1300,36 @@ export function IntelligencePanel({
       ) {
         setQueryState({
           requestKey,
+          bindingKey: requestedQueryBindingKey,
           status: "error",
           response: null,
-          error: "The answer did not match the current run, session, question scope, and question. It was discarded.",
+          error: "The answer did not match the current case revision, P19 snapshot, run, session, question scope, and question. It was discarded.",
         });
         return;
       }
-      setQueryState({ requestKey, status: "ready", response, error: null });
+      setQueryState({ requestKey, bindingKey: requestedQueryBindingKey, status: "ready", response, error: null });
     } catch (caught: unknown) {
-      if (sequence !== querySequence.current) return;
+      if (
+        sequence !== querySequence.current
+        || requestedQueryBindingKey !== activeQueryBindingKeyRef.current
+      ) return;
       setQueryState({
         requestKey,
+        bindingKey: requestedQueryBindingKey,
         status: "error",
         response: null,
         error: caught instanceof Error ? caught.message : "The engineer could not answer this question.",
       });
     }
   }, [
+    activeCaseId,
+    activeCaseReasoningSnapshotSha256,
+    activeCaseRevisionSha256,
+    activeCaseSha256,
+    caseControlsEnabled,
     completeWindowQuestionScope,
-    engineeringCase,
     learning,
+    queryBindingKey,
     queryNavigationRunIds,
     questionScopeKey,
     report,
@@ -1117,6 +1344,20 @@ export function IntelligencePanel({
     event.preventDefault();
     void submitQuestion(question);
   }, [question, submitQuestion]);
+
+  if (!caseMatchesSelection) {
+    const caseBindingFailed = engineeringCaseStatus === "error" || engineeringCaseStatus === "ready";
+    return (
+      <CaseBindingState
+        status={caseBindingFailed ? "error" : "loading"}
+        error={engineeringCaseError ?? (caseBindingFailed
+          ? "The current case identity did not match the selected run and session."
+          : null)}
+        learning={learning}
+        onRetry={retryEngineeringCase}
+      />
+    );
+  }
 
   if (reportState.status === "loading" || reportState.requestKey !== scopeKey) return <LoadingState />;
 
@@ -1219,7 +1460,10 @@ export function IntelligencePanel({
   const actionInstruction = actionAuthorized
     ? action.instruction
     : "Use the evidence-linked measurement detail below. No setup change, Keep/Undo, or stop-testing policy is authorized.";
-  const queryResponse = queryState.response;
+  const queryStateIsCurrent = queryBindingKey != null && queryState.bindingKey === queryBindingKey;
+  const queryStatus = queryStateIsCurrent ? queryState.status : "idle";
+  const queryResponse = queryStateIsCurrent ? queryState.response : null;
+  const queryError = queryStateIsCurrent ? queryState.error : null;
   const queryHasGrounding = Boolean(queryResponse && asArray(queryResponse.citations).length > 0);
   const queryInterpretationMatchesScope = Boolean(
     queryResponse
@@ -1349,10 +1593,6 @@ export function IntelligencePanel({
     ?? report.best_measurement?.purpose
     ?? leadingCause?.reason
     ?? "This is the highest-signal step the current qualified evidence can support.";
-  const effectiveMissionStage = stageBActionWithheld ? "measure" : report.mission_stage;
-  const missionHeadline = effectiveMissionStage
-    ? ENGINEER_MISSION_HEADLINES[effectiveMissionStage]
-    : "Your next trustworthy move";
   const broadcastState = actionAuthorized
     ? "ready"
     : action.kind === "measurement_mission" ? "attention" : "guarded";
@@ -1371,14 +1611,16 @@ export function IntelligencePanel({
       className="smart-engineer-workspace"
       data-mode={learning ? "learning" : "race"}
       data-decision-status={decisionStatus}
+      data-case-revision-sha256={activeCaseRevisionSha256 ?? undefined}
+      data-p19-reasoning-snapshot-sha256={activeCaseReasoningSnapshotSha256 ?? undefined}
     >
       <header className="engineer-workspace-header">
         <div>
           <span className="eyebrow"><BrainCircuit size={13} aria-hidden="true" /> Smart Engineer</span>
-          <h2>{learning ? "Decision, causes, and evidence" : missionHeadline}</h2>
+          <h2>{learning ? "Evidence, causes, and context" : "Engineering evidence status"}</h2>
           <p>{learning
-            ? "See why the call is next, what could still disprove it, and exactly which evidence carries the claim."
-            : "One issue. One mission. One done-when check."}</p>
+            ? "Review what supports the current case, what could still disprove it, and exactly which evidence carries each claim."
+            : "Current authority, scope, and strongest supporting evidence."}</p>
         </div>
         <div className="engineer-header-badges" aria-label="Briefing status">
           <span data-tone={actionAuthorized ? "ready" : "guarded"}>
@@ -1387,6 +1629,26 @@ export function IntelligencePanel({
           {briefing.confidence_label && <span>{briefing.confidence_label}</span>}
         </div>
       </header>
+
+      {focusedContextMatchesCase && (
+        <section
+          className="engineer-focused-context"
+          aria-label="Focused Engineering Case context"
+          data-case-sha256={activeCaseSha256 ?? undefined}
+          data-workflow-id={selection.selectedWorkflowId ?? undefined}
+        >
+          <span>Focused context</span>
+          <strong>{selection.selectedZoneLabel
+            ?? selection.selectedSystem?.replace(/_/g, " ")
+            ?? selection.selectedProducerId
+            ?? "Current case evidence"}</strong>
+          <small>
+            Case {activeCaseSha256?.slice(0, 12)}
+            {selection.selectedLap != null ? ` · Lap ${selection.selectedLap}` : " · Run scope"}
+            {selection.selectedWorkflowId != null ? ` · Workflow ${selection.selectedWorkflowId}` : ""}
+          </small>
+        </section>
+      )}
 
       {learning && (
         <nav className="engineer-learning-section-nav" aria-label="Learning Mode sections">
@@ -1425,7 +1687,7 @@ export function IntelligencePanel({
         data-window-start={completeWindowQuestionScope ? selectedLapWindowStart ?? undefined : undefined}
         data-window-end={completeWindowQuestionScope ? selectedLapWindowEnd ?? undefined : undefined}
         data-representative-lap={completeWindowQuestionScope ? selectedQueryLap ?? undefined : undefined}
-        aria-label="Smart Engineer status and workspace handoffs"
+        aria-label="Smart Engineer evidence status and supporting views"
       >
         <div>
           <h3>{broadcastHeadline}</h3>
@@ -1439,18 +1701,19 @@ export function IntelligencePanel({
             <span>Setup authority <strong>{actionAuthorized ? "Authorized" : "Withheld"}</strong></span>
           </div>
         </div>
-        <div className="tab-handoff-actions" aria-label="Smart Engineer workspace handoffs">
+        <div className="tab-handoff-actions" aria-label="Smart Engineer supporting evidence views">
           {primaryEvidenceCitation && (
-            <button type="button" onClick={() => { void onNavigateCitation(primaryEvidenceCitation); }}>
+            <button type="button" disabled={!caseControlsEnabled} onClick={() => { void onNavigateCitation(primaryEvidenceCitation); }}>
               {primaryEvidenceCitation.valid_for_tuning ? "Open exact evidence" : "Open evidence limit"}
             </button>
           )}
-          <button type="button" onClick={() => setWorkspace("laps", "engineer")}>Review Laps</button>
+          <button type="button" disabled={!caseControlsEnabled} onClick={() => setWorkspace("laps", "engineer")}>Open lap evidence</button>
           <button
             type="button"
+            disabled={!caseControlsEnabled}
             onClick={() => setWorkspace(actionAuthorized ? "dial_in" : "platform_trace", "engineer")}
           >
-            {actionAuthorized ? "Open controlled test" : "Inspect Platform"}
+            {actionAuthorized ? "Review workflow evidence" : "Open platform evidence"}
           </button>
         </div>
       </section>
@@ -1491,11 +1754,11 @@ export function IntelligencePanel({
             <strong>{driverFacingIssue(briefing.issue)}</strong>
           </article>
           <article className="engineer-decision-action" data-authorized={actionAuthorized ? "true" : "false"}>
-            <span>{actionAuthorized ? "Crew-chief call" : action.kind === "measurement_mission" ? "Measurement mission" : "Next step"}</span>
+            <span>{actionAuthorized ? "Authorized action evidence" : action.kind === "measurement_mission" ? "Measurement evidence" : "Evidence limit"}</span>
             <strong>{actionTitle}</strong>
             <p>{actionInstruction}</p>
             <div className="engineer-briefing-why">
-              <span>Why now</span>
+              <span>Evidence basis</span>
               <p>{whyNow}</p>
             </div>
             {actionAuthorized && (action.current_value || action.proposed_value) && (
@@ -1503,8 +1766,8 @@ export function IntelligencePanel({
             )}
           </article>
           <article>
-            <span>Done when</span>
-            <strong>{briefing.success_check || "Use the measurement mission before judging a change."}</strong>
+            <span>Report success criterion</span>
+            <strong>{briefing.success_check || "Measurement evidence is required before judging a change."}</strong>
           </article>
         </div>
         <div className="engineer-evidence-trail" aria-label="High-signal evidence trail">
@@ -1517,8 +1780,8 @@ export function IntelligencePanel({
           </ol>
         </div>
         {actionAuthorized ? (
-          <button type="button" className="engineer-authorized-action" onClick={() => setWorkspace("dial_in", "engineer")}>
-            <FlaskConical size={15} aria-hidden="true" /> Open controlled test
+          <button type="button" className="engineer-authorized-action" disabled={!caseControlsEnabled} onClick={() => setWorkspace("dial_in", "engineer")}>
+            <FlaskConical size={15} aria-hidden="true" /> Review workflow evidence
           </button>
         ) : (
           <div className="engineer-action-guard" role="note">
@@ -1578,10 +1841,10 @@ export function IntelligencePanel({
               minLength={2}
               maxLength={280}
               autoComplete="off"
-              disabled={queryState.status === "loading"}
+              disabled={!caseControlsEnabled || queryStatus === "loading"}
             />
-            <button type="submit" disabled={question.trim().length < 2 || queryState.status === "loading"}>
-              {queryState.status === "loading" ? "Checking…" : "Ask"}
+            <button type="submit" disabled={!caseControlsEnabled || question.trim().length < 2 || queryStatus === "loading"}>
+              {queryStatus === "loading" ? "Checking…" : "Ask"}
             </button>
           </div>
         </form>
@@ -1592,7 +1855,7 @@ export function IntelligencePanel({
                 type="button"
                 key={suggestion}
                 onClick={() => { void submitQuestion(suggestion); }}
-                disabled={queryState.status === "loading"}
+                disabled={!caseControlsEnabled || queryStatus === "loading"}
               >
                 {suggestion}
               </button>
@@ -1600,13 +1863,13 @@ export function IntelligencePanel({
           </div>
         )}
         <div className="engineer-answer" aria-live="polite">
-          {queryState.status === "loading" && <p className="engineer-answer-status">Tracing the answer to this run…</p>}
-          {queryState.status === "error" && (
+          {queryStatus === "loading" && <p className="engineer-answer-status">Tracing the answer to this case revision…</p>}
+          {queryStatus === "error" && (
             <div className="engineer-answer-error" role="alert">
-              <AlertTriangle size={14} aria-hidden="true" /> {queryState.error}
+              <AlertTriangle size={14} aria-hidden="true" /> {queryError}
             </div>
           )}
-          {queryState.status === "ready" && queryResponse && (
+          {queryStatus === "ready" && queryResponse && (
             <article data-grounded={queryHasGrounding && !queryActionWithheld ? "true" : "false"}>
               <header>
                 <div>
@@ -1660,9 +1923,9 @@ export function IntelligencePanel({
               )}
               {!queryResponse.action_authorized && asArray(queryResponse.follow_up_questions).length > 0 && (
                 <div className="engineer-follow-ups">
-                  <span>Ask next</span>
+                  <span>Related questions</span>
                   {queryResponse.follow_up_questions.slice(0, 3).map((followUp) => (
-                    <button type="button" key={followUp} onClick={() => { void submitQuestion(followUp); }}>{followUp}</button>
+                    <button type="button" key={followUp} disabled={!caseControlsEnabled} onClick={() => { void submitQuestion(followUp); }}>{followUp}</button>
                   ))}
                 </div>
               )}
@@ -1679,7 +1942,7 @@ export function IntelligencePanel({
           <section className="engineer-learning-card engineer-evidence-graph" aria-labelledby="engineer-graph-heading">
             <header>
               <Link2 size={16} aria-hidden="true" />
-              <div><span className="eyebrow">Why this call?</span><h2 id="engineer-graph-heading">Evidence graph</h2></div>
+              <div><span className="eyebrow">Evidence rationale</span><h2 id="engineer-graph-heading">Evidence graph</h2></div>
             </header>
             {graphNodes.length > 0 ? (
               <>

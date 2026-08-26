@@ -110,6 +110,7 @@ export type CrewChiefWorkspaceIdentity = {
   run_id: string;
   session_id: string;
   selected_scope_hash: string;
+  selected_run_ids: string[];
   reasoning_snapshot_sha256: string;
   p20_state_revision: string;
   p20_projection_sha256: string;
@@ -272,6 +273,20 @@ export type CrewChiefWorkspace = {
     index_hash: string;
   };
   engineering_case: CanonicalEngineeringCase;
+  mutation_receipt: null | {
+    schema_version: "p3544.crew-mutation-publication.v1";
+    mutation_id: string;
+    request_sha256: string;
+    action: string;
+    case_id: string;
+    case_revision: number;
+    case_sha256: string;
+    previous_case_sha256: string | null;
+    published_at: string;
+    receipt_sha256: string;
+    authority: "durability_receipt_only";
+    setup_authorized: false;
+  };
   available_tools: CrewChiefToolDefinition[];
   tool_eligibility: Array<{
     tool_id: string;

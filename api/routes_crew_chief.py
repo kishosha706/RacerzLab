@@ -31,6 +31,7 @@ class OpenInvestigationRequest(CrewChiefRequest):
     session_id: str = Field(min_length=1, max_length=160)
     driver_report: str = Field(min_length=1, max_length=2000)
     expected_workspace_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_case_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     objective: EngineeringObjective = EngineeringObjective.RACE_LONG_RUN
     origin: Literal["post_import", "driver_report", "manual_review"] = "driver_report"
 
@@ -38,6 +39,7 @@ class OpenInvestigationRequest(CrewChiefRequest):
 class RevisionRequest(CrewChiefRequest):
     session_id: str = Field(min_length=1, max_length=160)
     expected_workspace_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_case_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class DriverAnswerRequest(RevisionRequest):
@@ -59,6 +61,7 @@ class AbandonRequest(RevisionRequest):
 class RebaseRequest(CrewChiefRequest):
     session_id: str = Field(min_length=1, max_length=160)
     stale_workspace_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_case_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 def _http_error(exc: ValueError) -> HTTPException:
@@ -103,6 +106,7 @@ def create_crew_chief_investigation(
             session_id=request.session_id,
             driver_report=request.driver_report,
             expected_workspace_revision=request.expected_workspace_revision,
+            expected_case_sha256=request.expected_case_sha256,
             objective=request.objective,
             origin=request.origin,
         )
@@ -125,6 +129,7 @@ def continue_crew_chief_investigation(
             investigation_id,
             session_id=request.session_id,
             expected_workspace_revision=request.expected_workspace_revision,
+            expected_case_sha256=request.expected_case_sha256,
         )
     except ValueError as exc:
         raise _http_error(exc) from exc
@@ -145,6 +150,7 @@ def advance_crew_chief_investigation(
             investigation_id,
             session_id=request.session_id,
             expected_workspace_revision=request.expected_workspace_revision,
+            expected_case_sha256=request.expected_case_sha256,
             max_read_only_steps=request.max_read_only_steps,
         )
     except ValueError as exc:
@@ -166,6 +172,7 @@ def answer_crew_chief_question(
             investigation_id,
             session_id=request.session_id,
             expected_workspace_revision=request.expected_workspace_revision,
+            expected_case_sha256=request.expected_case_sha256,
             answer=request.answer,
         )
     except ValueError as exc:
@@ -187,6 +194,7 @@ def change_crew_chief_objective(
             investigation_id,
             session_id=request.session_id,
             expected_workspace_revision=request.expected_workspace_revision,
+            expected_case_sha256=request.expected_case_sha256,
             objective=request.objective,
         )
     except ValueError as exc:
@@ -208,6 +216,7 @@ def abandon_crew_chief_investigation(
             investigation_id,
             session_id=request.session_id,
             expected_workspace_revision=request.expected_workspace_revision,
+            expected_case_sha256=request.expected_case_sha256,
             reason=request.reason,
         )
     except ValueError as exc:
@@ -229,6 +238,7 @@ def rebase_crew_chief_investigation(
             investigation_id,
             session_id=request.session_id,
             stale_workspace_revision=request.stale_workspace_revision,
+            expected_case_sha256=request.expected_case_sha256,
         )
     except ValueError as exc:
         raise _http_error(exc) from exc

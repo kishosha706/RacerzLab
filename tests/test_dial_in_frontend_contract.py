@@ -239,9 +239,11 @@ def test_dial_in_enforces_one_active_controlled_test_with_confirmed_abandon() ->
         "const nextWorkflowStage",
         1,
     )[0]
-    assert "if (!overview || !sessionId || !workflowCatalogReady || activeWorkflow || workflowAuthorityBlocked) return" in submit
+    assert 'engineeringCaseStatus !== "ready"' in submit
+    assert "!workflowCatalogReady || activeWorkflow || workflowAuthorityBlocked" in submit
     assert "submitAtomicDriverIntentWorkflow" in submit
-    assert "if (!overview || !sessionId || !engineeringCase || !workflowCatalogReady || workflowBusy || activeWorkflow || workflowAuthorityBlocked) return" in build
+    assert 'engineeringCaseStatus !== "ready"' in build
+    assert "!engineeringCase || !workflowCatalogReady || workflowBusy || activeWorkflow || workflowAuthorityBlocked" in build
     assert "session_id: sessionId" in submit
     assert "session_id: sessionId" in build
     assert "if (result.workflow == null)" in submit
@@ -269,8 +271,11 @@ def test_dial_in_enforces_one_active_controlled_test_with_confirmed_abandon() ->
         "const recordCurrentRun",
         1,
     )[0]
-    assert "if (!activeWorkflow || !workflow || workflowBusy) return" in cancel
-    assert "cancelControlledWorkflow(workflowId)" in cancel
+    assert 'engineeringCaseStatus !== "ready"' in cancel
+    assert "!activeWorkflow || !workflow || workflowBusy" in cancel
+    assert "cancelControlledWorkflow(workflowId, {" in cancel
+    assert "expected_case_sha256: engineeringCase.case_sha256" in cancel
+    assert "replaceRevision(result.case_revision)" in cancel
     assert "cancelledWorkflow.workflow_id !== workflowId" in cancel
     assert 'cancelledWorkflow.status !== "cancelled"' in cancel
     assert "currentWorkflowIdRef.current !== workflowId" in cancel
@@ -290,9 +295,9 @@ def test_dial_in_enforces_one_active_controlled_test_with_confirmed_abandon() ->
     assert 'workflow.status === "a2_recorded"' in dial_in
     assert ".dialin-tab .dialin-active-test-guard" in styles
 
-    assert "export function cancelControlledWorkflow(workflowId: string)" in client
+    assert "export function cancelControlledWorkflow(" in client
     assert "/api/engineering/workflows/${encodeURIComponent(workflowId)}/cancel" in client
-    assert '{ method: "POST" }' in client
+    assert 'body: JSON.stringify(binding)' in client
     assert "/api/engineering/test-director/score" not in client
     assert "/score`" in client
 
@@ -304,3 +309,38 @@ def test_dial_in_workflow_catalog_failure_has_an_in_tab_retry() -> None:
     assert "setWorkflowCatalogRetryToken((token) => token + 1)" in dial_in
     assert "Retry workflow status" in dial_in
     assert "workflowCatalogRetryToken, workflowHandoffStorageKey" in dial_in
+
+
+def test_workflow_mutations_replace_the_exact_case_and_refresh_the_shell() -> None:
+    dial_in = (PROJECT_ROOT / "ui/src/tabs/DialInTab.tsx").read_text(
+        encoding="utf-8"
+    )
+    client = (PROJECT_ROOT / "ui/src/api/client.ts").read_text(encoding="utf-8")
+    app = (PROJECT_ROOT / "ui/src/App.tsx").read_text(encoding="utf-8")
+
+    for action in (
+        "attachControlledWorkflowStage",
+        "scoreControlledWorkflow",
+        "cancelControlledWorkflow",
+    ):
+        assert action in dial_in
+    assert dial_in.count("replaceRevision(result.case_revision)") >= 5
+    assert dial_in.count("onWorkflowMutation(`${result.mutation_id}") >= 4
+    assert "expected_case_sha256: engineeringCase.case_sha256" in dial_in
+    assert 'engineeringCaseStatus !== "ready"' in dial_in
+    assert "Binding current case…" in dial_in
+    assert "Retry current case" in dial_in
+
+    assert "p3544.controlled-workflow-case-mutation.v1" in client
+    assert "trustedControlledWorkflowMutation" in client
+    assert "response.case_revision.previous_case_sha256 !== expected.expected_case_sha256" in client
+    assert "response.case_revision.case.active_workflow_revision !== response.workflow_revision_sha256" in client
+    assert "body: JSON.stringify(binding)" in client
+    assert "body: JSON.stringify({ run_id: runId, ...binding })" in client
+
+    assert "controlledWorkflowMutationIdentity" in app
+    request_key = app.split("const controlledWorkflowRequestKey", 1)[1].split(
+        "const controlledWorkflowCatalogCanLoad", 1
+    )[0]
+    assert "mutation_identity: controlledWorkflowMutationIdentity" in request_key
+    assert "onWorkflowMutation={setControlledWorkflowMutationIdentity}" in app

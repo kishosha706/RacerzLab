@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
-from typing import Literal
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -13,13 +15,13 @@ from racelab_engine.analysis.active_reset_lab import ActiveResetLabResult, analy
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.controlled_workflow import ControlledWorkflow
 from racelab_engine.models.crew_chief import EngineeringObjective
+from racelab_engine.models.engineering_case import EngineeringCaseRevision
 from racelab_engine.services.crew_chief_service import build_crew_chief_workspace
 from racelab_engine.services.controlled_workflow_service import (
     P19_WORKFLOW_AUTHORITY_BINDING_SCHEMA,
     attach_stage,
     cancel_workflow,
     create_workflow,
-    persist_workflow_candidate,
     project_workflow_for_publication,
     record_scored_workflow_side_effects,
     score_workflow,
@@ -33,6 +35,10 @@ from racelab_engine.services.engineering_learning_service import (
     build_p19_reasoning_memory,
     clear_learning_cache,
 )
+from racelab_engine.services.engineering_memory_service import (
+    record_workflow_cancellation as record_workflow_cancellation_memory,
+    record_workflow_stage as record_workflow_stage_memory,
+)
 from racelab_engine.services.engineering_knowledge_service import (
     build_canonical_performance_opportunity_binding,
 )
@@ -43,6 +49,17 @@ from racelab_engine.services.run_intelligence_service import (
 from racelab_engine.services.report_service import ReportService
 from racelab_engine.services.session_service import get_session
 from racelab_engine.storage.repository import RaceLabRepository
+from racelab_engine.storage.controlled_workflow_mutation_repository import (
+    ControlledWorkflowMutationIntegrityError,
+    ControlledWorkflowMutationReceipt,
+    ControlledWorkflowMutationRepository,
+    WorkflowMutationAction,
+)
+from racelab_engine.storage.db import initialize_database
+from racelab_engine.storage.engineering_case_repository import (
+    EngineeringCaseIntegrityError,
+    EngineeringCaseRepository,
+)
 from racelab_engine.services.import_service import read_telemetry_manifest, read_telemetry_rows
 
 router = APIRouter(prefix="/api/engineering", tags=["engineering"])
@@ -127,10 +144,51 @@ class WorkflowStartRequest(BaseModel):
         return self
 
 
-class WorkflowStageRequest(BaseModel):
+class WorkflowCaseMutationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    case_run_id: str = Field(min_length=1, max_length=160)
+    session_id: str = Field(min_length=1, max_length=160)
+    expected_case_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class WorkflowStageRequest(WorkflowCaseMutationRequest):
     run_id: str = Field(min_length=1)
+
+
+class ControlledWorkflowCaseMutationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[
+        "p3544.controlled-workflow-case-mutation.v1"
+    ] = "p3544.controlled-workflow-case-mutation.v1"
+    mutation_id: str = Field(pattern=r"^cwm_[0-9a-f]{24}$")
+    request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    action: Literal["cancel", "stage", "score"]
+    expected_case_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    workflow_revision_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    workflow: ControlledWorkflow
+    case_revision: EngineeringCaseRevision
+
+    @model_validator(mode="after")
+    def exact_successor_is_complete(self) -> ControlledWorkflowCaseMutationResponse:
+        if (
+            self.case_revision.previous_case_sha256
+            != self.expected_case_sha256
+            or self.case_revision.case_sha256
+            != self.case_revision.case.case_sha256
+            or self.workflow_revision_sha256
+            != canonical_json_sha256(
+                {
+                    "schema": "controlled-workflow-revision.v2",
+                    "workflow": self.workflow.model_dump(mode="json"),
+                }
+            )
+        ):
+            raise ValueError(
+                "Controlled-workflow mutation response is not the exact case successor."
+            )
+        return self
 
 
 class WorkflowReportResponse(BaseModel):
@@ -155,6 +213,220 @@ class ControlledWorkflowCatalogItem(BaseModel):
     stage_run_ids: dict[str, str]
     updated_at: datetime
     revision_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+def _controlled_workflow_revision_sha256(workflow: ControlledWorkflow) -> str:
+    return canonical_json_sha256(
+        {
+            "schema": "controlled-workflow-revision.v2",
+            "workflow": workflow.model_dump(mode="json"),
+        }
+    )
+
+
+def _workflow_mutation_identity(
+    action: WorkflowMutationAction,
+    *,
+    workflow_id: str | None,
+    case_run_id: str,
+    session_id: str,
+    expected_case_sha256: str,
+    stage: str | None = None,
+    stage_run_id: str | None = None,
+) -> tuple[str, str]:
+    payload = {
+        "schema": "p3544.controlled-workflow-case-mutation-request.v1",
+        "action": action,
+        "workflow_id": workflow_id,
+        "case_run_id": case_run_id,
+        "session_id": session_id,
+        "expected_case_sha256": expected_case_sha256,
+        "stage": stage,
+        "stage_run_id": stage_run_id,
+    }
+    request_sha256 = canonical_json_sha256(payload)
+    return f"cwm_{request_sha256[:24]}", request_sha256
+
+
+def _mutation_expectation(
+    *,
+    request_sha256: str,
+    action: WorkflowMutationAction,
+    request: WorkflowCaseMutationRequest,
+    workflow_id: str | None,
+) -> dict[str, Any]:
+    return {
+        "request_sha256": request_sha256,
+        "action": action,
+        "run_id": request.case_run_id,
+        "session_id": request.session_id,
+        "request_workflow_id": workflow_id,
+        "expected_case_sha256": request.expected_case_sha256,
+    }
+
+
+def _response_from_workflow_mutation_receipt(
+    receipt: ControlledWorkflowMutationReceipt,
+) -> ControlledWorkflowCaseMutationResponse:
+    try:
+        response = ControlledWorkflowCaseMutationResponse.model_validate(
+            receipt.response_payload
+        )
+    except (TypeError, ValueError) as exc:
+        raise ControlledWorkflowMutationIntegrityError(
+            "Controlled-workflow mutation receipt response contract is corrupt."
+        ) from exc
+    case = response.case_revision.case
+    active_expected = response.action == "stage"
+    if (
+        response.mutation_id != receipt.mutation_id
+        or response.request_sha256 != receipt.request_sha256
+        or response.action != receipt.action
+        or response.expected_case_sha256 != receipt.expected_case_sha256
+        or response.case_revision.case_sha256 != receipt.result_case_sha256
+        or response.workflow.workflow_id != receipt.result_workflow_id
+        or response.workflow_revision_sha256
+        != receipt.result_workflow_revision_sha256
+        or case.run_id != receipt.run_id
+        or case.session_id != receipt.session_id
+        or (
+            active_expected
+            and (
+                case.active_workflow_id != response.workflow.workflow_id
+                or case.active_workflow_revision
+                != response.workflow_revision_sha256
+            )
+        )
+        or (
+            not active_expected
+            and (
+                case.active_workflow_id is not None
+                or case.active_workflow_revision is not None
+            )
+        )
+    ):
+        raise ControlledWorkflowMutationIntegrityError(
+            "Controlled-workflow mutation receipt result identity is corrupt."
+        )
+    return response
+
+
+def _existing_workflow_mutation_response(
+    repository: ControlledWorkflowMutationRepository,
+    mutation_id: str,
+    expectation: dict[str, Any],
+) -> ControlledWorkflowCaseMutationResponse | None:
+    receipt = repository.receipt(mutation_id, **expectation)
+    return (
+        None
+        if receipt is None
+        else _response_from_workflow_mutation_receipt(receipt)
+    )
+
+
+def _assert_current_case_workflow(
+    current: EngineeringCaseRevision,
+    workflow: ControlledWorkflow,
+    *,
+    request: WorkflowCaseMutationRequest,
+) -> None:
+    workflow_revision = _controlled_workflow_revision_sha256(workflow)
+    if (
+        current.case_sha256 != request.expected_case_sha256
+        or current.case.run_id != request.case_run_id
+        or current.case.session_id != request.session_id
+        or workflow.source_run_id != request.case_run_id
+        or current.case.active_workflow_id != workflow.workflow_id
+        or current.case.active_workflow_revision != workflow_revision
+    ):
+        raise ValueError(
+            "Controlled-workflow mutation is stale for the exact current Engineering Case."
+        )
+
+
+def _preview_database(connection: Any, directory: str) -> Path:
+    preview_path = Path(directory) / "controlled-workflow-case-preview.sqlite"
+    preview_path.write_bytes(connection.serialize())
+    return preview_path
+
+
+def _finalize_workflow_case_in_transaction(
+    connection: Any,
+    *,
+    case_repository: EngineeringCaseRepository,
+    current: EngineeringCaseRevision,
+    workflow: ControlledWorkflow,
+    change_category: Literal["workflow", "controlled_outcome"],
+) -> EngineeringCaseRevision:
+    try:
+        objective = EngineeringObjective(current.case.objective_id)
+    except ValueError as exc:
+        raise EngineeringCaseIntegrityError(
+            "Persisted Engineering Case objective is not supported."
+        ) from exc
+    with TemporaryDirectory(prefix="racelab-workflow-case-preview-") as directory:
+        preview_path = _preview_database(connection, directory)
+        rebuilt = build_crew_chief_workspace(
+            current.case.run_id,
+            session_id=current.case.session_id,
+            objective=objective,
+            db_path=preview_path,
+        )
+        workflow_revision = _controlled_workflow_revision_sha256(workflow)
+        terminal = workflow.status in {"scored", "cancelled"}
+        if (
+            rebuilt.engineering_case.case_id != current.case_id
+            or (
+                terminal
+                and (
+                    rebuilt.engineering_case.active_workflow_id is not None
+                    or rebuilt.engineering_case.active_workflow_revision is not None
+                )
+            )
+            or (
+                not terminal
+                and (
+                    rebuilt.engineering_case.active_workflow_id
+                    != workflow.workflow_id
+                    or rebuilt.engineering_case.active_workflow_revision
+                    != workflow_revision
+                )
+            )
+        ):
+            raise EngineeringCaseIntegrityError(
+                "Controlled-workflow mutation was not reflected in the rebuilt exact case."
+            )
+        revision = case_repository.finalize_case_in_transaction(
+            connection,
+            rebuilt.engineering_case,
+            change_category=change_category,
+        )
+    if (
+        revision.previous_case_sha256 != current.case_sha256
+        or revision.case_sha256 == current.case_sha256
+    ):
+        raise EngineeringCaseIntegrityError(
+            "Controlled-workflow mutation did not publish one exact successor case."
+        )
+    return revision
+
+
+def _save_workflow_mutation_receipt(
+    connection: Any,
+    *,
+    mutation_id: str,
+    expectation: dict[str, Any],
+    response: ControlledWorkflowCaseMutationResponse,
+) -> None:
+    ControlledWorkflowMutationRepository.save_receipt_in_transaction(
+        connection,
+        mutation_id=mutation_id,
+        **expectation,
+        result_case_sha256=response.case_revision.case_sha256,
+        result_workflow_id=response.workflow.workflow_id,
+        result_workflow_revision_sha256=response.workflow_revision_sha256,
+        response_payload=response.model_dump(mode="json"),
+    )
 
 
 def _card_action_identity(workflow: ControlledWorkflow) -> dict[str, object]:
@@ -431,16 +703,14 @@ def build_authorized_workflow_candidate(
 
 @router.post("/workflows", response_model=ControlledWorkflow)
 def start_workflow(request: WorkflowStartRequest) -> ControlledWorkflow:
-    try:
-        repository = RaceLabRepository()
-        candidate = build_authorized_workflow_candidate(
-            request, repository=repository
-        )
-        persisted = persist_workflow_candidate(candidate, repository=repository)
-        return project_workflow_for_publication(persisted, repository=repository)
-    except ValueError as exc:
-        status_code = 404 if "not found" in str(exc).casefold() else 409
-        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    del request
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            "Direct workflow creation is retired. Submit the DriverIntent and "
+            "controlled workflow through the exact-case atomic route."
+        ),
+    )
 
 
 @router.get("/workflows", response_model=list[ControlledWorkflow])
@@ -514,13 +784,124 @@ def get_workflow(workflow_id: str) -> ControlledWorkflow:
     return _project_p19_bound_workflow(workflow, repository=repository)
 
 
-@router.post("/workflows/{workflow_id}/cancel", response_model=ControlledWorkflow)
-def cancel_controlled_workflow(workflow_id: str) -> ControlledWorkflow:
+@router.post(
+    "/workflows/{workflow_id}/cancel",
+    response_model=ControlledWorkflowCaseMutationResponse,
+)
+def cancel_controlled_workflow(
+    workflow_id: str,
+    request: WorkflowCaseMutationRequest,
+) -> ControlledWorkflowCaseMutationResponse:
     try:
         repository = RaceLabRepository()
-        cancelled = cancel_workflow(workflow_id, repository=repository)
-        return withhold_workflow_authority(cancelled, _P19_AUTHORITY_BLOCKER)
-    except ValueError as exc:
+        receipt_repository = ControlledWorkflowMutationRepository(
+            repository.db_path
+        )
+        mutation_id, request_sha256 = _workflow_mutation_identity(
+            "cancel",
+            workflow_id=workflow_id,
+            case_run_id=request.case_run_id,
+            session_id=request.session_id,
+            expected_case_sha256=request.expected_case_sha256,
+        )
+        expectation = _mutation_expectation(
+            request_sha256=request_sha256,
+            action="cancel",
+            request=request,
+            workflow_id=workflow_id,
+        )
+        replay = _existing_workflow_mutation_response(
+            receipt_repository, mutation_id, expectation
+        )
+        if replay is not None:
+            try:
+                replay_workflow = (
+                    repository.get_controlled_workflow(workflow_id)
+                    or replay.workflow
+                )
+                record_workflow_cancellation_memory(
+                    replay_workflow, db_path=repository.db_path
+                )
+            except (OSError, ValueError):
+                pass
+            return replay
+
+        case_repository = EngineeringCaseRepository(repository.db_path)
+        connection = initialize_database(repository.db_path)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            receipt = ControlledWorkflowMutationRepository.receipt_in_transaction(
+                connection, mutation_id, **expectation
+            )
+            if receipt is not None:
+                response = _response_from_workflow_mutation_receipt(receipt)
+                connection.rollback()
+            else:
+                current = case_repository.current_for_scope_in_transaction(
+                    connection, request.case_run_id, request.session_id
+                )
+                workflow = repository.get_controlled_workflow_in_transaction(
+                    connection, workflow_id
+                )
+                if current is None or workflow is None:
+                    raise ValueError(
+                        "Open the current Engineering Case and workflow before abandoning it."
+                    )
+                _assert_current_case_workflow(
+                    current, workflow, request=request
+                )
+                cancelled = cancel_workflow(
+                    workflow_id,
+                    repository=repository,
+                    connection=connection,
+                    record_memory=False,
+                )
+                revision = _finalize_workflow_case_in_transaction(
+                    connection,
+                    case_repository=case_repository,
+                    current=current,
+                    workflow=cancelled,
+                    change_category="workflow",
+                )
+                published_cancelled = withhold_workflow_authority(
+                    cancelled, _P19_AUTHORITY_BLOCKER
+                )
+                workflow_revision = _controlled_workflow_revision_sha256(
+                    published_cancelled
+                )
+                response = ControlledWorkflowCaseMutationResponse(
+                    mutation_id=mutation_id,
+                    request_sha256=request_sha256,
+                    action="cancel",
+                    expected_case_sha256=request.expected_case_sha256,
+                    workflow_revision_sha256=workflow_revision,
+                    workflow=published_cancelled,
+                    case_revision=revision,
+                )
+                _save_workflow_mutation_receipt(
+                    connection,
+                    mutation_id=mutation_id,
+                    expectation=expectation,
+                    response=response,
+                )
+                connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        try:
+            memory_workflow = (
+                repository.get_controlled_workflow(workflow_id)
+                or response.workflow
+            )
+            record_workflow_cancellation_memory(
+                memory_workflow, db_path=repository.db_path
+            )
+        except (OSError, ValueError):
+            pass
+        return response
+    except (ControlledWorkflowMutationIntegrityError, EngineeringCaseIntegrityError, ValueError) as exc:
         status_code = 404 if "not found" in str(exc).lower() else 409
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
@@ -544,27 +925,129 @@ def get_workflow_report(workflow_id: str) -> WorkflowReportResponse:
     return WorkflowReportResponse(workflow_id=workflow_id, markdown=markdown)
 
 
-@router.post("/workflows/{workflow_id}/stages/{stage}", response_model=ControlledWorkflow)
+@router.post(
+    "/workflows/{workflow_id}/stages/{stage}",
+    response_model=ControlledWorkflowCaseMutationResponse,
+)
 def record_workflow_stage(
     workflow_id: str,
     stage: Literal["A", "B", "A2"],
     request: WorkflowStageRequest,
-) -> ControlledWorkflow:
+) -> ControlledWorkflowCaseMutationResponse:
     try:
         repository = RaceLabRepository()
-        workflow = repository.get_controlled_workflow(workflow_id)
-        if workflow is None:
-            raise HTTPException(status_code=404, detail=f"Workflow not found: {workflow_id}")
-        _require_current_p19_authority(workflow, repository=repository)
-        updated = attach_stage(
-            workflow_id,
-            stage,
-            request.run_id,
-            repository=repository,
+        receipt_repository = ControlledWorkflowMutationRepository(
+            repository.db_path
         )
-        _require_current_p19_authority(updated, repository=repository)
-        return project_workflow_for_publication(updated, repository=repository)
-    except ValueError as exc:
+        mutation_id, request_sha256 = _workflow_mutation_identity(
+            "stage",
+            workflow_id=workflow_id,
+            case_run_id=request.case_run_id,
+            session_id=request.session_id,
+            expected_case_sha256=request.expected_case_sha256,
+            stage=stage,
+            stage_run_id=request.run_id,
+        )
+        expectation = _mutation_expectation(
+            request_sha256=request_sha256,
+            action="stage",
+            request=request,
+            workflow_id=workflow_id,
+        )
+        replay = _existing_workflow_mutation_response(
+            receipt_repository, mutation_id, expectation
+        )
+        if replay is not None:
+            try:
+                record_workflow_stage_memory(
+                    replay.workflow, stage, db_path=repository.db_path
+                )
+            except (OSError, ValueError):
+                pass
+            return replay
+
+        case_repository = EngineeringCaseRepository(repository.db_path)
+        connection = initialize_database(repository.db_path)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            receipt = ControlledWorkflowMutationRepository.receipt_in_transaction(
+                connection, mutation_id, **expectation
+            )
+            if receipt is not None:
+                response = _response_from_workflow_mutation_receipt(receipt)
+                connection.rollback()
+            else:
+                current = case_repository.current_for_scope_in_transaction(
+                    connection, request.case_run_id, request.session_id
+                )
+                workflow = repository.get_controlled_workflow_in_transaction(
+                    connection, workflow_id
+                )
+                if current is None or workflow is None:
+                    raise ValueError(
+                        "Open the current Engineering Case and workflow before recording a stage."
+                    )
+                _assert_current_case_workflow(
+                    current, workflow, request=request
+                )
+                _require_current_p19_authority(
+                    workflow, repository=repository
+                )
+                updated = attach_stage(
+                    workflow_id,
+                    stage,
+                    request.run_id,
+                    repository=repository,
+                    connection=connection,
+                    record_memory=False,
+                )
+                with TemporaryDirectory(
+                    prefix="racelab-workflow-authority-preview-"
+                ) as authority_directory:
+                    authority_preview = _preview_database(
+                        connection, authority_directory
+                    )
+                    _require_current_p19_authority(
+                        updated,
+                        repository=RaceLabRepository(authority_preview),
+                    )
+                revision = _finalize_workflow_case_in_transaction(
+                    connection,
+                    case_repository=case_repository,
+                    current=current,
+                    workflow=updated,
+                    change_category="workflow",
+                )
+                workflow_revision = _controlled_workflow_revision_sha256(updated)
+                response = ControlledWorkflowCaseMutationResponse(
+                    mutation_id=mutation_id,
+                    request_sha256=request_sha256,
+                    action="stage",
+                    expected_case_sha256=request.expected_case_sha256,
+                    workflow_revision_sha256=workflow_revision,
+                    workflow=updated,
+                    case_revision=revision,
+                )
+                _save_workflow_mutation_receipt(
+                    connection,
+                    mutation_id=mutation_id,
+                    expectation=expectation,
+                    response=response,
+                )
+                connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        try:
+            record_workflow_stage_memory(
+                response.workflow, stage, db_path=repository.db_path
+            )
+        except (OSError, ValueError):
+            pass
+        return response
+    except (ControlledWorkflowMutationIntegrityError, EngineeringCaseIntegrityError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
@@ -598,13 +1081,58 @@ def active_reset_lab(request: ActiveResetLabRequest) -> ActiveResetLabResult:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/workflows/{workflow_id}/score", response_model=ControlledWorkflow)
-def score_controlled_workflow(workflow_id: str) -> ControlledWorkflow:
+@router.post(
+    "/workflows/{workflow_id}/score",
+    response_model=ControlledWorkflowCaseMutationResponse,
+)
+def score_controlled_workflow(
+    workflow_id: str,
+    request: WorkflowCaseMutationRequest,
+) -> ControlledWorkflowCaseMutationResponse:
     try:
         repository = RaceLabRepository()
+        receipt_repository = ControlledWorkflowMutationRepository(
+            repository.db_path
+        )
+        mutation_id, request_sha256 = _workflow_mutation_identity(
+            "score",
+            workflow_id=workflow_id,
+            case_run_id=request.case_run_id,
+            session_id=request.session_id,
+            expected_case_sha256=request.expected_case_sha256,
+        )
+        expectation = _mutation_expectation(
+            request_sha256=request_sha256,
+            action="score",
+            request=request,
+            workflow_id=workflow_id,
+        )
+        replay = _existing_workflow_mutation_response(
+            receipt_repository, mutation_id, expectation
+        )
+        if replay is not None:
+            clear_learning_cache()
+            try:
+                record_scored_workflow_side_effects(
+                    replay.workflow, repository=repository
+                )
+            except (OSError, ValueError):
+                pass
+            return replay
+
+        case_repository = EngineeringCaseRepository(repository.db_path)
         workflow = repository.get_controlled_workflow(workflow_id)
         if workflow is None:
             raise HTTPException(status_code=404, detail=f"Workflow not found: {workflow_id}")
+        current = case_repository.current_for_scope(
+            request.case_run_id, request.session_id
+        )
+        if current is None:
+            raise ValueError(
+                "Open the current Engineering Case before scoring the workflow."
+            )
+        _assert_current_case_workflow(current, workflow, request=request)
+        starting_workflow_sha256 = _controlled_workflow_revision_sha256(workflow)
         _require_current_p19_authority(workflow, repository=repository)
         scored = score_workflow(
             workflow_id,
@@ -639,13 +1167,78 @@ def score_controlled_workflow(workflow_id: str) -> ControlledWorkflow:
             p19_reasoning_snapshot_sha256=public.reasoning_snapshot_sha256,
             repository=repository,
         )
-        scored = repository.save_scored_workflow_with_experience_if_scope_exclusive(
-            scored,
-            workflow_scope_run_ids(scored, repository=repository),
-            experience,
-        )
+        connection = initialize_database(repository.db_path)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            receipt = ControlledWorkflowMutationRepository.receipt_in_transaction(
+                connection, mutation_id, **expectation
+            )
+            if receipt is not None:
+                response = _response_from_workflow_mutation_receipt(receipt)
+                connection.rollback()
+            else:
+                locked_current = case_repository.current_for_scope_in_transaction(
+                    connection, request.case_run_id, request.session_id
+                )
+                locked_workflow = repository.get_controlled_workflow_in_transaction(
+                    connection, workflow_id
+                )
+                if locked_current is None or locked_workflow is None:
+                    raise ValueError(
+                        "The current Engineering Case or workflow disappeared before scoring."
+                    )
+                _assert_current_case_workflow(
+                    locked_current, locked_workflow, request=request
+                )
+                if (
+                    _controlled_workflow_revision_sha256(locked_workflow)
+                    != starting_workflow_sha256
+                ):
+                    raise ValueError(
+                        "Controlled workflow changed while its score was being prepared."
+                    )
+                scored = repository.save_scored_workflow_with_experience_if_scope_exclusive(
+                    scored,
+                    workflow_scope_run_ids(scored, repository=repository),
+                    experience,
+                    connection=connection,
+                )
+                revision = _finalize_workflow_case_in_transaction(
+                    connection,
+                    case_repository=case_repository,
+                    current=locked_current,
+                    workflow=scored,
+                    change_category="controlled_outcome",
+                )
+                workflow_revision = _controlled_workflow_revision_sha256(scored)
+                response = ControlledWorkflowCaseMutationResponse(
+                    mutation_id=mutation_id,
+                    request_sha256=request_sha256,
+                    action="score",
+                    expected_case_sha256=request.expected_case_sha256,
+                    workflow_revision_sha256=workflow_revision,
+                    workflow=scored,
+                    case_revision=revision,
+                )
+                _save_workflow_mutation_receipt(
+                    connection,
+                    mutation_id=mutation_id,
+                    expectation=expectation,
+                    response=response,
+                )
+                connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
         clear_learning_cache()
-        record_scored_workflow_side_effects(scored, repository=repository)
-        return project_workflow_for_publication(scored, repository=repository)
-    except ValueError as exc:
+        try:
+            record_scored_workflow_side_effects(
+                response.workflow, repository=repository
+            )
+        except (OSError, ValueError):
+            pass
+        return response
+    except (ControlledWorkflowMutationIntegrityError, EngineeringCaseIntegrityError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

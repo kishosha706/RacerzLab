@@ -17,7 +17,12 @@ type SetupTabProps = {
 };
 
 type SetupRowSelection = (value: { semanticKey: string; controlKey?: string }) => void;
-const SetupRowSelectionContext = createContext<SetupRowSelection | null>(null);
+type SetupRowSelectionState = {
+  onSelect: SetupRowSelection;
+  selectedControlKeys: readonly string[];
+  selectableKeys: ReadonlySet<string>;
+};
+const SetupRowSelectionContext = createContext<SetupRowSelectionState | null>(null);
 
 type SetupEvidenceFocus = Pick<TelemetryEvent, "event_id" | "event_type" | "related_setup_keys"> &
   Partial<Pick<
@@ -150,29 +155,38 @@ function Field({ l, v, u, imp: isImp, relevant = false, semanticKey, controlKey 
   l: string; v: string | number | null | undefined;
   u?: string; imp?: boolean; relevant?: boolean; semanticKey?: string; controlKey?: string;
 }) {
-  const onSelect = useContext(SetupRowSelectionContext);
+  const selectionState = useContext(SetupRowSelectionContext);
+  const selectable = selectionState != null
+    && semanticKey != null
+    && (
+      selectionState.selectableKeys.has(semanticKey)
+      || (controlKey != null && selectionState.selectableKeys.has(controlKey))
+    );
+  const selected = selectable && controlKey != null
+    && selectionState.selectedControlKeys.includes(controlKey);
   const missing = v == null || (typeof v === "number" && !Number.isFinite(v)) || (typeof v === "object");
   const cls = ["gr-row"];
   if (missing) cls.push("missing");
   else if (isImp) cls.push("important");
   if (relevant) cls.push("evidence-linked");
-  if (onSelect) cls.push("is-selectable");
-  const content = <>
-      <span className="gr-label" role="rowheader">{l}</span>
-      <span className="gr-value" role="cell">{missing ? "—" : v}</span>
-      <span className="gr-value-unit" aria-hidden={missing || !u ? "true" : undefined}>{missing ? "" : (u ?? "")}</span>
-      {relevant && <span className="gr-row-evidence" role="cell">Evidence-linked</span>}
-    </>;
-  return onSelect ? (
+  if (selectable) cls.push("is-selectable");
+  if (selected) cls.push("active");
+  const content = (tableSemantics: boolean) => <>
+    <span className="gr-label" role={tableSemantics ? "rowheader" : undefined}>{l}</span>
+    <span className="gr-value" role={tableSemantics ? "cell" : undefined}>{missing ? "—" : v}</span>
+    <span className="gr-value-unit" aria-hidden={missing || !u ? "true" : undefined}>{missing ? "" : (u ?? "")}</span>
+    {relevant && <span className="gr-row-evidence" role={tableSemantics ? "cell" : undefined}>Evidence-linked</span>}
+  </>;
+  return selectable ? (
     <button
       type="button"
       className={cls.join(" ")}
-      role="row"
       data-evidence-linked={relevant ? "true" : undefined}
-      onClick={() => onSelect({ semanticKey: semanticKey ?? normalizedSetupKey(l), controlKey })}
+      onClick={() => selectionState.onSelect({ semanticKey, controlKey })}
       aria-label={`Focus setup control ${l}`}
-    >{content}</button>
-  ) : <div className={cls.join(" ")} role="row" data-evidence-linked={relevant ? "true" : undefined}>{content}</div>;
+      aria-pressed={selected}
+    >{content(false)}</button>
+  ) : <div className={cls.join(" ")} role="row" data-evidence-linked={relevant ? "true" : undefined}>{content(true)}</div>;
 }
 
 // ── Corner Panel ─────────────────────────────────────────────────
@@ -202,21 +216,21 @@ function CornerPanel({ label, corner, setup, glow, relevantKeys }: {
     <div className={`gr-corner${glow ? " glow" : ""}`} data-corner={corner} role="region" aria-label={`${label} setup controls`}>
       <div className="gr-corner-head">{label}</div>
       <div className="gr-corner-body">
-        <Field l="Tire PSI" v={psi} u="psi" imp relevant={relevant("cold_pressure_kpa", "pressure")} />
+        <Field l="Tire PSI" v={psi} u="psi" imp relevant={relevant("cold_pressure_kpa", "pressure")} semanticKey={`${corner}_cold_pressure_kpa`} controlKey={`${corner}_cold_pressure_kpa`} />
         <Field l="Ride Height" v={rh} u="in" imp relevant={relevant("ride_height_mm", "ride_height")} semanticKey={`${corner}_ride_height_mm`} controlKey={`${corner}_ride_height_mm`} />
         <Field l="Spring Rate" v={spring} u="lb/in" imp relevant={relevant("spring_rate_n_per_mm", `${frontCorner ? "front" : "rear"}_spring_n_per_mm`, "spring")} semanticKey={`${corner}_${frontCorner ? "front" : "rear"}_spring_n_per_mm`} controlKey={`${corner}_${frontCorner ? "front" : "rear"}_spring_n_per_mm`} />
-        <Field l="Corner Weight" v={wt} u="lb" imp relevant={relevant("corner_weight_n", "corner_weight")} />
+        <Field l="Corner Weight" v={wt} u="lb" imp relevant={relevant("corner_weight_n", "corner_weight")} semanticKey={`${corner}_corner_weight_n`} controlKey={`${corner}_corner_weight_n`} />
         <div className="gr-group-head">Dampers</div>
-        <Field l="LS Compression" v={lsC} u="clk" relevant={relevant("ls_compression")} />
-        <Field l="HS Compression" v={hsC} u="clk" relevant={relevant("hs_compression")} />
-        <Field l="HS Comp Slope" v={hsCS} relevant={relevant("hs_comp_slope")} />
-        <Field l="LS Rebound" v={lsR} u="clk" relevant={relevant("ls_rebound")} />
-        <Field l="HS Rebound" v={hsR} u="clk" relevant={relevant("hs_rebound")} />
-        <Field l="HS Reb Slope" v={hsRS} relevant={relevant("hs_reb_slope")} />
+        <Field l="LS Compression" v={lsC} u="clk" relevant={relevant("ls_compression")} semanticKey={`${corner}_ls_compression`} controlKey={`${corner}_ls_compression`} />
+        <Field l="HS Compression" v={hsC} u="clk" relevant={relevant("hs_compression")} semanticKey={`${corner}_hs_compression`} controlKey={`${corner}_hs_compression`} />
+        <Field l="HS Comp Slope" v={hsCS} relevant={relevant("hs_comp_slope")} semanticKey={`${corner}_hs_comp_slope`} controlKey={`${corner}_hs_comp_slope`} />
+        <Field l="LS Rebound" v={lsR} u="clk" relevant={relevant("ls_rebound")} semanticKey={`${corner}_ls_rebound`} controlKey={`${corner}_ls_rebound`} />
+        <Field l="HS Rebound" v={hsR} u="clk" relevant={relevant("hs_rebound")} semanticKey={`${corner}_hs_rebound`} controlKey={`${corner}_hs_rebound`} />
+        <Field l="HS Reb Slope" v={hsRS} relevant={relevant("hs_reb_slope")} semanticKey={`${corner}_hs_reb_slope`} controlKey={`${corner}_hs_reb_slope`} />
         <div className="gr-group-head">Alignment</div>
-        <Field l="Camber" v={camber} u="deg" relevant={relevant("camber_deg", "camber")} />
-        {frontCorner && <Field l="Caster" v={caster} u="deg" relevant={relevant("caster_deg", "caster")} />}
-        <Field l="Toe-In" v={toe} u="in" relevant={relevant("toe_in_mm", "toe")} />
+        <Field l="Camber" v={camber} u="deg" relevant={relevant("camber_deg", "camber")} semanticKey={`${corner}_camber_deg`} controlKey={`${corner}_camber_deg`} />
+        {frontCorner && <Field l="Caster" v={caster} u="deg" relevant={relevant("caster_deg", "caster")} semanticKey={`${corner}_caster_deg`} controlKey={`${corner}_caster_deg`} />}
+        <Field l="Toe-In" v={toe} u="in" relevant={relevant("toe_in_mm", "toe")} semanticKey={`${corner}_toe_in_mm`} controlKey={`${corner}_toe_in_mm`} />
       </div>
     </div>
   );
@@ -389,6 +403,76 @@ export function SetupTab({
   const handleMap = useCallback(() => onToggleMapOverlay?.(), [onToggleMapOverlay]);
   const handleDialIn = useCallback(() => setWorkspace("dial_in", "setup_table"), [setWorkspace]);
   const handleEngineer = useCallback(() => setWorkspace("engineer", "setup_table"), [setWorkspace]);
+  const selectableSetupKeys = useMemo(() => {
+    const keys = new Set<string>();
+    if (
+      engineeringCase == null
+      || setup == null
+      || engineeringCase.run_id !== overview.run_id
+      || engineeringCase.setup_id !== setup.setup_id
+      || (sessionId != null && engineeringCase.session_id !== sessionId)
+    ) {
+      return keys;
+    }
+    for (const effect of engineeringCase.effect_readiness) {
+      keys.add(effect.effect_id);
+      for (const controlKey of effect.exact_control_keys) keys.add(controlKey);
+    }
+    return keys;
+  }, [engineeringCase, overview.run_id, sessionId, setup]);
+  const focusSetupRow = useCallback<SetupRowSelection>(({ semanticKey, controlKey }) => {
+    if (
+      engineeringCase == null
+      || setup == null
+      || engineeringCase.run_id !== overview.run_id
+      || engineeringCase.setup_id !== setup.setup_id
+      || (sessionId != null && engineeringCase.session_id !== sessionId)
+    ) return;
+    const effects = engineeringCase.effect_readiness.filter((item) => (
+      (controlKey != null && item.exact_control_keys.includes(controlKey))
+      || item.effect_id === semanticKey
+    ));
+    if (effects.length === 0) return;
+    const exactControlKeys = controlKey != null
+      && effects.some((item) => item.exact_control_keys.includes(controlKey))
+      ? [controlKey]
+      : [];
+    focusEvidence({
+      runId: overview.run_id,
+      lapNumber: null,
+      lapScope: "run",
+      eventId: null,
+      producerId: "p35.1.setup-effect-readiness",
+      artifactId: null,
+      caseId: engineeringCase.case_id,
+      caseRevision: engineeringCase.case_revision_sha256,
+      caseSha256: engineeringCase.case_sha256,
+      mechanismIds: engineeringCase.semantic_focus.mechanism_ids,
+      responseRelationId: engineeringCase.semantic_focus.response_relation_id,
+      componentIds: engineeringCase.semantic_focus.component_ids,
+      effectIds: effects.map((item) => item.effect_id),
+      controlKeys: exactControlKeys,
+      p19CauseIds: engineeringCase.semantic_focus.p19_cause_ids,
+      quantityIds: engineeringCase.quantity_observability.map((item) => item.quantity_id),
+      discriminatorId: engineeringCase.active_discriminator_id,
+      sampleIndex: null,
+      lapDistFt: null,
+      lapPct: null,
+      zoneId: null,
+      zoneLabel: semanticKey,
+      zoneStartPct: null,
+      zoneEndPct: null,
+      channelId: null,
+      system: "setup",
+      selectionSource: "setup_table",
+      lockState: "locked",
+      trustTier: effects[0].authority,
+      compareRole: null,
+      sourceRunId: overview.run_id,
+      sourceSetupId: setup.setup_id,
+      valueBasis: "run_level",
+    }, "setup_impact");
+  }, [engineeringCase, focusEvidence, overview.run_id, sessionId, setup]);
 
   if (!setup) {
     return (
@@ -405,12 +489,12 @@ export function SetupTab({
           <div>
             <h2 id="setup-decision-title">Garage snapshot missing for this run</h2>
             <p><strong>Why:</strong> No setup change is authorized by this tab because no exact run-owned snapshot is available.</p>
-            <p><strong>What next:</strong> Capture the setup with the next telemetry import, then return here before comparing or planning a test.</p>
+            <p><strong>Evidence recovery:</strong> Capture the setup with the following telemetry import, then return here before comparing or planning a test.</p>
             <div className="tab-decision-facts" aria-label="Setup scope and authority">
               <span>Diagnostic <strong>Unavailable</strong></span>
               <span>Scope <strong>Current run</strong></span>
               <span><ShieldCheck size={12} /> Authority <strong>Withheld</strong></span>
-              <span>Next <strong>Recover setup evidence</strong></span>
+              <span>Evidence route <strong>Recover setup evidence</strong></span>
             </div>
             {selection.selectedMode === "learning" && setupIdentityMismatch && (
               <p className="section-note">A setup row was withheld because its run identity did not match the open run.</p>
@@ -457,48 +541,6 @@ export function SetupTab({
     && selectedEvent.valid_for_tuning
     && relevantSetupKeys.size > 0,
   );
-  const focusSetupRow = useCallback<SetupRowSelection>(({ semanticKey, controlKey }) => {
-    if (engineeringCase == null || engineeringCase.run_id !== overview.run_id) return;
-    const effects = engineeringCase.effect_readiness.filter((item) => (
-      (controlKey != null && item.exact_control_keys.includes(controlKey))
-      || item.effect_id === semanticKey
-    ));
-    focusEvidence({
-      runId: overview.run_id,
-      lapNumber: null,
-      lapScope: "run",
-      eventId: null,
-      producerId: "p35.1.setup-effect-readiness",
-      artifactId: null,
-      caseId: engineeringCase.case_id,
-      caseRevision: engineeringCase.case_revision_sha256,
-      caseSha256: engineeringCase.case_sha256,
-      mechanismIds: engineeringCase.semantic_focus.mechanism_ids,
-      responseRelationId: engineeringCase.semantic_focus.response_relation_id,
-      componentIds: engineeringCase.semantic_focus.component_ids,
-      effectIds: effects.map((item) => item.effect_id),
-      controlKeys: controlKey ? [controlKey] : [],
-      p19CauseIds: engineeringCase.semantic_focus.p19_cause_ids,
-      quantityIds: engineeringCase.quantity_observability.map((item) => item.quantity_id),
-      discriminatorId: engineeringCase.active_discriminator_id,
-      sampleIndex: null,
-      lapDistFt: null,
-      lapPct: null,
-      zoneId: null,
-      zoneLabel: semanticKey,
-      zoneStartPct: null,
-      zoneEndPct: null,
-      channelId: null,
-      system: "setup",
-      selectionSource: "setup_table",
-      lockState: "locked",
-      trustTier: effects[0]?.authority ?? "knowledge_only",
-      compareRole: null,
-      sourceRunId: overview.run_id,
-      sourceSetupId: setup.setup_id,
-      valueBasis: "run_level",
-    }, "setup_impact");
-  }, [engineeringCase, focusEvidence, overview.run_id, setup.setup_id]);
   const setupDecisionState = selectedEvent
     ? hasQualifiedEvidenceLink ? "evidence_linked" : "context_only"
     : "recorded_snapshot";
@@ -525,7 +567,7 @@ export function SetupTab({
       ? `Inspect ${relevantSetupKeys.size} evidence-linked control${relevantSetupKeys.size === 1 ? "" : "s"}`
       : "Evidence context received; control attribution withheld"
     : "Recorded setup reference; choose evidence before changing it";
-  const nextHandoff = selectedEvent
+  const evidenceHandoff = selectedEvent
     ? hasQualifiedEvidenceLink
       ? "Verify one legal change"
       : "Qualify the cause first"
@@ -535,7 +577,7 @@ export function SetupTab({
       ? `${relevantSetupKeys.size} recorded control${relevantSetupKeys.size === 1 ? " is" : "s are"} explicitly linked to this tuning-valid event. The link narrows inspection; it does not choose a target.`
       : "The exact evidence location is preserved, but its producer did not supply a trusted, tuning-valid control link."
     : "This is the setup captured with the current run. Without selected evidence it is a reference, not a change request.";
-  const setupDecisionNext = selectedEvent
+  const setupEvidenceRoute = selectedEvent
     ? hasQualifiedEvidenceLink
       ? "Inspect the highlighted controls, ask Engineer to test the explanation, then let Dial-In verify one legal change."
       : "Return to Platform or Engineer and qualify the cause before touching a garage control."
@@ -607,7 +649,11 @@ export function SetupTab({
                 };
 
   return (
-    <SetupRowSelectionContext.Provider value={focusSetupRow}>
+    <SetupRowSelectionContext.Provider value={{
+      onSelect: focusSetupRow,
+      selectedControlKeys: selection.selectedControlKeys ?? [],
+      selectableKeys: selectableSetupKeys,
+    }}>
     <section className="garage-board">
       {/* 1) Setup Context / Evidence Focus strip */}
       <div className="gr-topbar">
@@ -652,7 +698,7 @@ export function SetupTab({
         <div>
           <h2 id="setup-decision-title">{decisionTitle}</h2>
           <p><strong>Why:</strong> {setupDecisionWhy}</p>
-          <p><strong>What next:</strong> {setupDecisionNext}</p>
+          <p><strong>Evidence route:</strong> {setupEvidenceRoute}</p>
           <p className="section-note">
             {selectedEvent
               ? hasQualifiedEvidenceLink
@@ -666,7 +712,7 @@ export function SetupTab({
             <span>Headline <strong>{setupHeadlineMetric}</strong></span>
             <span>Comparison <strong>{comparisonStatus}</strong></span>
             <span><ShieldCheck size={12} /> Authority <strong>Withheld</strong></span>
-            <span>Next <strong>{nextHandoff}</strong></span>
+            <span>Local handoff <strong>{evidenceHandoff}</strong></span>
           </div>
           {selection.selectedMode === "learning" && (
             <div className="tab-decision-learning">
@@ -866,14 +912,14 @@ export function SetupTab({
         <div className="gr-card setup-system-card setup-system-steering" data-evidence-relevant={relevant("steering_ratio", "steering_pinion_mm", "steering_offset_deg", "front_brake_bias_percent") ? "true" : undefined} data-evidence-context={relevantSetupKeys.size === 0 && focusZone === "steering" ? "true" : undefined}>
           <div className="gr-card-head"><Gauge size={12} /> Steering / Control</div>
           <div className="gr-card-body">
-            <Field l={steeringControlLabel} v={displayRatio ?? null} relevant={relevant("steering_ratio", "steering_pinion_mm")} semanticKey="steering_ratio" controlKey="steering_ratio" />
+            <Field l={steeringControlLabel} v={displayRatio ?? null} relevant={relevant("steering_ratio", "steering_pinion_mm")} semanticKey={derivedRatio ? "steering_pinion_mm" : "steering_ratio"} controlKey={derivedRatio ? "steering_pinion_mm" : "steering_ratio"} />
             {derivedRatio && pinion != null && (
-              <Field l="Steering Pinion" v={pinion} u="mm/rev" relevant={relevant("steering_pinion_mm")} />
+              <Field l="Steering Pinion" v={pinion} u="mm/rev" relevant={relevant("steering_pinion_mm")} semanticKey="steering_pinion_mm" controlKey="steering_pinion_mm" />
             )}
             <Field l="Steering Offset" v={setup.steering_offset_deg ?? null} u="deg" relevant={relevant("steering_offset_deg")} semanticKey="steering_offset_deg" controlKey="steering_offset_deg" />
             <Field l="Front Brake Bias" v={setup.front_brake_bias_percent ?? null} u="%" relevant={relevant("front_brake_bias_percent")} semanticKey="front_brake_bias_percent" controlKey="front_brake_bias_percent" />
-            <Field l="Front Master Cyl" v={frontMc} u="in" relevant={relevant("front_mc_mm")} />
-            <Field l="Rear Master Cyl" v={rearMc} u="in" relevant={relevant("rear_mc_mm")} />
+            <Field l="Front Master Cyl" v={frontMc} u="in" relevant={relevant("front_mc_mm")} semanticKey="front_mc_mm" controlKey="front_mc_mm" />
+            <Field l="Rear Master Cyl" v={rearMc} u="in" relevant={relevant("rear_mc_mm")} semanticKey="rear_mc_mm" controlKey="rear_mc_mm" />
             <Field l="Tape / Cooling" v={setup.tape_percent ?? null} u={typeof setup.tape_percent === "number" ? "%" : undefined} relevant={relevant("tape_percent")} semanticKey="tape_percent" controlKey="tape_percent" />
           </div>
         </div>
@@ -904,21 +950,21 @@ export function SetupTab({
           <div className="gr-card-head"><Wrench size={12} /> ARB</div>
           <div className="gr-card-body">
             <div className="gr-subhead">Front ARB</div>
-            <Field l="Diameter" v={imp(evNum(setup, "front_arb_diameter_mm"), MM_IN, 3)} u="in" relevant={relevant("front_arb_diameter_mm")} />
-            <Field l="Arm Position" v={evText(setup, "front_arb_arm_position")} relevant={relevant("front_arb_arm_position")} />
-            <Field l="Preload" v={imp(evNum(setup, "front_arb_preload_nm"), NM_FTLB, 1)} u="ft-lb" relevant={relevant("front_arb_preload_nm")} />
-            <Field l="Attach" v={evNum(setup, "front_arb_attach")} relevant={relevant("front_arb_attach")} />
+            <Field l="Diameter" v={imp(evNum(setup, "front_arb_diameter_mm"), MM_IN, 3)} u="in" relevant={relevant("front_arb_diameter_mm")} semanticKey="front_arb_diameter_mm" controlKey="front_arb_diameter_mm" />
+            <Field l="Arm Position" v={evText(setup, "front_arb_arm_position")} relevant={relevant("front_arb_arm_position")} semanticKey="front_arb_arm_position" controlKey="front_arb_arm_position" />
+            <Field l="Preload" v={imp(evNum(setup, "front_arb_preload_nm"), NM_FTLB, 1)} u="ft-lb" relevant={relevant("front_arb_preload_nm")} semanticKey="front_arb_preload_nm" controlKey="front_arb_preload_nm" />
+            <Field l="Attach" v={evNum(setup, "front_arb_attach")} relevant={relevant("front_arb_attach")} semanticKey="front_arb_attach" controlKey="front_arb_attach" />
             <div className="gr-subhead">Rear ARB</div>
-            <Field l="Diameter" v={imp(evNum(setup, "rear_arb_diameter_mm"), MM_IN, 3)} u="in" relevant={relevant("rear_arb_diameter_mm")} />
-            <Field l="Arm Position" v={evText(setup, "rear_arb_arm_position")} relevant={relevant("rear_arb_arm_position")} />
-            <Field l="Preload" v={imp(evNum(setup, "rear_arb_preload_nm"), NM_FTLB, 1)} u="ft-lb" relevant={relevant("rear_arb_preload_nm")} />
+            <Field l="Diameter" v={imp(evNum(setup, "rear_arb_diameter_mm"), MM_IN, 3)} u="in" relevant={relevant("rear_arb_diameter_mm")} semanticKey="rear_arb_diameter_mm" controlKey="rear_arb_diameter_mm" />
+            <Field l="Arm Position" v={evText(setup, "rear_arb_arm_position")} relevant={relevant("rear_arb_arm_position")} semanticKey="rear_arb_arm_position" controlKey="rear_arb_arm_position" />
+            <Field l="Preload" v={imp(evNum(setup, "rear_arb_preload_nm"), NM_FTLB, 1)} u="ft-lb" relevant={relevant("rear_arb_preload_nm")} semanticKey="rear_arb_preload_nm" controlKey="rear_arb_preload_nm" />
           </div>
         </div>
 
         <div className="gr-card setup-system-card setup-system-diff" data-evidence-relevant={relevant("diff_preload_nm", "rear_end_ratio", "final_drive_ratio") ? "true" : undefined}>
           <div className="gr-card-head"><Layers size={12} /> Diff</div>
           <div className="gr-card-body">
-            <Field l="Diff Preload" v={imp(evNum(setup, "diff_preload_nm"), NM_FTLB, 1)} u="ft-lb" relevant={relevant("diff_preload_nm")} />
+            <Field l="Diff Preload" v={imp(evNum(setup, "diff_preload_nm"), NM_FTLB, 1)} u="ft-lb" relevant={relevant("diff_preload_nm")} semanticKey="diff_preload_nm" controlKey="diff_preload_nm" />
             <Field l="Rear End Ratio" v={setup.rear_end_ratio ?? evNum(setup, "final_drive_ratio")} u=":1" relevant={relevant("rear_end_ratio", "final_drive_ratio")} semanticKey="rear_end_ratio" controlKey="rear_end_ratio" />
           </div>
         </div>

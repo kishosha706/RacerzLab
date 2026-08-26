@@ -114,7 +114,7 @@ if (missed.length > 0) {{
 def test_dial_in_client_parses_unknown_through_the_runtime_guard() -> None:
     client = (ROOT / "ui/src/api/client.ts").read_text(encoding="utf-8")
     fetch = client.split("export function analyzeRunDialIn", 1)[1].split(
-        "export function startControlledWorkflow", 1
+        "export type AtomicDriverIntentWorkflowResponse", 1
     )[0]
 
     assert "requestJson<unknown>" in fetch

@@ -27,7 +27,59 @@ function loadLastWorkspace(): Workspace {
   return "overview";
 }
 
+type SemanticFocusSelection = Pick<
+  TelemetrySelection,
+  | "selectedProducerId"
+  | "selectedArtifactId"
+  | "selectedCaseId"
+  | "selectedCaseRevision"
+  | "selectedCaseSha256"
+  | "selectedMechanismIds"
+  | "selectedResponseRelationId"
+  | "selectedComponentIds"
+  | "selectedEffectIds"
+  | "selectedControlKeys"
+  | "selectedP19CauseIds"
+  | "selectedQuantityIds"
+  | "selectedDiscriminatorId"
+  | "selectedWorkflowId"
+  | "selectedWorkflowRevision"
+  | "selectedSystem"
+  | "selectedCompareRole"
+  | "selectedSourceRunId"
+  | "selectedSourceSetupId"
+>;
+
+/**
+ * P35.4.4 semantic identity is transactional: an atomic run/lap/context
+ * selection cannot inherit any part of a previous exact-case handoff.
+ */
+function emptySemanticFocus(): SemanticFocusSelection {
+  return {
+    selectedProducerId: null,
+    selectedArtifactId: null,
+    selectedCaseId: null,
+    selectedCaseRevision: null,
+    selectedCaseSha256: null,
+    selectedMechanismIds: [],
+    selectedResponseRelationId: null,
+    selectedComponentIds: [],
+    selectedEffectIds: [],
+    selectedControlKeys: [],
+    selectedP19CauseIds: [],
+    selectedQuantityIds: [],
+    selectedDiscriminatorId: null,
+    selectedWorkflowId: null,
+    selectedWorkflowRevision: null,
+    selectedSystem: null,
+    selectedCompareRole: null,
+    selectedSourceRunId: null,
+    selectedSourceSetupId: null,
+  };
+}
+
 const DEFAULT_SELECTION: TelemetrySelection = {
+  ...emptySemanticFocus(),
   selectedRunId: null,
   selectedMode: "race",
   selectedWorkspace: loadLastWorkspace(),
@@ -72,11 +124,12 @@ export function selectionReducer(state: TelemetrySelection, action: SelectionAct
         selectedWorkspace: state.selectedWorkspace,
       };
     case "SELECT_COMPARE_RUN":
-      return { ...state, selectedCompareRunId: action.runId };
+      return { ...state, ...emptySemanticFocus(), selectedCompareRunId: action.runId };
     case "SELECT_LAP":
       // Manual lap change: clear sample/event/distance/hover to prevent stale cross-lap context
       return {
         ...state,
+        ...emptySemanticFocus(),
         selectedLap: action.lap,
         selectedLapScope: "single_lap",
         selectedLapWindowStart: null,
@@ -87,6 +140,7 @@ export function selectionReducer(state: TelemetrySelection, action: SelectionAct
         selectedLapPct: null,
         selectedEventId: null,
         selectedChannel: null,
+        selectedSetupKey: null,
         selectedZoneId: null,
         selectedZoneLabel: null,
         selectedZoneStartPct: null,
@@ -100,24 +154,31 @@ export function selectionReducer(state: TelemetrySelection, action: SelectionAct
     case "SELECT_SAMPLE":
       return {
         ...state,
+        ...emptySemanticFocus(),
         selectedSampleIndex: action.sampleIndex,
         selectedLapDistFt: action.lapDistFt ?? state.selectedLapDistFt,
         selectedLapPct: action.lapPct ?? state.selectedLapPct,
         selectionSource: action.source,
       };
     case "SELECT_EVENT":
-      return { ...state, selectedEventId: action.eventId, selectionSource: action.source };
+      return { ...state, ...emptySemanticFocus(), selectedEventId: action.eventId, selectionSource: action.source };
     case "SELECT_CHANNEL":
-      return { ...state, selectedChannel: action.channel, selectionSource: action.source };
+      return { ...state, ...emptySemanticFocus(), selectedChannel: action.channel, selectionSource: action.source };
     case "SELECT_SETUP_KEY":
-      return { ...state, selectedSetupKey: action.setupKey };
+      return { ...state, ...emptySemanticFocus(), selectedSetupKey: action.setupKey };
     case "SET_MODE":
       return { ...state, selectedMode: action.mode };
     case "SET_WORKSPACE":
-      return { ...state, selectedWorkspace: normalizeWorkspace(action.workspace), selectionSource: action.source };
+      return {
+        ...state,
+        ...(action.source === "manual" ? emptySemanticFocus() : {}),
+        selectedWorkspace: normalizeWorkspace(action.workspace),
+        selectionSource: action.source,
+      };
     case "SELECT_ZONE":
       return {
         ...state,
+        ...emptySemanticFocus(),
         selectedZoneId: action.zoneId,
         selectedZoneLabel: action.zoneId == null ? null : state.selectedZoneLabel,
         selectedZoneStartPct: action.zoneId == null ? null : state.selectedZoneStartPct,
@@ -199,6 +260,7 @@ export function selectionReducer(state: TelemetrySelection, action: SelectionAct
     case "FOCUS_EVENT":
       return {
         ...state,
+        ...emptySemanticFocus(),
         selectedEventId: action.eventId,
         selectedLap: action.lap,
         selectedLapScope: action.lap != null ? "single_lap" : state.selectedLapScope,
@@ -253,6 +315,8 @@ export function selectionReducer(state: TelemetrySelection, action: SelectionAct
         selectedP19CauseIds: ev.p19CauseIds ?? [],
         selectedQuantityIds: ev.quantityIds ?? [],
         selectedDiscriminatorId: ev.discriminatorId ?? null,
+        selectedWorkflowId: ev.workflowId ?? null,
+        selectedWorkflowRevision: ev.workflowRevision ?? null,
         selectedSystem: ev.system ?? null,
         selectedCompareRole: ev.compareRole ?? null,
         selectedSourceRunId: ev.sourceRunId ?? ev.runId ?? null,

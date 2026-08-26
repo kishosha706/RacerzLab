@@ -17,6 +17,11 @@ from racelab_engine.models.engineering_case import (
     EngineeringMission,
     ResponseExpectationContract,
 )
+from racelab_engine.models.crew_chief import (
+    CrewChiefEngineeringResponseArtifact,
+    EngineeringEvidenceIndex,
+    EngineeringEvidenceIndexEntry,
+)
 from racelab_engine.services.engineering_case_service import (
     attach_deficits_to_readiness,
     build_capability_resolutions,
@@ -26,6 +31,7 @@ from racelab_engine.services.engineering_case_service import (
     build_p19_response_admissions,
     build_setup_effect_readiness,
     engineering_case_id,
+    engineering_case_projection_revision_sha256,
 )
 from racelab_engine.services.p19_response_admission_service import (
     build_p19_response_evaluations_and_admissions,
@@ -272,7 +278,117 @@ def test_canonical_case_rejects_foreign_response_and_never_credits_p36_counts() 
         source_authority="p19_measurement_mirror",
         terminal_move_sha256=canonical_json_sha256(terminal_decision),
     )
-    case = build_canonical_engineering_case(
+
+    def typed_index(response_artifacts):
+        entries = tuple(
+            EngineeringEvidenceIndexEntry(
+                artifact_id=artifact.artifact_id,
+                producer_id=f"p35.response.{artifact.relation}",
+                run_id=identity.run_id,
+                session_id=identity.session_id,
+                setup_id=identity.setup_id,
+                workspace_run_id=identity.run_id,
+                workspace_session_id=identity.session_id,
+                workspace_setup_id=identity.setup_id,
+                source_run_id=identity.run_id,
+                source_session_id=identity.session_id,
+                source_setup_id=identity.setup_id,
+                source_setup_sha256=identity.setup_snapshot_sha256,
+                source_build_context_sha256="7" * 64,
+                source_provenance_available=True,
+                lap_numbers=artifact.source_lap_numbers,
+                lap_pct_start=artifact.lap_pct_start,
+                lap_pct_end=artifact.lap_pct_end,
+                phase=artifact.phase,
+                objective="race_long_run",
+                source_channels=artifact.operational_evidence.source_channels,
+                evidence_state=artifact.operational_evidence.evidence_state,
+                polarity="neutral",
+                blocker_reasons=artifact.blocker_reasons,
+                typed_artifact=CrewChiefEngineeringResponseArtifact(
+                    case_id=artifact.case_id,
+                    case_revision_sha256=artifact.case_revision_sha256,
+                    assessment_sha256=identity.p35_assessment_sha256,
+                    response=artifact,
+                ),
+                authority_ceiling="observation_only",
+            )
+            for artifact in response_artifacts
+        )
+        return EngineeringEvidenceIndex(
+            workspace_revision=identity.workspace_revision,
+            entries=entries,
+            index_hash=canonical_json_sha256(
+                [entry.model_dump(mode="json") for entry in entries]
+            ),
+        )
+
+    initial_typed_index = typed_index(artifacts)
+    typed_projection_revision = engineering_case_projection_revision_sha256(
+        identity=identity,
+        recording_sha256=_SHA,
+        evidence_index=initial_typed_index,
+        p351_projection=SimpleNamespace(projection_sha256="6" * 64),
+        response_artifacts=artifacts,
+        response_expectation_contracts=(),
+        response_expectation_evaluations=evaluations,
+        p19_admissions=admissions,
+        terminal_decision=terminal_decision,
+        effect_readiness=readiness,
+        evidence_deficits=deficits,
+        capability_resolutions=capability,
+        investigation_id=None,
+        mission=mission,
+        driver_intent=None,
+        crew_event_head_sha256=None,
+        crew_current_subgoal=None,
+        crew_critic_state="unavailable",
+    )
+    typed_rebound_artifacts = build_engineering_response_artifacts(
+        workspace_revision=typed_projection_revision,
+        run_id="run-response",
+        session_id="session-response",
+        setup_id="setup-response",
+        recording_sha256=_SHA,
+        operational_evidence=tuple(
+            artifact.operational_evidence for artifact in artifacts
+        ),
+    )
+    typed_rebound_evaluations, typed_rebound_admissions = (
+        build_p19_response_evaluations_and_admissions(
+            case_id=typed_rebound_artifacts[0].case_id,
+            case_revision_sha256=typed_projection_revision,
+            p19_reasoning_snapshot_sha256="c" * 64,
+            causes=(),
+            response_artifacts=typed_rebound_artifacts,
+            expectation_contracts=(),
+            driver_demand_state="matched",
+            context_state="qualified",
+            traffic_blocked=False,
+        )
+    )
+    assert engineering_case_projection_revision_sha256(
+        identity=identity,
+        recording_sha256=_SHA,
+        evidence_index=typed_index(typed_rebound_artifacts),
+        p351_projection=SimpleNamespace(projection_sha256="6" * 64),
+        response_artifacts=typed_rebound_artifacts,
+        response_expectation_contracts=(),
+        response_expectation_evaluations=typed_rebound_evaluations,
+        p19_admissions=typed_rebound_admissions,
+        terminal_decision=terminal_decision,
+        effect_readiness=readiness,
+        evidence_deficits=deficits,
+        capability_resolutions=capability,
+        investigation_id=None,
+        mission=mission,
+        driver_intent=None,
+        crew_event_head_sha256=None,
+        crew_current_subgoal=None,
+        crew_critic_state="unavailable",
+    ) == typed_projection_revision
+
+    projection_revision = engineering_case_projection_revision_sha256(
         identity=identity,
         recording_sha256=_SHA,
         evidence_index_sha256="5" * 64,
@@ -281,6 +397,89 @@ def test_canonical_case_rejects_foreign_response_and_never_credits_p36_counts() 
         response_expectation_contracts=(),
         response_expectation_evaluations=evaluations,
         p19_admissions=admissions,
+        terminal_decision=terminal_decision,
+        effect_readiness=readiness,
+        evidence_deficits=deficits,
+        capability_resolutions=capability,
+        investigation_id=None,
+        mission=mission,
+        driver_intent=None,
+        crew_event_head_sha256=None,
+        crew_current_subgoal=None,
+        crew_critic_state="unavailable",
+    )
+    rebound_artifacts = build_engineering_response_artifacts(
+        workspace_revision=projection_revision,
+        run_id="run-response",
+        session_id="session-response",
+        setup_id="setup-response",
+        recording_sha256=_SHA,
+        operational_evidence=tuple(
+            artifact.operational_evidence for artifact in artifacts
+        ),
+    )
+    rebound_evaluations, rebound_admissions = (
+        build_p19_response_evaluations_and_admissions(
+            case_id=rebound_artifacts[0].case_id,
+            case_revision_sha256=projection_revision,
+            p19_reasoning_snapshot_sha256="c" * 64,
+            causes=(),
+            response_artifacts=rebound_artifacts,
+            expectation_contracts=(),
+            driver_demand_state="matched",
+            context_state="qualified",
+            traffic_blocked=False,
+        )
+    )
+    assert engineering_case_projection_revision_sha256(
+        identity=identity,
+        recording_sha256=_SHA,
+        evidence_index_sha256="5" * 64,
+        p351_projection=SimpleNamespace(projection_sha256="6" * 64),
+        response_artifacts=rebound_artifacts,
+        response_expectation_contracts=(),
+        response_expectation_evaluations=rebound_evaluations,
+        p19_admissions=rebound_admissions,
+        terminal_decision=terminal_decision,
+        effect_readiness=readiness,
+        evidence_deficits=deficits,
+        capability_resolutions=capability,
+        investigation_id=None,
+        mission=mission,
+        driver_intent=None,
+        crew_event_head_sha256=None,
+        crew_current_subgoal=None,
+        crew_critic_state="unavailable",
+    ) == projection_revision
+    assert engineering_case_projection_revision_sha256(
+        identity=identity,
+        recording_sha256=_SHA,
+        evidence_index_sha256="7" * 64,
+        p351_projection=SimpleNamespace(projection_sha256="6" * 64),
+        response_artifacts=rebound_artifacts,
+        response_expectation_contracts=(),
+        response_expectation_evaluations=rebound_evaluations,
+        p19_admissions=rebound_admissions,
+        terminal_decision=terminal_decision,
+        effect_readiness=readiness,
+        evidence_deficits=deficits,
+        capability_resolutions=capability,
+        investigation_id=None,
+        mission=mission,
+        driver_intent=None,
+        crew_event_head_sha256=None,
+        crew_current_subgoal=None,
+        crew_critic_state="unavailable",
+    ) != projection_revision
+    case = build_canonical_engineering_case(
+        identity=identity,
+        recording_sha256=_SHA,
+        evidence_index_sha256="5" * 64,
+        p351_projection=SimpleNamespace(projection_sha256="6" * 64),
+        response_artifacts=rebound_artifacts,
+        response_expectation_contracts=(),
+        response_expectation_evaluations=rebound_evaluations,
+        p19_admissions=rebound_admissions,
         p35=SimpleNamespace(
             performance_opportunity_ids=("opportunity-1",),
             mechanism_separation=(),
@@ -293,11 +492,13 @@ def test_canonical_case_rejects_foreign_response_and_never_credits_p36_counts() 
         capability_resolutions=capability,
         investigation_id=None,
         mission=mission,
+        case_revision_sha256=projection_revision,
     )
 
     assert case.case_id == engineering_case_id(
         run_id="run-response", session_id="session-response"
     )
+    assert case.case_revision_sha256 == projection_revision
     assert case.campaign_capture.state == "pending"
     assert case.campaign_capture.historical_count_credited is False
     assert case.campaign_capture.null_count_credited is False

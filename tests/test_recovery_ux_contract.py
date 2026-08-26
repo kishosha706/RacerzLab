@@ -27,9 +27,9 @@ def test_failed_import_ui_shows_user_safe_recovery_copy() -> None:
 
 def test_frontend_waits_for_local_engine_health_before_sessions_load() -> None:
     app = _read("ui/src/App.tsx")
-    client = _read("ui/src/api/client.ts")
+    client = _read("ui/src/api/backendHealth.ts")
 
-    assert "fetchHealth" in app
+    assert "fetchBackendHealth" in app
     assert "engineStatus" in app
     assert "Starting RacerZLab" in app
     assert "Connecting the decision cockpit to your local analysis engine." in app
@@ -42,7 +42,16 @@ def test_frontend_waits_for_local_engine_health_before_sessions_load() -> None:
     gated_block = app.split('if (engineStatus === "starting")', 1)[1].split('if (!sessionId)', 1)[0]
     assert "StartupScreen" not in gated_block
     assert "return <StartupScreen onSessionSelected={handleSessionSelected} />;" in app
-    assert 'requestJson<HealthResponse>("/api/health"' in client
+    assert "BackendReadinessError" in app
+    assert 'readinessCode === "database_unavailable"' in app
+    assert 'readinessCode === "data_storage_unavailable"' in app
+    assert "Local session storage is unavailable." in app
+    assert "Telemetry storage is unavailable." in app
+    assert "Recovery reference:" in app
+    assert "`${API_BASE}/api/health`" in client
+    assert "response.status === 503" in client
+    assert "isUnavailableResponse(payload)" in client
+    assert "error.instanceId === expectedInstanceId" in app
 
 
 def test_packaged_startup_error_hides_dev_backend_command() -> None:

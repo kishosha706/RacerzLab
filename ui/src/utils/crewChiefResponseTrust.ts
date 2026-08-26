@@ -117,13 +117,21 @@ const crewEvidenceIndexFloatKeys = new Set([
   "yaw_rate_delta",
   "value",
 ]);
-export const engineeringCaseFloatKeys = crewEvidenceIndexFloatKeys;
+export const engineeringCaseFloatKeys = new Set([
+  ...crewEvidenceIndexFloatKeys,
+  "accepted_max",
+  "accepted_min",
+  "minimum_absolute_signal",
+]);
 const engineeringObjectives = new Set([
   "qualifying_peak", "race_long_run", "tire_conservation", "driver_confidence",
   "traffic_robustness", "superspeedway_stability", "fuel_strategy",
 ]);
+const crewMutationActions = new Set([
+  "open", "continue", "driver_answer", "advance", "abandon", "objective", "rebase",
+]);
 const workspaceIdentityKeys = [
-  "run_id", "session_id", "selected_scope_hash", "reasoning_snapshot_sha256",
+  "run_id", "session_id", "selected_scope_hash", "selected_run_ids", "reasoning_snapshot_sha256",
   "p20_state_revision", "p20_projection_sha256", "p20_profile_hash", "p26_graph_version",
   "p26_knowledge_graph_sha256", "p26_reasoning_snapshot_sha256",
   "p32_projection_sha256", "p35_assessment_sha256", "run_sentinel_sha256",
@@ -471,6 +479,43 @@ export async function hasCanonicalRunSentinelDigest(
   }
 }
 
+export async function hasCanonicalSelectedRunScopeDigest(
+  workspace: CrewChiefWorkspace,
+): Promise<boolean> {
+  const selected = workspace.identity.selected_run_ids;
+  if (!uniqueStrings(selected) || !selected.includes(workspace.identity.run_id)) return false;
+  try {
+    return await canonicalJsonSha256(selected) === workspace.identity.selected_scope_hash;
+  } catch {
+    return false;
+  }
+}
+
+export async function hasCanonicalCrewMutationReceiptDigest(
+  workspace: CrewChiefWorkspace,
+  required: boolean,
+  expectedPreviousCaseSha256?: string,
+): Promise<boolean> {
+  const receipt = workspace.mutation_receipt;
+  if (receipt === null) return !required;
+  if (!required) return false;
+  try {
+    const body = structuredClone(receipt);
+    const digest = body.receipt_sha256;
+    delete (body as Partial<typeof body>).receipt_sha256;
+    return receipt.mutation_id === `ccm_${receipt.request_sha256.slice(0, 24)}`
+      && crewMutationActions.has(receipt.action)
+      && receipt.case_id === workspace.engineering_case.case_id
+      && receipt.case_sha256 === workspace.engineering_case.case_sha256
+      && ((receipt.case_revision === 1) === (receipt.previous_case_sha256 === null))
+      && (expectedPreviousCaseSha256 === undefined
+        || receipt.previous_case_sha256 === expectedPreviousCaseSha256)
+      && await canonicalJsonSha256(body) === digest;
+  } catch {
+    return false;
+  }
+}
+
 export async function hasCanonicalVehicleRuntimeIdentityDigest(
   workspace: CrewChiefWorkspace,
 ): Promise<boolean> {
@@ -598,6 +643,8 @@ function validWorkspaceIdentityShape(value: unknown): value is Record<string, un
   return typeof value.run_id === "string" && value.run_id.length > 0
     && typeof value.session_id === "string" && value.session_id.length > 0
     && typeof value.selected_scope_hash === "string" && hash.test(value.selected_scope_hash)
+    && uniqueStrings(value.selected_run_ids)
+    && value.selected_run_ids.includes(value.run_id)
     && typeof value.reasoning_snapshot_sha256 === "string" && hash.test(value.reasoning_snapshot_sha256)
     && typeof value.p20_state_revision === "string" && hash.test(value.p20_state_revision)
     && typeof value.p20_projection_sha256 === "string" && hash.test(value.p20_projection_sha256)
@@ -766,10 +813,16 @@ function validCanonicalEngineeringCase(
     || value.schema_version !== "p3544.unified-engineering-case.v1"
     || !/^p3543case_[0-9a-f]{24}$/.test(String(value.case_id))
     || typeof value.case_sha256 !== "string" || !hash.test(value.case_sha256)
-    || value.case_revision_sha256 !== identity.workspace_revision
+    || typeof value.case_revision_sha256 !== "string" || !hash.test(value.case_revision_sha256)
     || value.workspace_revision !== identity.workspace_revision
     || value.run_id !== identity.run_id
     || value.session_id !== identity.session_id
+    || !sameJson(value.selected_run_ids, identity.selected_run_ids)
+    || value.vehicle_runtime_identity_sha256 !== identity.vehicle_runtime_identity_hash
+    || !safeText(value.car_identity)
+    || !safeText(value.car_version)
+    || !safeText(value.iracing_build_version)
+    || !safeText(value.track_configuration)
     || value.setup_id !== identity.setup_id
     || value.setup_snapshot_sha256 !== identity.setup_snapshot_sha256
     || value.objective_id !== identity.objective_id
@@ -800,6 +853,17 @@ function validCanonicalEngineeringCase(
     || value.authority !== "case_receipt_only"
     || value.p19_authority_unchanged !== true
     || value.setup_authorized !== false) return false;
+  const runtime = identity.vehicle_runtime_identity;
+  if (runtime === null) {
+    if (value.car_identity !== "unavailable"
+      || value.car_version !== "unavailable"
+      || value.iracing_build_version !== "unavailable"
+      || value.track_configuration !== "unavailable") return false;
+  } else if (!record(runtime)
+    || value.car_identity !== runtime.car_path
+    || value.car_version !== runtime.car_version
+    || value.iracing_build_version !== runtime.iracing_build_version
+    || value.track_configuration !== runtime.track_configuration_name) return false;
   const responseIds = value.response_artifacts.map((item) => (
     record(item) ? String(item.artifact_id) : ""
   ));
@@ -1584,11 +1648,14 @@ export function isCrewChiefWorkspaceResponse(
   ) return false;
   const identity = value.identity;
   const decision = value.terminal_decision;
-  const scopeRunIds = new Set(scope.scopeRunIds ?? [scope.runId]);
+  const requestedScopeRunIds = [...(scope.scopeRunIds ?? [scope.runId])];
+  const scopeRunIds = new Set(requestedScopeRunIds);
   if (
     !validWorkspaceIdentityShape(identity)
     || scopeRunIds.size === 0
+    || scopeRunIds.size !== requestedScopeRunIds.length
     || !scopeRunIds.has(scope.runId)
+    || !sameJson(identity.selected_run_ids, requestedScopeRunIds)
     || identity.run_id !== scope.runId
     || identity.session_id !== scope.sessionId
     || identity.objective_id !== scope.objectiveId
@@ -1706,6 +1773,35 @@ export function isCrewChiefWorkspaceResponse(
     ))
     || !uniqueStrings(value.p19_cause_ids)
     || !uniqueStrings(value.p19_contradiction_artifact_ids)
+    || !(value.mutation_receipt === null || (
+      exactKeys(value.mutation_receipt, [
+        "schema_version", "mutation_id", "request_sha256", "action", "case_id",
+        "case_revision", "case_sha256", "previous_case_sha256", "published_at",
+        "receipt_sha256", "authority", "setup_authorized",
+      ])
+      && value.mutation_receipt.schema_version === "p3544.crew-mutation-publication.v1"
+      && /^ccm_[0-9a-f]{24}$/.test(String(value.mutation_receipt.mutation_id))
+      && typeof value.mutation_receipt.request_sha256 === "string"
+      && hash.test(value.mutation_receipt.request_sha256)
+      && safeText(value.mutation_receipt.action)
+      && crewMutationActions.has(value.mutation_receipt.action)
+      && /^p3543case_[0-9a-f]{24}$/.test(String(value.mutation_receipt.case_id))
+      && integerNumber(value.mutation_receipt.case_revision)
+      && value.mutation_receipt.case_revision >= 1
+      && typeof value.mutation_receipt.case_sha256 === "string"
+      && hash.test(value.mutation_receipt.case_sha256)
+      && (value.mutation_receipt.previous_case_sha256 === null
+        || (typeof value.mutation_receipt.previous_case_sha256 === "string"
+          && hash.test(value.mutation_receipt.previous_case_sha256)))
+      && ((value.mutation_receipt.case_revision === 1)
+        === (value.mutation_receipt.previous_case_sha256 === null))
+      && typeof value.mutation_receipt.published_at === "string"
+      && Number.isFinite(Date.parse(value.mutation_receipt.published_at))
+      && typeof value.mutation_receipt.receipt_sha256 === "string"
+      && hash.test(value.mutation_receipt.receipt_sha256)
+      && value.mutation_receipt.authority === "durability_receipt_only"
+      && value.mutation_receipt.setup_authorized === false
+    ))
   ) return false;
   if (!isEngineeringAwarenessProjection(value.engineering_awareness, {
     runId: scope.runId,

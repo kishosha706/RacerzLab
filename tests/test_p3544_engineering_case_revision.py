@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -57,7 +58,12 @@ def _seed_run(db_path) -> None:
     connection.close()
 
 
-def _case(*, next_move: str = "Collect exact evidence.", driver_intent=None):
+def _case(
+    *,
+    next_move: str = "Collect exact evidence.",
+    driver_intent=None,
+    objective_id: str = "race_long_run",
+):
     case_id = engineering_case_id(run_id=RUN_ID, session_id=SESSION_ID)
     terminal = canonical_json_sha256({"next": next_move})
     mission = EngineeringMission(
@@ -75,10 +81,16 @@ def _case(*, next_move: str = "Collect exact evidence.", driver_intent=None):
         case_revision_sha256=WORKSPACE,
         run_id=RUN_ID,
         session_id=SESSION_ID,
+        selected_run_ids=(RUN_ID,),
         recording_sha256="1" * 64,
+        vehicle_runtime_identity_sha256="0" * 64,
+        car_identity="test-car",
+        car_version="test-version",
+        iracing_build_version="2026.08.01.01",
+        track_configuration="oval",
         setup_id="setup-p3544",
         setup_snapshot_sha256="2" * 64,
-        objective_id="race_long_run",
+        objective_id=objective_id,
         condition_epoch_sha256="3" * 64,
         p19_reasoning_snapshot_sha256="4" * 64,
         p20_state_revision="5" * 64,
@@ -175,6 +187,56 @@ def test_driver_intent_is_append_only_context_and_corrupt_case_fails_closed(tmp_
         repository.current(first.case_id)
 
 
+def test_missing_case_predecessor_and_older_intent_corruption_fail_closed(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "case.sqlite"
+    _seed_run(db_path)
+    repository = EngineeringCaseRepository(db_path)
+    first = repository.finalize_case(_case())
+    repository.finalize_case(_case(next_move="Repeat the exact measurement."))
+
+    connection = initialize_database(db_path)
+    connection.execute(
+        "DELETE FROM engineering_case_revisions WHERE case_id = ? AND case_revision = 1",
+        (first.case_id,),
+    )
+    connection.commit()
+    connection.close()
+    with pytest.raises(EngineeringCaseIntegrityError, match="incomplete or reordered"):
+        repository.current(first.case_id)
+
+    intact_path = tmp_path / "intent.sqlite"
+    _seed_run(intact_path)
+    intent_repository = EngineeringCaseRepository(intact_path)
+    case = intent_repository.finalize_case(_case())
+    values = {
+        "case_id": case.case_id,
+        "canonical_symptom": "tight_center",
+        "phase_scope": "center",
+        "response_regime_scope": "migration",
+        "stint_context": "after_five_laps",
+        "objective": "race_long_run",
+        "source": "manual",
+    }
+    intent_repository.append_driver_intent(
+        raw_driver_wording="Tight after five laps.", **values
+    )
+    intent_repository.append_driver_intent(
+        raw_driver_wording="Still tight after five laps.", **values
+    )
+    connection = initialize_database(intact_path)
+    connection.execute(
+        "UPDATE engineering_driver_intents SET intent_json = '{}' "
+        "WHERE case_id = ? AND intent_revision = 1",
+        (case.case_id,),
+    )
+    connection.commit()
+    connection.close()
+    with pytest.raises(EngineeringCaseIntegrityError, match="unreadable or corrupt"):
+        intent_repository.current_driver_intent(case.case_id)
+
+
 def test_case_api_finalizes_current_revision_and_atomic_workflow_failure_rolls_back_intent(
     tmp_path, monkeypatch
 ) -> None:
@@ -207,6 +269,10 @@ def test_case_api_finalizes_current_revision_and_atomic_workflow_failure_rolls_b
         RUN_ID, SESSION_ID, expected_case_sha256=None
     )
     assert revision.case_sha256 == case.case_sha256
+    assert revision.delivery_diagnostics is not None
+    assert revision.delivery_diagnostics.response_bytes == len(
+        revision.model_dump_json().encode("utf-8")
+    )
 
     monkeypatch.setattr(
         "api.routes_engineering_case.build_dial_in_response",
@@ -239,3 +305,111 @@ def test_case_api_finalizes_current_revision_and_atomic_workflow_failure_rolls_b
     with pytest.raises(HTTPException, match="workflow persistence failed"):
         submit_atomic_driver_intent_workflow(RUN_ID, request)
     assert EngineeringCaseRepository(db_path).current_driver_intent(case.case_id) is None
+
+
+def test_atomic_driver_intent_replays_durable_receipt_before_stale_head_rejection() -> None:
+    source = inspect.getsource(submit_atomic_driver_intent_workflow)
+
+    assert source.index("receipt_repository.receipt") < source.index(
+        "_persisted_current_workspace"
+    )
+    transaction_replay = source.index("receipt_in_transaction")
+    stale_rejection = source.index("_assert_expected_case_in_transaction")
+    receipt_save = source.index("save_receipt_in_transaction")
+    durable_commit = source.index("connection.commit()")
+    assert transaction_replay < stale_rejection < receipt_save < durable_commit
+
+
+def test_atomic_workflow_rebuild_failure_rolls_back_intent_and_case_head(
+    tmp_path, monkeypatch
+) -> None:
+    db_path = tmp_path / "case.sqlite"
+    _seed_run(db_path)
+    case = _case()
+    race_repository = RaceLabRepository(db_path)
+    case_repository = EngineeringCaseRepository(db_path)
+    case_repository.finalize_case(case)
+    monkeypatch.setattr(
+        "api.routes_engineering_case.RaceLabRepository", lambda *_: race_repository
+    )
+    monkeypatch.setattr(
+        "api.routes_engineering_case.EngineeringCaseRepository",
+        lambda db_path=None: EngineeringCaseRepository(
+            db_path or race_repository.db_path
+        ),
+    )
+    workspace = type(
+        "Workspace",
+        (),
+        {
+            "engineering_case": case,
+            "engineering_knowledge": object(),
+            "terminal_decision": object(),
+        },
+    )()
+
+    def build_workspace(*args, **kwargs):
+        requested_path = kwargs.get("db_path")
+        if requested_path is not None and requested_path != race_repository.db_path:
+            raise ValueError("canonical preview rebuild failed")
+        return workspace
+
+    monkeypatch.setattr(
+        "api.routes_engineering_case.build_crew_chief_workspace", build_workspace
+    )
+    monkeypatch.setattr(
+        "api.routes_engineering_case.build_dial_in_response",
+        lambda *args, **kwargs: type(
+            "Advisory", (), {"interpreted_symptom": "tight_center"}
+        )(),
+    )
+    monkeypatch.setattr(
+        "api.routes_engineering_case.DialInHypothesisResponse.from_internal",
+        lambda *args, **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "api.routes_engineering_case.build_authorized_workflow_candidate",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            ValueError("measurement required")
+        ),
+    )
+    request = AtomicDriverIntentWorkflowRequest(
+        run_id=RUN_ID,
+        session_id=SESSION_ID,
+        complaint="Tight center after five laps.",
+        expected_case_sha256=case.case_sha256,
+        objective="race-pace",
+        priority="overall-pace",
+    )
+    with pytest.raises(HTTPException, match="canonical preview rebuild failed"):
+        submit_atomic_driver_intent_workflow(RUN_ID, request)
+    assert case_repository.current_driver_intent(case.case_id) is None
+    assert case_repository.current(case.case_id).case_sha256 == case.case_sha256
+
+
+def test_case_get_without_objective_preserves_persisted_objective(
+    tmp_path, monkeypatch
+) -> None:
+    db_path = tmp_path / "case.sqlite"
+    _seed_run(db_path)
+    qualifying_case = _case(objective_id="qualifying_peak")
+    repository = EngineeringCaseRepository(db_path)
+    repository.finalize_case(qualifying_case)
+    monkeypatch.setattr(
+        "api.routes_engineering_case.EngineeringCaseRepository",
+        lambda db_path=None: EngineeringCaseRepository(db_path or repository.db_path),
+    )
+    seen = []
+
+    def build_workspace(*args, **kwargs):
+        seen.append(kwargs["objective"])
+        return type("Workspace", (), {"engineering_case": qualifying_case})()
+
+    monkeypatch.setattr(
+        "api.routes_engineering_case.build_crew_chief_workspace", build_workspace
+    )
+    revision = get_current_engineering_case(
+        RUN_ID, SESSION_ID, objective=None, expected_case_sha256=None
+    )
+    assert revision.case.objective_id == "qualifying_peak"
+    assert seen == ["qualifying_peak"]

@@ -19,6 +19,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Configured local storage is not ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthUnavailableResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -2501,13 +2511,23 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowCaseMutationRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ControlledWorkflow"
+                  "$ref": "#/components/schemas/ControlledWorkflowCaseMutationResponse"
                 }
               }
             }
@@ -2615,7 +2635,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ControlledWorkflow"
+                  "$ref": "#/components/schemas/ControlledWorkflowCaseMutationResponse"
                 }
               }
             }
@@ -2692,13 +2712,23 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowCaseMutationRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ControlledWorkflow"
+                  "$ref": "#/components/schemas/ControlledWorkflowCaseMutationResponse"
                 }
               }
             }
@@ -2751,8 +2781,15 @@
             "in": "query",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/EngineeringObjective",
-              "default": "race_long_run"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/EngineeringObjective"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Objective"
             }
           },
           {
@@ -5227,6 +5264,11 @@
             "pattern": "^[0-9a-f]{64}$",
             "title": "Expected Workspace Revision"
           },
+          "expected_case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Case Sha256"
+          },
           "reason": {
             "type": "string",
             "maxLength": 500,
@@ -5239,6 +5281,7 @@
         "required": [
           "session_id",
           "expected_workspace_revision",
+          "expected_case_sha256",
           "reason"
         ],
         "title": "AbandonRequest"
@@ -5667,6 +5710,11 @@
             "pattern": "^[0-9a-f]{64}$",
             "title": "Expected Workspace Revision"
           },
+          "expected_case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Case Sha256"
+          },
           "max_read_only_steps": {
             "type": "integer",
             "maximum": 4.0,
@@ -5679,7 +5727,8 @@
         "type": "object",
         "required": [
           "session_id",
-          "expected_workspace_revision"
+          "expected_workspace_revision",
+          "expected_case_sha256"
         ],
         "title": "AdvanceRequest"
       },
@@ -6149,6 +6198,27 @@
       },
       "AtomicDriverIntentWorkflowResponse": {
         "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "p3544.atomic-driver-intent-workflow.v2",
+            "title": "Schema Version",
+            "default": "p3544.atomic-driver-intent-workflow.v2"
+          },
+          "mutation_id": {
+            "type": "string",
+            "pattern": "^cwm_[0-9a-f]{24}$",
+            "title": "Mutation Id"
+          },
+          "request_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Request Sha256"
+          },
+          "expected_case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Case Sha256"
+          },
           "state": {
             "type": "string",
             "enum": [
@@ -6180,6 +6250,18 @@
               }
             ]
           },
+          "workflow_revision_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Revision Sha256"
+          },
           "withholding_reason": {
             "anyOf": [
               {
@@ -6195,6 +6277,9 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "mutation_id",
+          "request_sha256",
+          "expected_case_sha256",
           "state",
           "case_revision",
           "driver_intent",
@@ -7753,10 +7838,43 @@
             "minLength": 1,
             "title": "Session Id"
           },
+          "selected_run_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Selected Run Ids"
+          },
           "recording_sha256": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
             "title": "Recording Sha256"
+          },
+          "vehicle_runtime_identity_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Vehicle Runtime Identity Sha256"
+          },
+          "car_identity": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Car Identity"
+          },
+          "car_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Car Version"
+          },
+          "iracing_build_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Iracing Build Version"
+          },
+          "track_configuration": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Track Configuration"
           },
           "setup_id": {
             "type": "string",
@@ -8051,7 +8169,13 @@
           "case_revision_sha256",
           "run_id",
           "session_id",
+          "selected_run_ids",
           "recording_sha256",
+          "vehicle_runtime_identity_sha256",
+          "car_identity",
+          "car_version",
+          "iracing_build_version",
+          "track_configuration",
           "setup_id",
           "setup_snapshot_sha256",
           "objective_id",
@@ -12181,6 +12305,63 @@
         "title": "ControlledWorkflow",
         "description": "Persisted, server-verifiable A/B/A2 test state."
       },
+      "ControlledWorkflowCaseMutationResponse": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "p3544.controlled-workflow-case-mutation.v1",
+            "title": "Schema Version",
+            "default": "p3544.controlled-workflow-case-mutation.v1"
+          },
+          "mutation_id": {
+            "type": "string",
+            "pattern": "^cwm_[0-9a-f]{24}$",
+            "title": "Mutation Id"
+          },
+          "request_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Request Sha256"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "cancel",
+              "stage",
+              "score"
+            ],
+            "title": "Action"
+          },
+          "expected_case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Case Sha256"
+          },
+          "workflow_revision_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Workflow Revision Sha256"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/ControlledWorkflow"
+          },
+          "case_revision": {
+            "$ref": "#/components/schemas/EngineeringCaseRevision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mutation_id",
+          "request_sha256",
+          "action",
+          "expected_case_sha256",
+          "workflow_revision_sha256",
+          "workflow",
+          "case_revision"
+        ],
+        "title": "ControlledWorkflowCaseMutationResponse"
+      },
       "ControlledWorkflowCatalogItem": {
         "properties": {
           "workflow_id": {
@@ -13039,6 +13220,94 @@
         ],
         "title": "CrewChiefLearningPrior"
       },
+      "CrewChiefMutationPublicationReceipt": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "p3544.crew-mutation-publication.v1",
+            "title": "Schema Version",
+            "default": "p3544.crew-mutation-publication.v1"
+          },
+          "mutation_id": {
+            "type": "string",
+            "pattern": "^ccm_[0-9a-f]{24}$",
+            "title": "Mutation Id"
+          },
+          "request_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Request Sha256"
+          },
+          "action": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Action"
+          },
+          "case_id": {
+            "type": "string",
+            "pattern": "^p3543case_[0-9a-f]{24}$",
+            "title": "Case Id"
+          },
+          "case_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Case Revision"
+          },
+          "case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Case Sha256"
+          },
+          "previous_case_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Case Sha256"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Published At"
+          },
+          "receipt_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Receipt Sha256"
+          },
+          "authority": {
+            "type": "string",
+            "const": "durability_receipt_only",
+            "title": "Authority",
+            "default": "durability_receipt_only"
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mutation_id",
+          "request_sha256",
+          "action",
+          "case_id",
+          "case_revision",
+          "case_sha256",
+          "published_at",
+          "receipt_sha256"
+        ],
+        "title": "CrewChiefMutationPublicationReceipt"
+      },
       "CrewChiefObjectiveEnvelopeArtifact": {
         "properties": {
           "artifact_type": {
@@ -13887,6 +14156,16 @@
           "engineering_case": {
             "$ref": "#/components/schemas/CanonicalEngineeringCase"
           },
+          "mutation_receipt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CrewChiefMutationPublicationReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "available_tools": {
             "items": {
               "$ref": "#/components/schemas/CrewChiefToolDefinition"
@@ -14111,6 +14390,14 @@
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
             "title": "Selected Scope Hash"
+          },
+          "selected_run_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Selected Run Ids",
+            "default": []
           },
           "reasoning_snapshot_sha256": {
             "type": "string",
@@ -16108,6 +16395,11 @@
             "pattern": "^[0-9a-f]{64}$",
             "title": "Expected Workspace Revision"
           },
+          "expected_case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Case Sha256"
+          },
           "answer": {
             "type": "string",
             "maxLength": 160,
@@ -16120,6 +16412,7 @@
         "required": [
           "session_id",
           "expected_workspace_revision",
+          "expected_case_sha256",
           "answer"
         ],
         "title": "DriverAnswerRequest"
@@ -20021,6 +20314,60 @@
           "version"
         ],
         "title": "HealthResponse"
+      },
+      "HealthUnavailableResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "unavailable",
+            "title": "Status",
+            "default": "unavailable"
+          },
+          "app": {
+            "type": "string",
+            "const": "RacerZLab",
+            "title": "App",
+            "default": "RacerZLab"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance Id"
+          },
+          "readiness_code": {
+            "type": "string",
+            "enum": [
+              "database_unavailable",
+              "data_storage_unavailable"
+            ],
+            "title": "Readiness Code"
+          },
+          "recovery_code": {
+            "type": "string",
+            "enum": [
+              "restart_or_restore_local_storage",
+              "free_space_or_restore_local_storage"
+            ],
+            "title": "Recovery Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "readiness_code",
+          "recovery_code"
+        ],
+        "title": "HealthUnavailableResponse"
       },
       "HiddenEvidenceSummary": {
         "properties": {
@@ -27676,6 +28023,11 @@
             "pattern": "^[0-9a-f]{64}$",
             "title": "Expected Workspace Revision"
           },
+          "expected_case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Case Sha256"
+          },
           "objective": {
             "$ref": "#/components/schemas/EngineeringObjective"
           }
@@ -27685,6 +28037,7 @@
         "required": [
           "session_id",
           "expected_workspace_revision",
+          "expected_case_sha256",
           "objective"
         ],
         "title": "ObjectiveRequest"
@@ -27809,6 +28162,11 @@
             "pattern": "^[0-9a-f]{64}$",
             "title": "Expected Workspace Revision"
           },
+          "expected_case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Case Sha256"
+          },
           "objective": {
             "$ref": "#/components/schemas/EngineeringObjective",
             "default": "race_long_run"
@@ -27829,7 +28187,8 @@
         "required": [
           "session_id",
           "driver_report",
-          "expected_workspace_revision"
+          "expected_workspace_revision",
+          "expected_case_sha256"
         ],
         "title": "OpenInvestigationRequest"
       },
@@ -34277,13 +34636,19 @@
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
             "title": "Stale Workspace Revision"
+          },
+          "expected_case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Case Sha256"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "session_id",
-          "stale_workspace_revision"
+          "stale_workspace_revision",
+          "expected_case_sha256"
         ],
         "title": "RebaseRequest"
       },
@@ -35095,13 +35460,19 @@
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
             "title": "Expected Workspace Revision"
+          },
+          "expected_case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Case Sha256"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "session_id",
-          "expected_workspace_revision"
+          "expected_workspace_revision",
+          "expected_case_sha256"
         ],
         "title": "RevisionRequest"
       },
@@ -44255,6 +44626,35 @@
         ],
         "title": "VehicleSystemsRuntimeIdentity"
       },
+      "WorkflowCaseMutationRequest": {
+        "properties": {
+          "case_run_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Case Run Id"
+          },
+          "session_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Session Id"
+          },
+          "expected_case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Case Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "case_run_id",
+          "session_id",
+          "expected_case_sha256"
+        ],
+        "title": "WorkflowCaseMutationRequest"
+      },
       "WorkflowReportResponse": {
         "properties": {
           "workflow_id": {
@@ -44275,6 +44675,23 @@
       },
       "WorkflowStageRequest": {
         "properties": {
+          "case_run_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Case Run Id"
+          },
+          "session_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Session Id"
+          },
+          "expected_case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Case Sha256"
+          },
           "run_id": {
             "type": "string",
             "minLength": 1,
@@ -44284,6 +44701,9 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "case_run_id",
+          "session_id",
+          "expected_case_sha256",
           "run_id"
         ],
         "title": "WorkflowStageRequest"

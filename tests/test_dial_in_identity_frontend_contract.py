@@ -97,7 +97,7 @@ def test_multiple_active_workflows_block_selection_and_exact_authority() -> None
     assert "remainingActiveWorkflows.length === 1" in dial_in
     assert "Open an exact workflow from the controlled-test ribbon" not in dial_in
     assert "!workflowAuthorityBlocked && workflow.packet.decision === \"test\"" in dial_in
-    assert "disabled={workflowBusy || !workflowContextMatches || workflowAuthorityBlocked}" in dial_in
+    assert "disabled={workflowBusy || !engineeringCaseReady || !workflowContextMatches || workflowAuthorityBlocked}" in dial_in
 
 
 def test_unique_session_measurement_follows_the_driver_across_run_handoffs() -> None:
@@ -116,7 +116,7 @@ def test_unique_session_measurement_follows_the_driver_across_run_handoffs() -> 
     )[0]
     assert "?? uniqueActiveWorkflowInScope" in next_workflow
     assert next_workflow.index("?? uniqueActiveWorkflowInScope") < next_workflow.index("?? related[0]")
-    assert "if (!overview || !sessionId || !workflowCatalogReady || activeWorkflow || workflowAuthorityBlocked) return" in dial_in
+    assert 'if (!overview || !sessionId || engineeringCaseStatus !== "ready" || !workflowCatalogReady || activeWorkflow || workflowAuthorityBlocked) return' in dial_in
 
 
 def test_lap_window_handoff_keeps_window_and_representative_lap_distinct() -> None:

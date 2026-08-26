@@ -80,6 +80,7 @@ from racelab_engine.models.engineering_case import (
     ControlledResponseMetricDelta,
     ControlledResponseReceipt,
     ControlledStageResponseReceipt,
+    EngineeringResponseArtifact,
 )
 from racelab_engine.recording_identity import (
     RecordingIdentityError,
@@ -1860,14 +1861,7 @@ def project_workflow_for_publication(
             blockers = tuple(dict.fromkeys((*blockers, *repeat_blockers)))
             if packet is not None and not blockers:
                 return fresh.model_copy(update={"packet": packet})
-    return workflow.model_copy(update={
-        "packet": _blocked_workflow_packet(*blockers),
-        "stage_eligible_lap_numbers": {},
-        "execution": None,
-        "reproduction_snapshot": {},
-        "quality": None,
-        "learning_admitted": None,
-    })
+    return withhold_workflow_authority(workflow, *blockers)
 
 
 def withhold_workflow_authority(
@@ -1876,14 +1870,32 @@ def withhold_workflow_authority(
 ) -> ControlledWorkflow:
     """Return workflow identity without publishing setup or policy authority."""
 
-    return workflow.model_copy(update={
-        "packet": _blocked_workflow_packet(*blockers),
-        "stage_eligible_lap_numbers": {},
-        "execution": None,
-        "reproduction_snapshot": {},
-        "quality": None,
-        "learning_admitted": None,
-    })
+    binding = workflow.reproduction_snapshot.get(
+        "p352_performance_opportunity_binding"
+    )
+    withheld_snapshot: dict[str, object] = {}
+    if binding is not None:
+        if not isinstance(binding, dict):
+            raise ValueError(
+                "Canonical P32 workflow identity receipt is malformed."
+            )
+        withheld_snapshot["p352_performance_opportunity_binding"] = {
+            "p32_opportunity_id": binding.get("p32_opportunity_id"),
+            "p32_projection_sha256": binding.get("p32_projection_sha256"),
+            "engineering_knowledge_projection_sha256": binding.get(
+                "engineering_knowledge_projection_sha256"
+            ),
+        }
+    values = workflow.model_dump(mode="python")
+    values.update(
+        packet=_blocked_workflow_packet(*blockers),
+        stage_eligible_lap_numbers={},
+        execution=None,
+        reproduction_snapshot=withheld_snapshot,
+        quality=None,
+        learning_admitted=None,
+    )
+    return ControlledWorkflow.model_validate(values)
 
 
 def _workflow_scope_run_ids(
@@ -2091,10 +2103,16 @@ def cancel_workflow(
     workflow_id: str,
     *,
     repository: RaceLabRepository | None = None,
+    connection: Any | None = None,
+    record_memory: bool = True,
 ) -> ControlledWorkflow:
     """Explicitly abandon an unfinished controlled test without erasing its audit trail."""
     repo = repository or RaceLabRepository()
-    workflow = repo.get_controlled_workflow(workflow_id)
+    workflow = (
+        repo.get_controlled_workflow_in_transaction(connection, workflow_id)
+        if isinstance(repo, RaceLabRepository) and connection is not None
+        else repo.get_controlled_workflow(workflow_id)
+    )
     if workflow is None:
         raise ValueError(f"Workflow not found: {workflow_id}")
     if workflow.status == "scored":
@@ -2103,8 +2121,11 @@ def cancel_workflow(
         return workflow
     workflow.status = "cancelled"
     workflow.updated_at = datetime.now(timezone.utc)
-    repo.save_controlled_workflow(workflow)
-    if isinstance(repo, RaceLabRepository):
+    if isinstance(repo, RaceLabRepository) and connection is not None:
+        repo._write_controlled_workflow(connection, workflow)
+    else:
+        repo.save_controlled_workflow(workflow)
+    if isinstance(repo, RaceLabRepository) and record_memory and connection is None:
         record_workflow_cancellation(workflow, db_path=repo.db_path)
     return workflow
 
@@ -2360,9 +2381,21 @@ def _target_effect_distribution_state(
     return "inconclusive"
 
 
-def attach_stage(workflow_id: str, stage: Literal["A", "B", "A2"], run_id: str, *, repository: RaceLabRepository | None = None) -> ControlledWorkflow:
+def attach_stage(
+    workflow_id: str,
+    stage: Literal["A", "B", "A2"],
+    run_id: str,
+    *,
+    repository: RaceLabRepository | None = None,
+    connection: Any | None = None,
+    record_memory: bool = True,
+) -> ControlledWorkflow:
     repo = repository or RaceLabRepository()
-    workflow = repo.get_controlled_workflow(workflow_id)
+    workflow = (
+        repo.get_controlled_workflow_in_transaction(connection, workflow_id)
+        if isinstance(repo, RaceLabRepository) and connection is not None
+        else repo.get_controlled_workflow(workflow_id)
+    )
     if workflow is None:
         raise ValueError(f"Workflow not found: {workflow_id}")
     if workflow.status in {"scored", "cancelled"}:
@@ -2540,10 +2573,12 @@ def attach_stage(workflow_id: str, stage: Literal["A", "B", "A2"], run_id: str, 
         "updated_at": datetime.now(timezone.utc),
     })
     if isinstance(repo, RaceLabRepository):
-        repo.save_controlled_workflow_if_scope_exclusive(updated, scope)
+        repo.save_controlled_workflow_if_scope_exclusive(
+            updated, scope, connection=connection
+        )
     else:
         repo.save_controlled_workflow(updated)
-    if isinstance(repo, RaceLabRepository):
+    if isinstance(repo, RaceLabRepository) and record_memory and connection is None:
         record_workflow_stage(updated, stage, db_path=repo.db_path)
     return updated
 
@@ -2859,6 +2894,11 @@ def _build_controlled_response_receipt(
     stage_eligible_lap_numbers: dict[str, tuple[int, ...]],
     execution: TestExecution,
     quality: Any,
+    response_artifacts_by_stage: dict[
+        str, tuple[EngineeringResponseArtifact, ...]
+    ]
+    | None = None,
+    response_case_revision_sha256s_by_stage: dict[str, str] | None = None,
 ) -> ControlledResponseReceipt | None:
     if card.setup_effect_id is None or card.experiment_factor_id is None:
         return None
@@ -2888,7 +2928,6 @@ def _build_controlled_response_receipt(
             for item in _dynamic_operational_evidence(report, scope)
             if item.relation in expected_relations
         )
-        evidence_by_stage[stage] = projected
         speed_min = min(
             (item.speed_min_mps for item in projected if item.speed_min_mps is not None),
             default=None,
@@ -2908,15 +2947,65 @@ def _build_controlled_response_receipt(
             # Pre-P35.4.3 synthetic/legacy scoring remains readable but cannot
             # publish a response receipt without immutable recording identity.
             return None
-        blockers = (
-            ()
-            if projected
-            else tuple(
-                dict.fromkeys(
-                    (
-                        *report.blocker_reasons,
-                        "No expected response relation qualified in this exact stage scope.",
-                    )
+        expected_session_id = str(
+            (
+                workflow.reproduction_snapshot.get("p19_authority_binding") or {}
+            ).get("session_id")
+            or ""
+        )
+        supplied_artifacts = tuple(
+            (response_artifacts_by_stage or {}).get(stage, ())
+        )
+        expected_case_revision = (
+            response_case_revision_sha256s_by_stage or {}
+        ).get(stage)
+        projected_by_id = {item.evidence_id: item for item in projected}
+        exact_artifacts = tuple(
+            artifact
+            for artifact in supplied_artifacts
+            if (
+                expected_case_revision is not None
+                and artifact.case_revision_sha256 == expected_case_revision
+                and artifact.run_id == run_id
+                and artifact.session_id == expected_session_id
+                and artifact.setup_id == setups[stage].setup_id
+                and artifact.source_recording_sha256 == recording_sha
+                and artifact.artifact_id in projected_by_id
+                and artifact.operational_evidence
+                == projected_by_id[artifact.artifact_id]
+            )
+        )
+        exact_artifact_set = {item.artifact_id for item in exact_artifacts}
+        exact_envelopes_resolved = (
+            bool(projected)
+            and len(exact_artifacts) == len(supplied_artifacts)
+            and len(exact_artifacts) == len(projected_by_id)
+            and exact_artifact_set == set(projected_by_id)
+        )
+        evidence_by_stage[stage] = (
+            tuple(item.operational_evidence for item in exact_artifacts)
+            if exact_envelopes_resolved
+            else ()
+        )
+        blockers = tuple(
+            dict.fromkeys(
+                (
+                    *(
+                        ()
+                        if projected
+                        else (
+                            *report.blocker_reasons,
+                            "No expected response relation qualified in this exact stage scope.",
+                        )
+                    ),
+                    *(
+                        ()
+                        if exact_envelopes_resolved
+                        else (
+                            "Exact current-case EngineeringResponseArtifact envelopes "
+                            f"were not resolved for stage {stage}; response expectations fail closed.",
+                        )
+                    ),
                 )
             )
         )
@@ -2928,17 +3017,24 @@ def _build_controlled_response_receipt(
                 setup_snapshot_sha256=_controlled_response_setup_state_sha256(
                     setups[stage]
                 ),
-                response_artifact_ids=tuple(item.evidence_id for item in projected),
-                response_artifact_sha256s=tuple(
-                    canonical_json_sha256(item) for item in projected
+                response_artifact_ids=(
+                    tuple(item.artifact_id for item in exact_artifacts)
+                    if exact_envelopes_resolved
+                    else ()
+                ),
+                response_artifact_sha256s=(
+                    tuple(item.artifact_sha256 for item in exact_artifacts)
+                    if exact_envelopes_resolved
+                    else ()
                 ),
                 source_channels=tuple(
                     dict.fromkeys(
                         channel
-                        for item in projected
-                        for channel in item.source_channels
+                        for artifact in exact_artifacts
+                        for lineage in artifact.metric_channel_lineage
+                        for channel in lineage.source_channel_ids
                     )
-                ),
+                ) if exact_envelopes_resolved else (),
                 eligible_lap_numbers=stage_eligible_lap_numbers[stage],
                 phase=card.target_phase,
                 lap_pct_start=workflow.packet.opportunity.start_pct,
@@ -3079,6 +3175,11 @@ def score_workflow(
     *,
     repository: RaceLabRepository | None = None,
     persist: bool = True,
+    response_artifacts_by_stage: dict[
+        str, tuple[EngineeringResponseArtifact, ...]
+    ]
+    | None = None,
+    response_case_revision_sha256s_by_stage: dict[str, str] | None = None,
 ) -> ControlledWorkflow:
     repo = repository or RaceLabRepository()
     workflow = repo.get_controlled_workflow(workflow_id)
@@ -3573,6 +3674,10 @@ def score_workflow(
         stage_eligible_lap_numbers=stage_eligible_lap_numbers,
         execution=execution,
         quality=result,
+        response_artifacts_by_stage=response_artifacts_by_stage,
+        response_case_revision_sha256s_by_stage=(
+            response_case_revision_sha256s_by_stage
+        ),
     )
     updated = workflow.model_copy(update={
         "stage_eligible_lap_numbers": stage_eligible_lap_numbers,

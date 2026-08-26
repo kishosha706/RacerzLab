@@ -1,5 +1,5 @@
 import { AlertTriangle, BarChart3, MapPin, ShoppingCart } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { fetchCompareInsights, fetchComparePreview, runCompare } from "../api/client";
 import { ComparisonInsightPanel } from "../components/ComparisonInsightPanel";
 import { DeltaTracesView } from "../components/DeltaTracesView";
@@ -8,6 +8,7 @@ import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPan
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { useCompareBasket, type BasketItem } from "../store/CompareBasketContext";
 import { useEngineeringCase } from "../store/EngineeringCaseContext";
+import type { CanonicalEngineeringCase } from "../types/engineeringCase";
 import type { RunListItem } from "../types/telemetry";
 import type {
   ChannelDeltaStats, CompareResponse, ComparisonInsightsResponse, CornerName, CornerMetric,
@@ -53,6 +54,75 @@ type PreviewData = {
   setup_changes: SetupChange[]; context_changes: Array<{ key: string; label: string; warning: string | null; is_problem: boolean }>;
   warnings: string[];
 };
+
+type CompareCaseHandoffGate = {
+  available: boolean;
+  reason: string | null;
+};
+
+function resolveCompareCaseHandoff({
+  result,
+  engineeringCase,
+  engineeringCaseReady,
+  currentRunId,
+  sessionId,
+}: {
+  result: CompareResponse;
+  engineeringCase: CanonicalEngineeringCase | null;
+  engineeringCaseReady: boolean;
+  currentRunId: string;
+  sessionId: string | null;
+}): CompareCaseHandoffGate {
+  if (!engineeringCaseReady || engineeringCase == null) {
+    return {
+      available: false,
+      reason: "Explanation unavailable: load the canonical Engineering Case for the chosen test run first.",
+    };
+  }
+  if (currentRunId !== result.test_run_id || engineeringCase.run_id !== result.test_run_id) {
+    return {
+      available: false,
+      reason: "Explanation unavailable: open the chosen test run so its canonical Engineering Case is active.",
+    };
+  }
+  if (sessionId == null || engineeringCase.session_id !== sessionId) {
+    return {
+      available: false,
+      reason: "Explanation unavailable: the chosen test run is not bound to the active session's Engineering Case.",
+    };
+  }
+  const testIdentity = result.compare_identity.test;
+  if (
+    testIdentity.run_id !== result.test_run_id
+    || result.compare_identity.test_lap !== result.test_lap
+  ) {
+    return {
+      available: false,
+      reason: "Explanation unavailable: the comparison result does not bind the exact chosen test run and lap.",
+    };
+  }
+  if (
+    !testIdentity.setup_id
+    || !testIdentity.setup_sha256
+    || !engineeringCase.setup_id
+    || !engineeringCase.setup_snapshot_sha256
+  ) {
+    return {
+      available: false,
+      reason: "Explanation unavailable: the comparison does not contain an exact test setup identity.",
+    };
+  }
+  if (
+    engineeringCase.setup_id !== testIdentity.setup_id
+    || engineeringCase.setup_snapshot_sha256 !== testIdentity.setup_sha256
+  ) {
+    return {
+      available: false,
+      reason: "Explanation unavailable: the chosen test setup does not match the active Engineering Case.",
+    };
+  }
+  return { available: true, reason: null };
+}
 
 // ── utilities ───────────────────────────────────────────────
 
@@ -748,7 +818,7 @@ function EvidenceView({ observation }: { observation: ComparisonObservation | nu
 
 export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabProps) {
   const { basket } = useCompareBasket();
-  const { engineeringCase } = useEngineeringCase();
+  const { engineeringCase, status: engineeringCaseStatus } = useEngineeringCase();
   const [baselineRunId, setBaselineRunId] = useState(currentRunId);
   const [testRunId, setTestRunId] = useState("");
   // Determine if Compare is using basket-driven or manual selections
@@ -765,7 +835,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
   const [result, setResult] = useState<CompareResponse | null>(null);
   const [subview, setSubview] = useState<SubView>("observation");
   const [loading, setLoading] = useState(false);
-  const { selection, focusEvidence, setWorkspace } = useTelemetrySelection();
+  const { selection, focusEvidence } = useTelemetrySelection();
   const [error, setError] = useState<string | null>(null);
   const [insights, setInsights] = useState<ComparisonInsightsResponse | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -785,6 +855,15 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
     ? "Compare currently uses representative laps and run-level compare math; window metadata is preserved for context."
     : "Compare currently uses lap or run identity without window metadata.";
   const [subviewGroup, setSubviewGroup] = useState<SubViewGroup>("observation");
+  const selectorId = useId();
+  const baselineRunSelectId = `${selectorId}-baseline-run`;
+  const testRunSelectId = `${selectorId}-test-run`;
+  const targetZoneStartId = `${selectorId}-target-zone-start`;
+  const targetZoneEndId = `${selectorId}-target-zone-end`;
+  const subviewPanelId = `${selectorId}-subview-panel`;
+  const subviewTabId = (view: SubView) => `${selectorId}-subview-${view}`;
+  const compareCaseHandoffStatusId = `${selectorId}-case-handoff-status`;
+  const hasComparableRuns = runs.length > 1;
 
   const otherRuns = runs.filter((r) => r.run_id !== baselineRunId);
   const isSameRun = testRunId === baselineRunId && testRunId !== "";
@@ -817,25 +896,63 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
   const scopedInsights = insightsStateOwnsScope ? insights : null;
   const scopedInsightsLoading = insightsStateOwnsScope && insightsLoading;
   const scopedInsightsError = insightsStateOwnsScope ? insightsError : null;
+  const compareCaseHandoff = result == null
+    ? null
+    : resolveCompareCaseHandoff({
+      result,
+      engineeringCase,
+      engineeringCaseReady: engineeringCaseStatus === "ready",
+      currentRunId,
+      sessionId,
+    });
+  const publishComparisonFocus = useCallback((bindWorkflow: boolean) => {
+    if (result == null || engineeringCase == null || compareCaseHandoff?.available !== true) return false;
+    if (bindWorkflow && (
+      engineeringCase.active_workflow_id == null
+      || engineeringCase.active_workflow_revision == null
+    )) return false;
+    focusEvidence({
+      runId: result.test_run_id,
+      lapNumber: result.test_lap,
+      lapScope: result.test_lap == null ? "track_zone" : "single_lap",
+      eventId: null,
+      producerId: "p32.compare",
+      artifactId: null,
+      caseId: engineeringCase.case_id,
+      caseRevision: engineeringCase.case_revision_sha256,
+      caseSha256: engineeringCase.case_sha256,
+      mechanismIds: engineeringCase.semantic_focus.mechanism_ids,
+      responseRelationId: engineeringCase.semantic_focus.response_relation_id,
+      componentIds: engineeringCase.semantic_focus.component_ids,
+      effectIds: engineeringCase.semantic_focus.effect_ids,
+      controlKeys: engineeringCase.semantic_focus.control_keys,
+      p19CauseIds: engineeringCase.semantic_focus.p19_cause_ids,
+      quantityIds: engineeringCase.quantity_observability.map((item) => item.quantity_id),
+      discriminatorId: engineeringCase.active_discriminator_id,
+      workflowId: bindWorkflow ? engineeringCase.active_workflow_id : null,
+      workflowRevision: bindWorkflow ? engineeringCase.active_workflow_revision : null,
+      sampleIndex: null,
+      lapDistFt: null,
+      lapPct: result.target_zone_start_pct,
+      zoneId: null,
+      zoneLabel: `Compare ${result.baseline_run_id} → ${result.test_run_id}`,
+      zoneStartPct: result.target_zone_start_pct,
+      zoneEndPct: result.target_zone_end_pct,
+      channelId: null,
+      system: "compare",
+      selectionSource: "compare_verdict",
+      lockState: "locked",
+      trustTier: "observation_only",
+      compareRole: "test",
+      sourceRunId: result.test_run_id,
+      sourceSetupId: result.compare_identity.test.setup_id,
+      valueBasis: result.test_lap == null ? "run_level" : "full_lap",
+    }, "engineer");
+    return true;
+  }, [compareCaseHandoff?.available, engineeringCase, focusEvidence, result]);
 
   // ── Same-run reference mode ──────────────────────────────────
   const isSelfCompare = result != null && result.baseline_lap === result.test_lap && isSameRun;
-
-  // ── empty state: only one run ───────────────────────────────
-  if (runs.length <= 1) {
-    return (
-      <section className="compare-workspace">
-        <header className="compare-header">
-          <h2>Compare Mode</h2>
-          <p className="section-note">Whole-car comparison workbook.</p>
-        </header>
-        <div className="compare-empty">
-          <p>Bank one more comparable run.</p>
-          <p className="muted">Interpret differences only when car, track, fuel, tire age, weather, line, and recorded setup context are comparable.</p>
-        </div>
-      </section>
-    );
-  }
 
   useEffect(() => {
     comparisonAbortRef.current?.abort();
@@ -848,17 +965,21 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
     setInsightsScopeKey(null);
     setLoading(false);
     setError(null);
-  }, [comparisonScopeKey]);
+  }, [comparisonScopeKey, hasComparableRuns]);
 
   useEffect(() => {
-    if (!testRunId || testRunId === baselineRunId || isSameRecording) return;
+    if (!hasComparableRuns || !testRunId || testRunId === baselineRunId || isSameRecording) {
+      setPreview(null);
+      setPreviewLoading(false);
+      return;
+    }
     const controller = new AbortController();
     setPreviewLoading(true);
     fetchComparePreview(baselineRunId, testRunId, controller.signal)
       .then(p => { if (!controller.signal.aborted) { setPreview(p); setPreviewLoading(false); } })
       .catch(() => { if (!controller.signal.aborted) { setPreview(null); setPreviewLoading(false); } });
     return () => { controller.abort(); };
-  }, [baselineRunId, isSameRecording, testRunId]);
+  }, [baselineRunId, hasComparableRuns, isSameRecording, testRunId]);
 
   useEffect(() => {
     if (!selectedZoneReady) {
@@ -1073,6 +1194,47 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
     setSubviewGroup(nextGroup);
   }, [subview, subviewGroup]);
 
+  const selectSubviewFromKeyboard = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    currentSubview: SubView,
+  ) => {
+    const views = SUBVIEW_GROUPS[subviewGroup];
+    const currentIndex = views.indexOf(currentSubview);
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      nextIndex = (currentIndex + 1) % views.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      nextIndex = (currentIndex - 1 + views.length) % views.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = views.length - 1;
+    }
+    if (nextIndex == null) return;
+    event.preventDefault();
+    const nextSubview = views[nextIndex];
+    setSubview(nextSubview);
+    const tabs = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    tabs?.[nextIndex]?.focus();
+  };
+
+  // Keep every hook unconditional so a live session changing from one run to
+  // multiple runs (or back again) cannot change this component's hook order.
+  if (!hasComparableRuns) {
+    return (
+      <section className="compare-workspace">
+        <header className="compare-header">
+          <h2>Compare Mode</h2>
+          <p className="section-note">Whole-car comparison workbook.</p>
+        </header>
+        <div className="compare-empty">
+          <p>Bank one more comparable run.</p>
+          <p className="muted">Interpret differences only when car, track, fuel, tire age, weather, line, and recorded setup context are comparable.</p>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="compare-workspace">
       <EngineeringAwarenessPanel runId={currentRunId} sessionId={sessionId} surface="compare" />
@@ -1084,14 +1246,14 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
       {/* selectors */}
       <div className="compare-selectors">
         <div className="selector-group">
-          <label>Baseline Run</label>
-          <select value={baselineRunId} onChange={(e) => { setBaselineRunId(e.target.value); setResult(null); }}>
+          <label htmlFor={baselineRunSelectId}>Baseline Run</label>
+          <select id={baselineRunSelectId} value={baselineRunId} onChange={(e) => { setBaselineRunId(e.target.value); setResult(null); }}>
             {runs.map(r => <option key={r.run_id} value={r.run_id}>{r.track_name ?? r.run_id.slice(0, 24)}</option>)}
           </select>
         </div>
         <div className="selector-group">
-          <label>Test Run</label>
-          <select value={testRunId} onChange={(e) => { setTestRunId(e.target.value); setResult(null); }}>
+          <label htmlFor={testRunSelectId}>Test Run</label>
+          <select id={testRunSelectId} value={testRunId} onChange={(e) => { setTestRunId(e.target.value); setResult(null); }}>
             <option value="">Select test run...</option>
             {otherRuns.map((run) => {
               const sameRecording = baselineRecordingSha != null
@@ -1105,14 +1267,16 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
             })}
           </select>
         </div>
-        <div className="selector-group">
-          <label>Target Zone</label>
+        <fieldset className="selector-group">
+          <legend>Target Zone</legend>
           <div className="zone-inputs">
-            <input type="number" value={startPct} onChange={e => { setStartPct(Number(e.target.value)); setActiveZoneLabel(null); setResult(null); }} min={0} max={100} />%
+            <label className="sr-only" htmlFor={targetZoneStartId}>Target zone start percentage</label>
+            <input id={targetZoneStartId} type="number" value={startPct} onChange={e => { setStartPct(Number(e.target.value)); setActiveZoneLabel(null); setResult(null); }} min={0} max={100} />%
             <span>–</span>
-            <input type="number" value={endPct} onChange={e => { setEndPct(Number(e.target.value)); setActiveZoneLabel(null); setResult(null); }} min={0} max={100} />%
+            <label className="sr-only" htmlFor={targetZoneEndId}>Target zone end percentage</label>
+            <input id={targetZoneEndId} type="number" value={endPct} onChange={e => { setEndPct(Number(e.target.value)); setActiveZoneLabel(null); setResult(null); }} min={0} max={100} />%
           </div>
-        </div>
+        </fieldset>
         <button
           className="primary-button"
           onClick={handleCompare}
@@ -1244,62 +1408,45 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
           <div className="tab-handoff-actions compare-case-handoffs" aria-label="Engineering Case comparison handoffs">
             <button
               type="button"
-              disabled={engineeringCase == null}
+              disabled={compareCaseHandoff?.available !== true}
+              aria-describedby={compareCaseHandoff?.reason ? compareCaseHandoffStatusId : undefined}
+              title={compareCaseHandoff?.reason ?? "Open this exact comparison in Smart Engineer"}
               onClick={() => {
-                if (engineeringCase == null) return;
-                focusEvidence({
-                  runId: currentRunId,
-                  lapNumber: effectiveTestLap,
-                  lapScope: effectiveTestLap == null ? "track_zone" : "single_lap",
-                  eventId: null,
-                  producerId: "p32.compare",
-                  artifactId: null,
-                  caseId: engineeringCase.case_id,
-                  caseRevision: engineeringCase.case_revision_sha256,
-                  caseSha256: engineeringCase.case_sha256,
-                  mechanismIds: engineeringCase.semantic_focus.mechanism_ids,
-                  responseRelationId: engineeringCase.semantic_focus.response_relation_id,
-                  componentIds: engineeringCase.semantic_focus.component_ids,
-                  effectIds: engineeringCase.semantic_focus.effect_ids,
-                  controlKeys: engineeringCase.semantic_focus.control_keys,
-                  p19CauseIds: engineeringCase.semantic_focus.p19_cause_ids,
-                  quantityIds: engineeringCase.quantity_observability.map((item) => item.quantity_id),
-                  discriminatorId: engineeringCase.active_discriminator_id,
-                  sampleIndex: null,
-                  lapDistFt: null,
-                  lapPct: startPct,
-                  zoneId: null,
-                  zoneLabel: `Compare ${baselineRunId} → ${testRunId}`,
-                  zoneStartPct: startPct,
-                  zoneEndPct: endPct,
-                  channelId: null,
-                  system: "compare",
-                  selectionSource: "compare_verdict",
-                  lockState: "locked",
-                  trustTier: "observation_only",
-                  compareRole: "test",
-                  sourceRunId: baselineRunId,
-                  sourceSetupId: null,
-                  valueBasis: effectiveTestLap == null ? "run_level" : "full_lap",
-                }, "engineer");
+                publishComparisonFocus(false);
               }}
             >Explain this comparison</button>
             <button
               type="button"
-              disabled={engineeringCase?.active_workflow_id == null}
-              title={engineeringCase?.active_workflow_id == null ? "No exact current P19 workflow is bound to this case" : `Review ${engineeringCase.active_workflow_id}`}
-              onClick={() => setWorkspace("engineer", "compare_verdict")}
+              disabled={compareCaseHandoff?.available !== true
+                || engineeringCase?.active_workflow_id == null
+                || engineeringCase.active_workflow_revision == null}
+              title={compareCaseHandoff?.reason
+                ?? (engineeringCase?.active_workflow_id == null || engineeringCase.active_workflow_revision == null
+                  ? "No exact current P19 workflow is bound to this case"
+                  : `Review ${engineeringCase.active_workflow_id}`)}
+              onClick={() => { publishComparisonFocus(true); }}
             >Review against hypothesis</button>
           </div>
+          {compareCaseHandoff?.reason && (
+            <p
+              id={compareCaseHandoffStatusId}
+              className="section-note compare-case-handoff-status"
+              role="status"
+              style={{ marginTop: 0, marginBottom: 8 }}
+            >
+              {compareCaseHandoff.reason}
+            </p>
+          )}
           <p className="section-note compare-group-explainer" style={{ marginTop: 0, marginBottom: 8 }}>
             Grouped navigation: start with Observation, then drill into Platform, Systems, and Detail.
           </p>
           <nav className="compare-group-nav" aria-label="Compare subview groups">
             {(["observation", "platform", "systems", "detail"] as SubViewGroup[]).map((group) => (
               <button
+                type="button"
                 key={group}
                 className={`subnav-item ${subviewGroup === group ? "active" : ""}`}
-                aria-current={subviewGroup === group ? "page" : undefined}
+                aria-pressed={subviewGroup === group}
                 onClick={() => {
                   setSubviewGroup(group);
                   if (!SUBVIEW_GROUPS[group].includes(subview)) {
@@ -1311,14 +1458,31 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
               </button>
             ))}
           </nav>
-          <nav className="compare-subnav" aria-label="Compare subviews">
+          <nav className="compare-subnav" aria-label="Compare subviews" role="tablist">
             {SUBVIEW_GROUPS[subviewGroup].map((sv) => (
-              <button key={sv} className={`subnav-item ${subview === sv ? "active" : ""}`} onClick={() => setSubview(sv)} aria-current={subview === sv ? "page" : undefined}>
+              <button
+                type="button"
+                key={sv}
+                id={subviewTabId(sv)}
+                role="tab"
+                className={`subnav-item ${subview === sv ? "active" : ""}`}
+                aria-selected={subview === sv}
+                aria-controls={subviewPanelId}
+                tabIndex={subview === sv ? 0 : -1}
+                onClick={() => setSubview(sv)}
+                onKeyDown={(event) => selectSubviewFromKeyboard(event, sv)}
+              >
                 {SUBVIEW_LABELS[sv]}
               </button>
             ))}
           </nav>
-          <div className="compare-subview-container">
+          <div
+            id={subviewPanelId}
+            className="compare-subview-container"
+            role="tabpanel"
+            aria-labelledby={subviewTabId(subview)}
+            tabIndex={0}
+          >
             {subviewContent}
           </div>
         </div>

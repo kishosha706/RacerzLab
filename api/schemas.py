@@ -24,6 +24,25 @@ class HealthResponse(BaseModel):
     instance_id: str | None = None
 
 
+StorageReadinessFailureCode = Literal[
+    "database_unavailable",
+    "data_storage_unavailable",
+]
+StorageRecoveryCode = Literal[
+    "restart_or_restore_local_storage",
+    "free_space_or_restore_local_storage",
+]
+
+
+class HealthUnavailableResponse(BaseModel):
+    status: Literal["unavailable"] = "unavailable"
+    app: Literal["RacerZLab"] = "RacerZLab"
+    version: str
+    instance_id: str | None = None
+    readiness_code: StorageReadinessFailureCode
+    recovery_code: StorageRecoveryCode
+
+
 class ImportIbtRequest(BaseModel):
     path: str
 

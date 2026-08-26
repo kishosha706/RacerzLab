@@ -91,7 +91,7 @@ def test_p351_learning_spine_is_learning_only_and_keeps_p19_as_sole_action() -> 
         "What evidence is missing",
         "What would separate the candidates",
         "What history says",
-        "NEXT · P19",
+        "P19 MISSION EVIDENCE · READ-ONLY MIRROR",
     ):
         assert heading in component
     assert "P19 ONLY FOR ACTION" in component

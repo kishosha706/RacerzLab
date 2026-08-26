@@ -318,19 +318,6 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
       : topEvent
           ? `${priorityPhase ? `${priorityPhase} | ` : ""}${priorityLocation}${topEvent.lap_number != null ? ` | Lap ${topEvent.lap_number}` : ""}`
           : "This overview is observational and does not authorize a setup test.";
-  const decisionNext = !lap
-    ? "Bank one complete, clean timed lap. Out laps, pit laps, cooldowns, wrecks, and partial laps will stay out of the call."
-    : !setupAvailable
-      ? "Capture the exact setup snapshot on the next run, then repeat the same clean-lap process."
-      : !setupTechReady
-        ? "Return to a tech-passing baseline before collecting comparison evidence."
-        : !dataTrustReady
-          ? "Recover the blocked telemetry evidence, then let the run be re-qualified."
-          : topEvent
-            ? "Inspect the exact event location and ask Engineer to separate competing causes. Only the current P19 report can authorize one controlled setup test."
-            : longRunLapsNeeded > 0
-              ? `For long-run inspection, extend this same-setup clean block by ${longRunLapsNeeded} lap${longRunLapsNeeded === 1 ? "" : "s"} before reviewing falloff.`
-              : "Review the continuous clean block in Laps. This overview does not issue setup-change or Keep/Undo policy."
   const decisionPaceComparison = lap?.lap_time != null
     ? bestToMedianDelta != null && usefulTimedLapTimes.length >= 2
       ? bestToMedianDelta >= 0
@@ -368,7 +355,7 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
       data-run-id={overview.run_id}
       data-long-run-state={longRunLapsNeeded === 0 ? "review-ready" : "short-run"}
       data-oval-priority={topEvent ? priorityPhase?.toLowerCase() ?? "located" : "clear"}
-      aria-label="Overview decision briefing"
+      aria-label="Overview evidence status"
       aria-live="polite"
     >
       <div>
@@ -378,7 +365,6 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
         </span>
         <h2>{decisionHeadline}</h2>
         <p><strong>Why:</strong> {decisionDetail}</p>
-        <p><strong>What next:</strong> {decisionNext}</p>
         <p title={`Exact run ${overview.run_id}`}>Exact scope: {decisionScope}</p>
         <div className="tab-decision-facts">
           <span>
@@ -429,7 +415,7 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
           </button>
         )}
         <button type="button" onClick={openEngineerBriefing}>
-          <BrainCircuit size={13} /> {isLearning ? "Engineer briefing" : "Ask Engineer"}
+          <BrainCircuit size={13} /> Open Engineer evidence
         </button>
         {isLearning && <button type="button" onClick={() => setWorkspace("laps", "overview")}>
           <Clock size={13} /> Review laps
@@ -623,12 +609,12 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
       </section>
 
       <section className="workspace-section">
-        <h2>Measurement Mission</h2>
+        <h2>Evidence Collection Status</h2>
         <div className="inspector-crew-block">
           <span className="eyebrow">No setup authority</span>
           <p>{topEvent
-            ? "Repeat the located behavior on eligible laps with the setup unchanged."
-            : "Collect eligible, setup-bound telemetry before considering a controlled test."}</p>
+            ? "Repeatability evidence is still needed on eligible laps with the setup unchanged."
+            : "Eligible, setup-bound telemetry is still needed before a controlled test can be considered."}</p>
           <p className="muted">
             Import observations cannot authorize a setup change. Dial-In exposes a target only after the controlled P19 workflow revalidates exact run, setup, legal option, evidence, and test history.
           </p>

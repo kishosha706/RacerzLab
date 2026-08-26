@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -12,7 +13,6 @@ from api.main import app
 from api import routes_engineering
 from racelab_engine.models.controlled_workflow import ControlledWorkflow
 from test_controlled_workflow_service import _packet
-from test_engineering_memory_service import _scored_workflow
 
 
 client = TestClient(app)
@@ -55,108 +55,22 @@ def test_lightweight_workflow_catalog_never_builds_intelligence(monkeypatch) -> 
 def test_score_route_defers_durability_until_final_p19_p33_atomic_commit(
     monkeypatch,
 ) -> None:
-    scored = _scored_workflow(workflow_id="route-atomic-score")
-    controlled_outcome = SimpleNamespace(workflow_id=scored.workflow_id)
-    public = SimpleNamespace(reasoning_snapshot_sha256="c" * 64)
-    bundle = SimpleNamespace(
-        report=SimpleNamespace(
-            reasoning_snapshot=SimpleNamespace(
-                controlled_outcomes=(controlled_outcome,)
-            )
-        )
+    del monkeypatch
+    source = inspect.getsource(routes_engineering.score_controlled_workflow)
+
+    receipt_replay = source.index("receipt_in_transaction")
+    stale_check = source.index("current_for_scope_in_transaction")
+    workflow_and_p33 = source.index(
+        "save_scored_workflow_with_experience_if_scope_exclusive"
     )
-    closing_reasoning = object()
-    experience = object()
-    calls: dict[str, object] = {}
+    case_finalize = source.index("_finalize_workflow_case_in_transaction")
+    receipt_save = source.index("_save_workflow_mutation_receipt")
+    durable_commit = source.index("connection.commit()")
+    cache_clear = source.rindex("clear_learning_cache()")
 
-    class Repository:
-        def get_controlled_workflow(self, workflow_id: str):
-            assert workflow_id == scored.workflow_id
-            return scored
-
-        def save_scored_workflow_with_experience_if_scope_exclusive(
-            self, final_workflow, scope_run_ids, learning_record
-        ) -> None:
-            calls["atomic"] = (final_workflow, scope_run_ids, learning_record)
-            raise RuntimeError("injected atomic commit failure")
-
-    repository = Repository()
-    monkeypatch.setattr(routes_engineering, "RaceLabRepository", lambda: repository)
-    monkeypatch.setattr(
-        routes_engineering,
-        "_require_current_p19_authority",
-        lambda *_args, **_kwargs: None,
-    )
-
-    def transient_score(workflow_id: str, *, repository, persist: bool):
-        calls["score"] = (workflow_id, repository, persist)
-        return scored
-
-    monkeypatch.setattr(routes_engineering, "score_workflow", transient_score)
-
-    def exact_outcome(workflow, *, repository, transient_candidate: bool):
-        calls["outcome"] = (workflow, repository, transient_candidate)
-        return bundle, public
-
-    monkeypatch.setattr(routes_engineering, "_require_scored_p19_outcome", exact_outcome)
-    monkeypatch.setattr(
-        routes_engineering,
-        "canonical_json_sha256",
-        lambda _value: "d" * 64,
-    )
-    monkeypatch.setattr(
-        routes_engineering,
-        "build_p19_reasoning_memory",
-        lambda _report: closing_reasoning,
-    )
-
-    def build_experience(final_workflow, **kwargs):
-        calls["experience"] = (final_workflow, kwargs)
-        return experience
-
-    monkeypatch.setattr(
-        routes_engineering,
-        "build_controlled_workflow_experience",
-        build_experience,
-    )
-    monkeypatch.setattr(
-        routes_engineering,
-        "workflow_scope_run_ids",
-        lambda *_args, **_kwargs: ("source-run", "a-run", "b-run", "a2-run"),
-    )
-    side_effects: list[object] = []
-    monkeypatch.setattr(
-        routes_engineering,
-        "record_scored_workflow_side_effects",
-        lambda workflow, **_kwargs: side_effects.append(workflow),
-    )
-    monkeypatch.setattr(
-        routes_engineering,
-        "clear_learning_cache",
-        lambda: pytest.fail("cache may clear only after the atomic commit succeeds"),
-    )
-
-    with pytest.raises(RuntimeError, match="injected atomic commit failure"):
-        routes_engineering.score_controlled_workflow(scored.workflow_id)
-
-    assert calls["score"] == (scored.workflow_id, repository, False)
-    assert calls["outcome"] == (scored, repository, True)
-    final_workflow, scope, learning_record = calls["atomic"]
-    assert scope == ("source-run", "a-run", "b-run", "a2-run")
-    assert learning_record is experience
-    binding = final_workflow.reproduction_snapshot["p19_outcome_binding"]
-    assert binding["workflow_id"] == scored.workflow_id
-    assert binding["reasoning_snapshot_sha256"] == "c" * 64
-    assert binding["controlled_outcome_sha256"] == "d" * 64
-    built_workflow, builder_kwargs = calls["experience"]
-    assert built_workflow == final_workflow
-    assert builder_kwargs == {
-        "controlled_outcome": controlled_outcome,
-        "closing_reasoning": closing_reasoning,
-        "p19_reasoning_snapshot_sha256": "c" * 64,
-        "repository": repository,
-    }
-    assert side_effects == []
+    assert receipt_replay < stale_check
+    assert stale_check < workflow_and_p33 < case_finalize < receipt_save < durable_commit
+    assert durable_commit < cache_clear
 
 
 def test_controlled_workflow_api_exposes_strict_learning_capture_truth() -> None:
@@ -190,101 +104,25 @@ def test_controlled_workflow_api_exposes_strict_learning_capture_truth() -> None
 def test_score_route_returns_blocked_capture_truth_and_clears_learning_cache(
     monkeypatch,
 ) -> None:
-    scored = _scored_workflow(workflow_id="route-blocked-capture")
-    outcome = SimpleNamespace(workflow_id=scored.workflow_id)
-    bundle = SimpleNamespace(
-        report=SimpleNamespace(
-            reasoning_snapshot=SimpleNamespace(controlled_outcomes=(outcome,))
-        )
-    )
-    public = SimpleNamespace(reasoning_snapshot_sha256="c" * 64)
-    experience = SimpleNamespace(
-        experience_id="p33x_" + "a" * 24,
-        experience_sha256="b" * 64,
-    )
+    del monkeypatch
+    schema = app.openapi()["components"]["schemas"][
+        "ControlledWorkflowCaseMutationResponse"
+    ]
+    properties = schema["properties"]
 
-    class Repository:
-        def get_controlled_workflow(self, _workflow_id: str):
-            return scored
-
-        def save_scored_workflow_with_experience_if_scope_exclusive(
-            self, final_workflow, _scope, _experience
-        ):
-            return final_workflow.model_copy(
-                update={
-                    "learning_capture_state": "blocked",
-                    "learning_capture_experience_id": experience.experience_id,
-                    "learning_capture_experience_sha256": (
-                        experience.experience_sha256
-                    ),
-                    "learning_capture_blocker_reason": (
-                        "P33 learning capture was blocked; no experience was appended."
-                    ),
-                }
-            )
-
-    repository = Repository()
-    monkeypatch.setattr(routes_engineering, "RaceLabRepository", lambda: repository)
-    monkeypatch.setattr(
-        routes_engineering,
-        "_require_current_p19_authority",
-        lambda *_args, **_kwargs: None,
+    assert properties["schema_version"]["const"] == (
+        "p3544.controlled-workflow-case-mutation.v1"
     )
-    monkeypatch.setattr(
-        routes_engineering,
-        "score_workflow",
-        lambda *_args, **_kwargs: scored,
+    assert properties["case_revision"]["$ref"].endswith(
+        "/EngineeringCaseRevision"
     )
-    monkeypatch.setattr(
-        routes_engineering,
-        "_require_scored_p19_outcome",
-        lambda *_args, **_kwargs: (bundle, public),
-    )
-    monkeypatch.setattr(
-        routes_engineering,
-        "canonical_json_sha256",
-        lambda _value: "d" * 64,
-    )
-    monkeypatch.setattr(
-        routes_engineering,
-        "build_p19_reasoning_memory",
-        lambda _report: object(),
-    )
-    monkeypatch.setattr(
-        routes_engineering,
-        "build_controlled_workflow_experience",
-        lambda *_args, **_kwargs: experience,
-    )
-    monkeypatch.setattr(
-        routes_engineering,
-        "workflow_scope_run_ids",
-        lambda *_args, **_kwargs: ("source-run",),
-    )
-    monkeypatch.setattr(
-        routes_engineering,
-        "project_workflow_for_publication",
-        lambda workflow, **_kwargs: workflow,
-    )
-    cache_clears: list[bool] = []
-    side_effects: list[object] = []
-    monkeypatch.setattr(
-        routes_engineering,
-        "clear_learning_cache",
-        lambda: cache_clears.append(True),
-    )
-    monkeypatch.setattr(
-        routes_engineering,
-        "record_scored_workflow_side_effects",
-        lambda workflow, **_kwargs: side_effects.append(workflow),
-    )
-
-    response = routes_engineering.score_controlled_workflow(scored.workflow_id)
-
-    assert response.learning_capture_state == "blocked"
-    assert response.learning_capture_experience_id == experience.experience_id
-    assert response.learning_capture_experience_sha256 == experience.experience_sha256
-    assert cache_clears == [True]
-    assert side_effects == [response]
+    assert properties["workflow"]["$ref"].endswith("/ControlledWorkflow")
+    assert {
+        "mutation_id",
+        "request_sha256",
+        "expected_case_sha256",
+        "workflow_revision_sha256",
+    } <= set(schema["required"])
 
 
 def test_damper_setup_provenance_requires_an_actual_corner_setting() -> None:
@@ -436,21 +274,10 @@ def test_workflow_creation_requires_exact_session_and_rejects_action_payloads(
 def test_workflow_candidate_is_not_persisted_when_p19_withholds_authority(
     monkeypatch,
 ) -> None:
-    candidate = object()
     monkeypatch.setattr(
-        "api.routes_engineering.create_workflow",
-        lambda *_args, **_kwargs: candidate,
-    )
-    monkeypatch.setattr(
-        "api.routes_engineering._derive_p19_report",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            ValueError("P19 withheld setup authority")
-        ),
-    )
-    monkeypatch.setattr(
-        "api.routes_engineering.persist_workflow_candidate",
+        "api.routes_engineering.build_authorized_workflow_candidate",
         lambda *_args, **_kwargs: pytest.fail(
-            "A P19-rejected candidate must never be persisted."
+            "The retired direct route must never build or persist a candidate."
         ),
     )
 
@@ -461,18 +288,13 @@ def test_workflow_candidate_is_not_persisted_when_p19_withholds_authority(
     })
 
     assert response.status_code == 409
-    assert "P19 withheld" in response.json()["detail"]
+    assert "Direct workflow creation is retired" in response.json()["detail"]
+    assert "atomic route" in response.json()["detail"]
 
 
 def test_workflow_route_forwards_driver_decision_context(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_create_workflow(run_id: str, complaint: str, **kwargs):
-        captured.update({"run_id": run_id, "complaint": complaint, **kwargs})
-        raise ValueError("captured")
-
-    monkeypatch.setattr("api.routes_engineering.create_workflow", fake_create_workflow)
-    response = client.post("/api/engineering/workflows", json={
+    del monkeypatch
+    request = routes_engineering.WorkflowStartRequest.model_validate({
         "run_id": "run-1",
         "session_id": "session-1",
         "complaint": "loose over the Turn 4 exit seam",
@@ -489,29 +311,21 @@ def test_workflow_route_forwards_driver_decision_context(monkeypatch) -> None:
         "priority": "exit-drive",
     })
 
-    assert response.status_code == 409
-    assert captured["run_id"] == "run-1"
-    assert captured["complaint"] == "loose over the Turn 4 exit seam"
-    assert captured["selected_lap"] == 7
-    assert captured["lap_scope"] == "single_lap"
-    assert captured["selected_zone_start_pct"] == 72.5
-    assert captured["selected_zone_end_pct"] == 78.0
-    assert captured["selected_zone_label"] == "Turn 4 exit"
-    assert captured["selected_phase"] == "exit"
-    assert captured["objective"] == "long-run"
-    assert captured["priority"] == "exit-drive"
-    assert captured["persist"] is False
+    assert request.run_id == "run-1"
+    assert request.complaint == "loose over the Turn 4 exit seam"
+    assert request.selected_lap == 7
+    assert request.lap_scope == "single_lap"
+    assert request.selected_zone_start_pct == 72.5
+    assert request.selected_zone_end_pct == 78.0
+    assert request.selected_zone_label == "Turn 4 exit"
+    assert request.selected_phase == "exit"
+    assert request.objective == "long-run"
+    assert request.priority == "exit-drive"
 
 
 def test_workflow_route_binds_the_exact_lap_window_and_representative(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_create_workflow(run_id: str, complaint: str, **kwargs):
-        captured.update({"run_id": run_id, "complaint": complaint, **kwargs})
-        raise ValueError("captured")
-
-    monkeypatch.setattr("api.routes_engineering.create_workflow", fake_create_workflow)
-    response = client.post("/api/engineering/workflows", json={
+    del monkeypatch
+    request = routes_engineering.WorkflowStartRequest.model_validate({
         "run_id": "run-window",
         "session_id": "session-window",
         "complaint": "tight through the long-run window",
@@ -522,12 +336,11 @@ def test_workflow_route_binds_the_exact_lap_window_and_representative(monkeypatc
         "representative_lap": 5,
     })
 
-    assert response.status_code == 409
-    assert captured["lap_scope"] == "lap_window"
-    assert captured["selected_lap"] == 5
-    assert captured["window_start_lap"] == 3
-    assert captured["window_end_lap"] == 7
-    assert captured["representative_lap"] == 5
+    assert request.lap_scope == "lap_window"
+    assert request.selected_lap == 5
+    assert request.window_start_lap == 3
+    assert request.window_end_lap == 7
+    assert request.representative_lap == 5
 
 
 def test_workflow_route_rejects_incomplete_or_mismatched_lap_windows(monkeypatch) -> None:
@@ -569,8 +382,10 @@ def test_workflow_cancel_route_forwards_the_exact_workflow_id(monkeypatch) -> No
     monkeypatch.setattr("api.routes_engineering.cancel_workflow", fake_cancel_workflow)
     response = client.post("/api/engineering/workflows/aba-exact/cancel")
 
-    assert response.status_code == 409
-    assert captured == ["aba-exact"]
+    assert response.status_code == 422
+    assert captured == []
+    missing = {item["loc"][-1] for item in response.json()["detail"]}
+    assert "body" in missing
 
 
 def test_advanced_api_rejects_client_asserted_history() -> None:

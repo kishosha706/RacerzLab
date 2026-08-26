@@ -200,7 +200,7 @@ def test_smarter_cards_separate_observation_coaching_navigation_and_test_authori
     cards = _read("ui/src/components/SmartIntelligenceCards.tsx")
 
     for label in (
-        "Next trustworthy move",
+        "Evidence handoff",
         "Repeatable opportunity",
         "Typed mechanism evidence",
         "Driver repeatability",
@@ -223,6 +223,8 @@ def test_smarter_cards_separate_observation_coaching_navigation_and_test_authori
     assert "Samples are not counted as independent experiments." in cards
     assert "Only the server-owned Dial-In card can authorize or advance the test." in cards
     assert "It never starts, records, or advances a test." in cards
+    assert "Next trustworthy move" not in cards
+    assert "Open {workspaceLabel(move.workspace)} evidence" in cards
     assert "setupActionAuthorized" in cards
     assert "trustedSetupAuthorizedMove" in cards
     assert 'data-authority="measurement-health-only"' in cards

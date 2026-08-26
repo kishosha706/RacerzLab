@@ -356,8 +356,10 @@ def test_bounded_advance_counts_one_driver_action_and_stops_at_question(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     identity = _identity()
+    engineering_case = SimpleNamespace(case_sha256="case-sha-1")
     initial = SimpleNamespace(
         identity=identity,
+        engineering_case=engineering_case,
         folded_state=SimpleNamespace(
             status="open",
             completed_tool_ids=(),
@@ -369,6 +371,7 @@ def test_bounded_advance_counts_one_driver_action_and_stops_at_question(
     )
     boundary = SimpleNamespace(
         identity=identity,
+        engineering_case=engineering_case,
         folded_state=SimpleNamespace(
             status="open",
             completed_tool_ids=("inspect_data_quality",),
@@ -385,7 +388,12 @@ def test_bounded_advance_counts_one_driver_action_and_stops_at_question(
         def __init__(self, _db_path=None) -> None:
             pass
 
-        def record_continue_action(self, investigation_id: str) -> int:
+        def mutation_receipt(self, *_args, **_kwargs):
+            return None
+
+        def record_continue_action_in_transaction(
+            self, _connection, investigation_id: str
+        ) -> int:
             action_count.append(investigation_id)
             return len(action_count)
 
@@ -395,6 +403,16 @@ def test_bounded_advance_counts_one_driver_action_and_stops_at_question(
         lambda *_args, **_kwargs: initial,
     )
     monkeypatch.setattr(crew_chief_service, "CrewChiefRepository", ActionRepository)
+
+    def commit_mutation(**kwargs):
+        kwargs["apply"](object())
+        return initial if kwargs["action"] == "advance_count" else boundary
+
+    monkeypatch.setattr(
+        crew_chief_service,
+        "_commit_crew_case_mutation",
+        commit_mutation,
+    )
 
     def one_step(*_args, **kwargs):
         calls.append(kwargs["_record_continue_action"])

@@ -59,38 +59,38 @@ const MISSION_STAGE_COPY: Record<MissionStage, {
   learning: string;
 }> = {
   qualify: {
-    title: "Make the run trustworthy",
-    race: "Clear the evidence gate before diagnosing the car.",
+    title: "Evidence qualification",
+    race: "The evidence gate is not yet clear for diagnosis.",
     learning: "Only complete, continuous, eligible laps can support the diagnosis. Recover the first failed qualification before interpreting pace or balance.",
   },
   diagnose: {
-    title: "Name the repeatable loss",
-    race: "Find the strongest pattern that repeats above driver noise.",
+    title: "Repeatable loss analysis",
+    race: "The strongest pattern is evaluated against driver noise.",
     learning: "Compare qualified laps at the same track position, keep competing explanations visible, and do not turn an observation into a setup cause.",
   },
   measure: {
-    title: "Collect the missing proof",
-    race: "Run the smallest measurement that separates the open explanations.",
+    title: "Measurement gap",
+    race: "A focused measurement is needed to separate the open explanations.",
     learning: "Hold the named context constant, follow the producer-owned procedure, and stop when the measurement contract says the evidence is no longer comparable.",
   },
   test: {
-    title: "Run one controlled change",
-    race: "Follow the frozen A/B/A2 card one stage at a time.",
+    title: "Controlled-test evidence",
+    race: "The frozen A/B/A2 card tracks one stage at a time.",
     learning: "The exact target remains in Dial-In. Warm-up, flying-lap, rollback, and stop rules must all remain intact before the change can earn causal credit.",
   },
   compare: {
-    title: "Compare A, B, and A2",
-    race: "Score the verified stages before making a keep-or-undo call.",
+    title: "A/B/A2 comparison",
+    race: "A keep-or-undo call remains pending until the verified stages are scored.",
     learning: "The comparison must reproduce against both baselines, clear empirical noise, and pass countereffect and control guardrails.",
   },
   decide: {
-    title: "Keep, undo, or retest",
-    race: "Use the controlled verdict; do not average away contradictions.",
+    title: "Controlled verdict",
+    race: "The controlled verdict preserves contradictions instead of averaging them away.",
     learning: "A decision is only as strong as the frozen protocol. Inconclusive or contradictory outcomes stay unresolved and should become a narrower retest.",
   },
   certified: {
-    title: "Carry forward verified learning",
-    race: "Review the certificate and reuse only its exact context.",
+    title: "Verified learning",
+    race: "The certificate applies only to its exact context.",
     learning: "Certified learning remains bound to the tested car, track, setup, control, conditions, and evidence identities; it is not a universal setup rule.",
   },
 };
@@ -347,8 +347,8 @@ function missionStagePresentation(stage: MissionStage | null | undefined, learni
     return {
       stage: null,
       position: null,
-      title: "What this run teaches next",
-      detail: "Follow the single evidence-qualified move, then reassess.",
+      title: "Run learning status",
+      detail: "No evidence-qualified handoff is published for this report stage.",
     };
   }
   const copy = MISSION_STAGE_COPY[stage];
@@ -369,7 +369,7 @@ function preflightStageLabel(stage: (typeof PREFLIGHT_PROGRESS_STAGES)[number]):
   return "Compare";
 }
 
-function NextMoveCard({
+function EvidenceHandoffCard({
   move,
   runId,
   workflowRevision,
@@ -395,14 +395,14 @@ function NextMoveCard({
     >
       <header>
         <Route size={16} aria-hidden="true" />
-        <div><span className="eyebrow">Next trustworthy move</span><h3 id={`engineer-next-move-${move.move_id}`}>{move.title}</h3></div>
+        <div><span className="eyebrow">Evidence handoff</span><h3 id={`engineer-next-move-${move.move_id}`}>{move.title}</h3></div>
         <span className="engineer-smart-authority" data-authorized={setupAuthorized ? "true" : "false"}>
           {setupAuthorized ? "Controlled-test authority" : "Navigation only"}
         </span>
       </header>
-      <p className="engineer-smart-command">{move.instruction}</p>
-      <div className="engineer-smart-why" aria-label="Why this move is next">
-        <strong>Why now</strong>
+      <p className="engineer-smart-command"><strong>Published guidance:</strong> {move.instruction}</p>
+      <div className="engineer-smart-why" aria-label="Evidence handoff basis">
+        <strong>Evidence basis</strong>
         <p>{move.reason}</p>
       </div>
       <div className="engineer-smart-facts">
@@ -415,7 +415,7 @@ function NextMoveCard({
         <ul className="engineer-smart-blockers">{move.blocker_reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
       )}
       <button type="button" onClick={() => onOpen(move)}>
-        {setupAuthorized ? "Continue in" : "Go to"} {workspaceLabel(move.workspace)} <ArrowRight size={13} aria-hidden="true" />
+        Open {workspaceLabel(move.workspace)} evidence <ArrowRight size={13} aria-hidden="true" />
       </button>
       <small>{learning
         ? "This handoff preserves the exact run and evidence scope. It never starts, records, or advances a test."
@@ -741,7 +741,7 @@ function OvalCrewBoard({
           ) : <p>No evidence-qualified current-run change is published.</p>}
         </article>
         <article data-kind="check-next" data-authority={move?.authority ?? (recoveryItem ? "recovery_only" : "withheld")}>
-          <span className="eyebrow">What to check next</span>
+          <span className="eyebrow">Published evidence guidance</span>
           {move ? (
             <>
               <strong>{move.title}</strong>
@@ -754,7 +754,7 @@ function OvalCrewBoard({
               <p>{recoveryItem.reason}</p>
               <small>Evidence recovery only</small>
             </>
-          ) : <p>No server-ranked next check is published.</p>}
+          ) : <p>No server-ranked evidence guidance is published.</p>}
         </article>
       </div>
       <small>Read-only crew synthesis. No setup direction is created here, and telemetry samples are not counted as independent experiments.</small>
@@ -953,9 +953,6 @@ function PreflightCard({
   });
   const verifiedChecks = preflight.checks.filter((check) => check.state === "verified").length;
   const visibleChecks = orderedChecks.slice(0, learning ? orderedChecks.length : 4);
-  const actionLabel = preflight.stage === "complete"
-    ? preflight.status === "complete" ? "Review controlled verdict" : "Compare and score A/B/A2"
-    : `Prepare ${preflightStageLabel(preflight.stage)}`;
   if (!stageBSetupAuthorized) {
     return (
       <section className="engineer-smart-card engineer-preflight" data-state="blocked" data-stage="B" data-authority="withheld" aria-labelledby="engineer-preflight-heading">
@@ -969,7 +966,7 @@ function PreflightCard({
   return (
     <section className="engineer-smart-card engineer-preflight" data-state={preflight.status} data-stage={preflight.stage} aria-labelledby="engineer-preflight-heading">
       <header><ClipboardCheck size={16} aria-hidden="true" /><div><span className="eyebrow">Controlled-test preflight · {preflightStageLabel(preflight.stage)}</span><h3 id="engineer-preflight-heading">{preflight.title}</h3></div><span className="engineer-smart-authority">{verifiedChecks}/{preflight.checks.length} checks clear</span></header>
-      <ol className="engineer-mission-progress" aria-label="Controlled-test mission progress">
+      <ol className="engineer-mission-progress" aria-label="Controlled-test evidence progress">
         {PREFLIGHT_PROGRESS_STAGES.map((stage, index) => {
           const complete = index < stageIndex || preflight.status === "complete";
           const current = index === stageIndex && preflight.status !== "complete";
@@ -977,7 +974,7 @@ function PreflightCard({
             <li key={stage} data-state={complete ? "complete" : current ? "current" : "upcoming"} aria-current={current ? "step" : undefined}>
               <span>{complete ? <CheckCircle2 size={12} aria-hidden="true" /> : index + 1}</span>
               <strong>{preflightStageLabel(stage)}</strong>
-              <small>{complete ? "Recorded" : current ? "Now" : "Later"}</small>
+              <small>{complete ? "Recorded" : current ? "Current" : "Pending"}</small>
             </li>
           );
         })}
@@ -991,7 +988,7 @@ function PreflightCard({
         ))}
       </ul>
       {preflight.blocker_reasons.length > 0 && <ul className="engineer-smart-blockers">{preflight.blocker_reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}
-      <button type="button" onClick={() => onOpenRecovery("dial_in", "resume_workflow")}>{actionLabel} <ArrowRight size={12} aria-hidden="true" /></button>
+      <button type="button" onClick={() => onOpenRecovery("dial_in", "resume_workflow")}>Review workflow evidence <ArrowRight size={12} aria-hidden="true" /></button>
       <small>Preflight reports workflow readiness. Only the server-owned Dial-In card can authorize or advance the test.</small>
     </section>
   );
@@ -1212,14 +1209,14 @@ export function SmartIntelligenceCards(props: SmartIntelligenceCardsProps) {
     <section className="engineer-smart-layer" data-mission-stage={mission.stage ?? "unassigned"} aria-labelledby="engineer-smart-layer-heading">
       <header className="engineer-smart-layer-heading engineer-mission-command">
         <div>
-          <span className="eyebrow">{mission.position ? `Mission stage ${mission.position} of ${MISSION_STAGES.length}` : "Evidence compounding"}</span>
+          <span className="eyebrow">{mission.position ? `Report stage ${mission.position} of ${MISSION_STAGES.length}` : "Evidence compounding"}</span>
           <h2 id="engineer-smart-layer-heading">{mission.title}</h2>
           <p>{mission.detail}</p>
         </div>
-        {mission.stage && <span aria-label={`Current mission stage: ${sentenceLabel(mission.stage)}`}>{sentenceLabel(mission.stage)}</span>}
+        {mission.stage && <span aria-label={`Current report stage: ${sentenceLabel(mission.stage)}`}>{sentenceLabel(mission.stage)}</span>}
       </header>
       <div className="engineer-smart-grid engineer-smart-primary">
-        {move && <NextMoveCard move={move} runId={runId} workflowRevision={workflowRevision} learning={learning} onOpen={onOpenMove} />}
+        {move && <EvidenceHandoffCard move={move} runId={runId} workflowRevision={workflowRevision} learning={learning} onOpen={onOpenMove} />}
         <PreflightCard
           report={report}
           learning={learning}

@@ -12,6 +12,7 @@ from racelab_engine.models.crew_chief import (
     CrewChiefEffectivenessRecord,
     CrewChiefEvent,
     CrewChiefInvestigation,
+    CrewChiefWorkspace,
     DriverKnowledgeRecord,
     EngineeringObjective,
     SuccessContract,
@@ -29,6 +30,10 @@ from racelab_engine.storage.engineering_learning_repository import (
     LEARNING_CAPTURE_INTEGRITY_BLOCKER,
     EngineeringLearningIntegrityError,
     EngineeringLearningRepository,
+)
+from racelab_engine.storage.engineering_case_repository import (
+    EngineeringCaseIntegrityError,
+    EngineeringCaseRepository,
 )
 from racelab_engine.storage.investigation_adaptation_repository import (
     InvestigationAdaptationIntegrityError,
@@ -81,38 +86,44 @@ class CrewChiefRepository:
     def __init__(self, db_path: str | Path | None = None):
         self.db_path = db_path
 
-    def save_investigation(self, investigation: CrewChiefInvestigation) -> None:
-        connection = initialize_database(self.db_path)
-        try:
-            connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute(
+    @staticmethod
+    def save_investigation_in_transaction(
+        connection: Any, investigation: CrewChiefInvestigation
+    ) -> None:
+        row = connection.execute(
                 "SELECT investigation_json FROM crew_chief_investigations "
                 "WHERE investigation_id = ?",
                 (investigation.investigation_id,),
             ).fetchone()
-            encoded = investigation.model_dump_json()
-            if row is not None and row["investigation_json"] != encoded:
-                raise CrewChiefIntegrityError(
-                    "investigation identity already owns other data"
-                )
-            if row is None:
-                connection.execute(
-                    """
-                    INSERT INTO crew_chief_investigations (
-                      investigation_id, run_id, session_id, workspace_revision,
-                      status, opened_at, investigation_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        investigation.investigation_id,
-                        investigation.workspace_identity.run_id,
-                        investigation.workspace_identity.session_id,
-                        investigation.workspace_identity.workspace_revision,
-                        investigation.status,
-                        investigation.opened_at.isoformat(),
-                        encoded,
-                    ),
-                )
+        encoded = investigation.model_dump_json()
+        if row is not None and row["investigation_json"] != encoded:
+            raise CrewChiefIntegrityError(
+                "investigation identity already owns other data"
+            )
+        if row is None:
+            connection.execute(
+                """
+                INSERT INTO crew_chief_investigations (
+                  investigation_id, run_id, session_id, workspace_revision,
+                  status, opened_at, investigation_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    investigation.investigation_id,
+                    investigation.workspace_identity.run_id,
+                    investigation.workspace_identity.session_id,
+                    investigation.workspace_identity.workspace_revision,
+                    investigation.status,
+                    investigation.opened_at.isoformat(),
+                    encoded,
+                ),
+            )
+
+    def save_investigation(self, investigation: CrewChiefInvestigation) -> None:
+        connection = initialize_database(self.db_path)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            self.save_investigation_in_transaction(connection, investigation)
             connection.commit()
         except Exception:
             connection.rollback()
@@ -163,13 +174,11 @@ class CrewChiefRepository:
             connection.close()
         return self.get_investigation(row["investigation_id"]) if row else None
 
-    def record_continue_action(self, investigation_id: str) -> int:
-        """Record one user-requested Continue/bounded-advance action outside P34 events."""
-
-        connection = initialize_database(self.db_path)
-        try:
-            connection.execute("BEGIN IMMEDIATE")
-            updated = connection.execute(
+    @staticmethod
+    def record_continue_action_in_transaction(
+        connection: Any, investigation_id: str
+    ) -> int:
+        updated = connection.execute(
                 """
                 UPDATE crew_chief_investigations
                 SET continue_action_count = continue_action_count + 1
@@ -177,22 +186,33 @@ class CrewChiefRepository:
                 """,
                 (investigation_id,),
             )
-            if updated.rowcount != 1:
-                raise CrewChiefIntegrityError(
-                    "Crew Chief continue action has no investigation identity"
-                )
-            row = connection.execute(
-                "SELECT continue_action_count FROM crew_chief_investigations "
-                "WHERE investigation_id = ?",
-                (investigation_id,),
-            ).fetchone()
+        if updated.rowcount != 1:
+            raise CrewChiefIntegrityError(
+                "Crew Chief continue action has no investigation identity"
+            )
+        row = connection.execute(
+            "SELECT continue_action_count FROM crew_chief_investigations "
+            "WHERE investigation_id = ?",
+            (investigation_id,),
+        ).fetchone()
+        return int(row["continue_action_count"])
+
+    def record_continue_action(self, investigation_id: str) -> int:
+        """Record one user-requested Continue/bounded-advance action outside P34 events."""
+
+        connection = initialize_database(self.db_path)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            count = self.record_continue_action_in_transaction(
+                connection, investigation_id
+            )
             connection.commit()
         except Exception:
             connection.rollback()
             raise
         finally:
             connection.close()
-        return int(row["continue_action_count"])
+        return count
 
     def continue_action_count(self, investigation_id: str) -> int:
         connection = initialize_database(self.db_path)
@@ -412,8 +432,7 @@ class CrewChiefRepository:
         connection = initialize_database(self.db_path)
         try:
             connection.execute("BEGIN IMMEDIATE")
-            for event in events:
-                self._append_event(connection, event)
+            self.append_events_in_transaction(connection, events)
             connection.commit()
         except Exception:
             connection.rollback()
@@ -421,11 +440,32 @@ class CrewChiefRepository:
         finally:
             connection.close()
 
+    @classmethod
+    def append_events_in_transaction(
+        cls, connection: Any, events: tuple[CrewChiefEvent, ...]
+    ) -> None:
+        if not events:
+            raise ValueError("Crew Chief event unit cannot be empty.")
+        if any(
+            event.event_type in {"decision_emitted", "investigation_abandoned"}
+            for event in events
+        ):
+            raise ValueError(
+                "Terminal Crew events require the atomic P33 learning-capture path."
+            )
+        for event in events:
+            cls._append_event(connection, event)
+
     def append_inspection_trace(
         self, events: tuple[CrewChiefEvent, ...]
     ) -> None:
         """Atomically persist one tool pair and its complete cognitive trace."""
 
+        self.validate_inspection_trace(events)
+        self.append_events(events)
+
+    @staticmethod
+    def validate_inspection_trace(events: tuple[CrewChiefEvent, ...]) -> None:
         if (
             len(events) < 4
             or events[0].event_type != "tool_invoked"
@@ -436,7 +476,6 @@ class CrewChiefRepository:
             raise ValueError(
                 "Crew Chief inspection trace requires request, result, subgoal, and critic events."
             )
-        self.append_events(events)
 
     def append_terminal_event_and_experience(
         self,
@@ -446,6 +485,7 @@ class CrewChiefRepository:
         outcome_certificate: InvestigationOutcomeCertificate | None = None,
         outcome_comparison: PairedInvestigationComparison | None = None,
         discriminator_outcome: DiscriminatorOutcome | None = None,
+        connection: Any | None = None,
     ) -> CrewChiefEvent:
         """Commit terminal Crew/P33/P34 truth atomically when P34 is healthy.
 
@@ -501,9 +541,31 @@ class CrewChiefRepository:
                 else None
             ),
         )
-        connection = initialize_database(self.db_path)
+        owns_connection = connection is None
+        if connection is None:
+            connection = initialize_database(self.db_path)
+        savepoint = "crew_terminal_event_case_unit"
+
+        def begin_unit() -> None:
+            connection.execute(
+                "BEGIN IMMEDIATE" if owns_connection else f"SAVEPOINT {savepoint}"
+            )
+
+        def commit_unit() -> None:
+            if owns_connection:
+                connection.commit()
+            else:
+                connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+
+        def rollback_unit() -> None:
+            if owns_connection:
+                connection.rollback()
+            else:
+                connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+
         try:
-            connection.execute("BEGIN IMMEDIATE")
+            begin_unit()
             existing = connection.execute(
                 "SELECT event_json FROM crew_chief_events WHERE event_id = ?",
                 (event.event_id,),
@@ -530,7 +592,7 @@ class CrewChiefRepository:
                             outcome_comparison,
                             discriminator_outcome,
                         )
-                    connection.rollback()
+                    commit_unit()
                     return persisted
             EngineeringLearningRepository(self.db_path).stream_state(
                 connection=connection,
@@ -588,23 +650,24 @@ class CrewChiefRepository:
                 connection,
                 experience,
             )
-            connection.commit()
+            commit_unit()
             return persisted_event
         except EngineeringLearningIntegrityError:
-            connection.rollback()
+            rollback_unit()
             try:
-                connection.execute("BEGIN IMMEDIATE")
+                begin_unit()
                 self._append_event(connection, learning_blocked)
-                connection.commit()
+                commit_unit()
                 return learning_blocked
             except Exception:
-                connection.rollback()
+                rollback_unit()
                 raise
         except Exception:
-            connection.rollback()
+            rollback_unit()
             raise
         finally:
-            connection.close()
+            if owns_connection:
+                connection.close()
 
     @staticmethod
     def _canonical_p34_pair_in_transaction(
@@ -1053,8 +1116,161 @@ class CrewChiefRepository:
             raise CrewChiefIntegrityError("Crew Chief event stream head is corrupt")
         return tuple(events)
 
-    def save_objective(
-        self,
+    @staticmethod
+    def mutation_receipt_in_transaction(
+        connection: Any,
+        mutation_id: str,
+        *,
+        request_sha256: str,
+    ) -> CrewChiefWorkspace | None:
+        row = connection.execute(
+            "SELECT * FROM crew_chief_mutation_receipts WHERE mutation_id = ?",
+            (mutation_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        if row["request_sha256"] != request_sha256:
+            raise CrewChiefIntegrityError(
+                "Crew Chief mutation identity already owns another request."
+            )
+        try:
+            workspace = CrewChiefWorkspace.model_validate_json(row["workspace_json"])
+        except (TypeError, ValueError) as exc:
+            raise CrewChiefIntegrityError(
+                "Crew Chief mutation receipt workspace is unreadable or corrupt."
+            ) from exc
+        if (
+            workspace.identity.run_id != row["run_id"]
+            or workspace.identity.session_id != row["session_id"]
+            or workspace.identity.investigation_id != row["investigation_id"]
+            or workspace.identity.workspace_revision
+            != row["result_workspace_revision"]
+            or workspace.engineering_case.case_sha256 != row["result_case_sha256"]
+        ):
+            raise CrewChiefIntegrityError(
+                "Crew Chief mutation receipt columns and workspace disagree."
+            )
+        publication = workspace.mutation_receipt
+        if (
+            publication is None
+            or publication.mutation_id != row["mutation_id"]
+            or publication.request_sha256 != row["request_sha256"]
+            or publication.action != row["action"]
+            or publication.case_id != workspace.engineering_case.case_id
+            or publication.case_sha256 != row["result_case_sha256"]
+            or publication.case_revision != row["result_case_revision"]
+            or publication.previous_case_sha256 != row["previous_case_sha256"]
+            or publication.published_at.isoformat() != row["completed_at"]
+        ):
+            raise CrewChiefIntegrityError(
+                "Crew Chief mutation publication receipt is missing or corrupt."
+            )
+        revision_row = connection.execute(
+            """
+            SELECT * FROM engineering_case_revisions
+            WHERE case_id = ? AND case_revision = ? AND case_sha256 = ?
+            """,
+            (
+                publication.case_id,
+                publication.case_revision,
+                publication.case_sha256,
+            ),
+        ).fetchone()
+        if revision_row is None:
+            raise CrewChiefIntegrityError(
+                "Crew Chief mutation receipt points to a missing case revision."
+            )
+        try:
+            revision = EngineeringCaseRepository._revision_from_row(revision_row)
+        except (EngineeringCaseIntegrityError, TypeError, ValueError) as exc:
+            raise CrewChiefIntegrityError(
+                "Crew Chief mutation case revision is unreadable or corrupt."
+            ) from exc
+        if (
+            revision.case != workspace.engineering_case
+            or revision.case_revision != publication.case_revision
+            or revision.previous_case_sha256 != publication.previous_case_sha256
+        ):
+            raise CrewChiefIntegrityError(
+                "Crew Chief mutation receipt and case revision lineage disagree."
+            )
+        return workspace
+
+    def mutation_receipt(
+        self, mutation_id: str, *, request_sha256: str
+    ) -> CrewChiefWorkspace | None:
+        connection = initialize_database(self.db_path)
+        try:
+            return self.mutation_receipt_in_transaction(
+                connection, mutation_id, request_sha256=request_sha256
+            )
+        finally:
+            connection.close()
+
+    @classmethod
+    def save_mutation_receipt_in_transaction(
+        cls,
+        connection: Any,
+        *,
+        mutation_id: str,
+        request_sha256: str,
+        action: str,
+        expected_workspace_revision: str,
+        expected_case_sha256: str | None,
+        workspace: CrewChiefWorkspace,
+    ) -> None:
+        existing = cls.mutation_receipt_in_transaction(
+            connection, mutation_id, request_sha256=request_sha256
+        )
+        if existing is not None:
+            if existing != workspace:
+                raise CrewChiefIntegrityError(
+                    "Crew Chief mutation receipt cannot be rebound to another result."
+                )
+            return
+        publication = workspace.mutation_receipt
+        if (
+            publication is None
+            or publication.mutation_id != mutation_id
+            or publication.request_sha256 != request_sha256
+            or publication.action != action
+            or publication.case_id != workspace.engineering_case.case_id
+            or publication.case_sha256
+            != workspace.engineering_case.case_sha256
+        ):
+            raise CrewChiefIntegrityError(
+                "Crew Chief mutation publication receipt does not bind its result."
+            )
+        connection.execute(
+            """
+            INSERT INTO crew_chief_mutation_receipts(
+              mutation_id, request_sha256, action, run_id, session_id,
+              investigation_id, expected_workspace_revision, expected_case_sha256,
+              result_workspace_revision, result_case_sha256, result_case_revision,
+              previous_case_sha256, completed_at, workspace_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                mutation_id,
+                request_sha256,
+                action,
+                workspace.identity.run_id,
+                workspace.identity.session_id,
+                workspace.identity.investigation_id,
+                expected_workspace_revision,
+                expected_case_sha256,
+                workspace.identity.workspace_revision,
+                workspace.engineering_case.case_sha256,
+                publication.case_revision,
+                publication.previous_case_sha256,
+                publication.published_at.isoformat(),
+                workspace.model_dump_json(),
+            ),
+        )
+
+    @staticmethod
+    def save_objective_in_transaction(
+        connection: Any,
         investigation_id: str,
         workspace_revision: str,
         objective: EngineeringObjective,
@@ -1062,9 +1278,7 @@ class CrewChiefRepository:
         objective_id = (
             f"cco_{canonical_json_sha256([investigation_id, objective])[:24]}"
         )
-        connection = initialize_database(self.db_path)
-        try:
-            connection.execute(
+        connection.execute(
                 """
                 INSERT INTO engineering_objectives (
                   objective_id, investigation_id, workspace_revision, selected_at,
@@ -1083,6 +1297,18 @@ class CrewChiefRepository:
                     _now(),
                     f'{{"objective":"{objective.value}"}}',
                 ),
+        )
+
+    def save_objective(
+        self,
+        investigation_id: str,
+        workspace_revision: str,
+        objective: EngineeringObjective,
+    ) -> None:
+        connection = initialize_database(self.db_path)
+        try:
+            self.save_objective_in_transaction(
+                connection, investigation_id, workspace_revision, objective
             )
             connection.commit()
         finally:
@@ -1179,31 +1405,37 @@ class CrewChiefRepository:
             records.append(record)
         return tuple(records)
 
+    @staticmethod
+    def save_driver_memory_in_transaction(
+        connection: Any, record: DriverKnowledgeRecord
+    ) -> None:
+        encoded = record.model_dump_json()
+        existing = connection.execute(
+                "SELECT record_json FROM crew_chief_driver_memory WHERE record_id = ?",
+                (record.record_id,),
+            ).fetchone()
+        if existing and existing["record_json"] != encoded:
+            raise CrewChiefIntegrityError("driver-memory identity is immutable")
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO crew_chief_driver_memory (
+              record_id, investigation_id, session_id, recorded_at, record_json
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                record.record_id,
+                record.investigation_id,
+                record.session_id,
+                record.recorded_at.isoformat(),
+                encoded,
+            ),
+        )
+
     def save_driver_memory(self, record: DriverKnowledgeRecord) -> None:
         connection = initialize_database(self.db_path)
         try:
             connection.execute("BEGIN IMMEDIATE")
-            encoded = record.model_dump_json()
-            existing = connection.execute(
-                "SELECT record_json FROM crew_chief_driver_memory WHERE record_id = ?",
-                (record.record_id,),
-            ).fetchone()
-            if existing and existing["record_json"] != encoded:
-                raise CrewChiefIntegrityError("driver-memory identity is immutable")
-            connection.execute(
-                """
-                INSERT OR IGNORE INTO crew_chief_driver_memory (
-                  record_id, investigation_id, session_id, recorded_at, record_json
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    record.record_id,
-                    record.investigation_id,
-                    record.session_id,
-                    record.recorded_at.isoformat(),
-                    encoded,
-                ),
-            )
+            self.save_driver_memory_in_transaction(connection, record)
             connection.commit()
         except Exception:
             connection.rollback()

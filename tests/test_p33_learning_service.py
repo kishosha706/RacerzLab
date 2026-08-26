@@ -376,7 +376,8 @@ def _crew_investigation(
     identity = CrewChiefWorkspaceIdentity(
         run_id=current.context.run_id,
         session_id=current.context.session_id,
-        selected_scope_hash="1" * 64,
+        selected_scope_hash=canonical_json_sha256((current.context.run_id,)),
+        selected_run_ids=(current.context.run_id,),
         reasoning_snapshot_sha256=current.reasoning.reasoning_snapshot_sha256,
         p20_state_revision="2" * 64,
         p20_profile_hash=None,

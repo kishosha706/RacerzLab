@@ -207,7 +207,7 @@ function BasketSlotDisplay({
   onRemove: () => void;
 }) {
   return (
-    <div className="compare-basket-slot" tabIndex={0}>
+    <div className="compare-basket-slot">
       <div className="compare-basket-slot-header">
         <span className="compare-basket-slot-label">{label}</span>
         {item && (

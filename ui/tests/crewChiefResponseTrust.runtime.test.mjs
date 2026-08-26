@@ -6,6 +6,8 @@ import {
   hasCanonicalRunSentinelDigest,
   hasCanonicalCrewEvidenceIndexDigest,
   hasCanonicalEngineeringAwarenessDigest,
+  hasCanonicalCrewMutationReceiptDigest,
+  hasCanonicalSelectedRunScopeDigest,
   hasCanonicalVehicleRuntimeIdentityDigest,
   deriveP35ChainTruth,
   p35FocusEntriesMatchAssessment,
@@ -89,7 +91,8 @@ const emptyLearningPrior = {
   schema_version: "p33.engineering-learning.v1",
   projection_sha256: h("2"), history_revision: h("1"),
   run_id: "run-1", session_id: "session-1", objective_id: "race_long_run",
-  selected_scope_hash: h("f"), p19_reasoning_snapshot_sha256: h("a"),
+  selected_scope_hash: await canonicalJsonSha256(["run-1"]),
+  p19_reasoning_snapshot_sha256: h("a"),
   p32_projection_sha256: h("7"), current_context_sha256: h("3"),
   current_problem_sha256: h("4"), state: "insufficient_history",
   recurrence: {
@@ -566,7 +569,8 @@ const workspace = {
   identity: {
     run_id: "run-1", session_id: "session-1", reasoning_snapshot_sha256: h("a"),
     setup_id: "setup-1", setup_snapshot_sha256: h("b"), workspace_revision: h("c"),
-    selected_scope_hash: h("f"), p20_profile_hash: null, p26_graph_version: "p26.v1",
+    selected_scope_hash: await canonicalJsonSha256(["run-1"]),
+    selected_run_ids: ["run-1"], p20_profile_hash: null, p26_graph_version: "p26.v1",
     p20_state_revision: h("d"), p20_projection_sha256: engineeringAwarenessSha256,
     p26_knowledge_graph_sha256: h("e"),
     p26_reasoning_snapshot_sha256: h("a"), active_workflow_id: null, active_workflow_revision: null,
@@ -584,7 +588,13 @@ const workspace = {
     schema_version: "p3544.unified-engineering-case.v1",
     case_id: stableCaseId,
     case_sha256: h("9"), case_revision_sha256: h("c"),
-    run_id: "run-1", session_id: "session-1", recording_sha256: h("8"),
+    run_id: "run-1", session_id: "session-1", selected_run_ids: ["run-1"],
+    recording_sha256: h("8"),
+    vehicle_runtime_identity_sha256: vehicleRuntimeIdentityHash,
+    car_identity: vehicleRuntimeIdentity.car_path,
+    car_version: vehicleRuntimeIdentity.car_version,
+    iracing_build_version: vehicleRuntimeIdentity.iracing_build_version,
+    track_configuration: vehicleRuntimeIdentity.track_configuration_name,
     setup_id: "setup-1", setup_snapshot_sha256: h("b"), objective_id: "race_long_run",
     condition_epoch_sha256: h("6"), p19_reasoning_snapshot_sha256: h("a"),
     p20_state_revision: h("d"), p26_knowledge_graph_sha256: h("e"),
@@ -631,6 +641,7 @@ const workspace = {
     },
     authority: "case_receipt_only", p19_authority_unchanged: true, setup_authorized: false,
   },
+  mutation_receipt: null,
   available_tools: availableTools,
   tool_eligibility: availableTools.map((tool) => ({
     tool_id: tool.tool_id,
@@ -693,6 +704,44 @@ const rehashEngineeringKnowledge = async (value) => {
   value.engineering_knowledge.projection_sha256 = await canonicalJsonSha256(body);
 };
 assert.equal(isCrewChiefWorkspaceResponse(workspace, scope), true);
+assert.equal(await hasCanonicalSelectedRunScopeDigest(workspace), true);
+assert.equal(await hasCanonicalCrewMutationReceiptDigest(workspace, false), true);
+assert.equal(await hasCanonicalCrewMutationReceiptDigest(workspace, true), false);
+const mutationWorkspace = structuredClone(workspace);
+const mutationReceiptBody = {
+  schema_version: "p3544.crew-mutation-publication.v1",
+  mutation_id: `ccm_${h("8").slice(0, 24)}`,
+  request_sha256: h("8"),
+  action: "open",
+  case_id: mutationWorkspace.engineering_case.case_id,
+  case_revision: 2,
+  case_sha256: mutationWorkspace.engineering_case.case_sha256,
+  previous_case_sha256: h("0"),
+  published_at: "2026-08-15T09:05:01Z",
+  authority: "durability_receipt_only",
+  setup_authorized: false,
+};
+mutationWorkspace.mutation_receipt = {
+  ...mutationReceiptBody,
+  receipt_sha256: await canonicalJsonSha256(mutationReceiptBody),
+};
+assert.equal(isCrewChiefWorkspaceResponse(mutationWorkspace, scope), true);
+assert.equal(
+  await hasCanonicalCrewMutationReceiptDigest(mutationWorkspace, true, h("0")),
+  true,
+);
+assert.equal(
+  await hasCanonicalCrewMutationReceiptDigest(mutationWorkspace, true, h("1")),
+  false,
+  "a mutation receipt cannot adopt a foreign predecessor",
+);
+const forgedMutationReceipt = structuredClone(mutationWorkspace);
+forgedMutationReceipt.mutation_receipt.case_revision = 3;
+assert.equal(
+  await hasCanonicalCrewMutationReceiptDigest(forgedMutationReceipt, true, h("0")),
+  false,
+  "a coordinated-looking revision edit cannot survive the receipt digest",
+);
 assert.equal(await hasCanonicalEngineeringKnowledgeDigest(workspace.engineering_knowledge), true);
 const forgedKnowledgeCoverage = structuredClone(workspace);
 forgedKnowledgeCoverage.engineering_knowledge.bridge_coverage_sha256 = h("8");
@@ -850,6 +899,10 @@ unavailableRuntimeWorkspace.engineering_case.p35_assessment_sha256 =
   unavailableRuntimeWorkspace.vehicle_dynamics.p35_assessment_sha256;
 unavailableRuntimeWorkspace.engineering_case.p351_projection_sha256 =
   unavailableRuntimeWorkspace.engineering_knowledge.projection_sha256;
+unavailableRuntimeWorkspace.engineering_case.car_identity = "unavailable";
+unavailableRuntimeWorkspace.engineering_case.car_version = "unavailable";
+unavailableRuntimeWorkspace.engineering_case.iracing_build_version = "unavailable";
+unavailableRuntimeWorkspace.engineering_case.track_configuration = "unavailable";
 const unavailableRuntimeScope = { ...scope, report: unavailableRuntimeReport };
 assert.equal(
   isCrewChiefWorkspaceResponse(unavailableRuntimeWorkspace, unavailableRuntimeScope),
@@ -1552,6 +1605,10 @@ const smuggledBrief = structuredClone(workspace);
 smuggledBrief.post_run_brief = ["Set lf.ls_rebound to 4 clicks."];
 assert.equal(isCrewChiefWorkspaceResponse(smuggledBrief, scope), false);
 const foreignEvidence = structuredClone(workspace);
+foreignEvidence.identity.selected_run_ids = ["run-1", "run-2"];
+foreignEvidence.identity.selected_scope_hash = await canonicalJsonSha256(["run-1", "run-2"]);
+foreignEvidence.engineering_case.selected_run_ids = ["run-1", "run-2"];
+foreignEvidence.learning_prior.selected_scope_hash = foreignEvidence.identity.selected_scope_hash;
 foreignEvidence.evidence_index.entries = [{
   artifact_id: "event-2", producer_id: "p19.reasoning_snapshot", run_id: "run-2",
   session_id: "session-1", setup_id: "setup-1", lap_numbers: [4],

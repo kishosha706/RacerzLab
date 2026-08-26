@@ -44,7 +44,14 @@ def test_all_full_workflow_api_reads_cross_the_capture_trust_boundary() -> None:
     ):
         assert field in types
         assert field in trust
-    assert client.count("trustedControlledWorkflow(response)") == 5
+    # Standalone workflow reads cross the full-workflow validator directly;
+    # case-mutating reads cross the stricter workflow + successor-case wrapper.
+    assert client.count("trustedControlledWorkflow(response)") == 1
+    assert client.count("trustedControlledWorkflowMutation(response, {") == 3
+    assert "const trustedWorkflow = isControlledWorkflowResponse(response.workflow)" in client
+    assert 'schema: "controlled-workflow-revision.v2"' in client
+    assert "response.workflow_revision_sha256 !== exactWorkflowRevision" in client
     assert "response.every(isControlledWorkflowResponse)" in client
-    assert 'requestJson<unknown>("/api/engineering/workflows"' in client
+    assert "requestJson<unknown>(`/api/engineering/workflows?${params.toString()}`)" in client
+    assert 'requestJson<unknown>("/api/engineering/workflows"' not in client
     assert "P33 capture-containment check" in client

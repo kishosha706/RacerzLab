@@ -89,7 +89,13 @@ export type CanonicalEngineeringCase = {
   case_revision_sha256: string;
   run_id: string;
   session_id: string;
+  selected_run_ids: string[];
   recording_sha256: string;
+  vehicle_runtime_identity_sha256: string;
+  car_identity: string;
+  car_version: string;
+  iracing_build_version: string;
+  track_configuration: string;
   setup_id: string;
   setup_snapshot_sha256: string;
   objective_id: string;

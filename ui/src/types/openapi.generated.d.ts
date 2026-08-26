@@ -1648,6 +1648,8 @@ export interface components {
             session_id: string;
             /** Expected Workspace Revision */
             expected_workspace_revision: string;
+            /** Expected Case Sha256 */
+            expected_case_sha256: string;
             /** Reason */
             reason: string;
         };
@@ -1827,6 +1829,8 @@ export interface components {
             session_id: string;
             /** Expected Workspace Revision */
             expected_workspace_revision: string;
+            /** Expected Case Sha256 */
+            expected_case_sha256: string;
             /**
              * Max Read Only Steps
              * @default 4
@@ -1974,6 +1978,18 @@ export interface components {
         /** AtomicDriverIntentWorkflowResponse */
         AtomicDriverIntentWorkflowResponse: {
             /**
+             * Schema Version
+             * @default p3544.atomic-driver-intent-workflow.v2
+             * @constant
+             */
+            schema_version: "p3544.atomic-driver-intent-workflow.v2";
+            /** Mutation Id */
+            mutation_id: string;
+            /** Request Sha256 */
+            request_sha256: string;
+            /** Expected Case Sha256 */
+            expected_case_sha256: string;
+            /**
              * State
              * @enum {string}
              */
@@ -1982,6 +1998,8 @@ export interface components {
             driver_intent: components["schemas"]["DriverIntent"];
             advisory: components["schemas"]["DialInHypothesisResponse"];
             workflow?: components["schemas"]["ControlledWorkflow"] | null;
+            /** Workflow Revision Sha256 */
+            workflow_revision_sha256?: string | null;
             /** Withholding Reason */
             withholding_reason?: string | null;
         };
@@ -2554,8 +2572,20 @@ export interface components {
             run_id: string;
             /** Session Id */
             session_id: string;
+            /** Selected Run Ids */
+            selected_run_ids: string[];
             /** Recording Sha256 */
             recording_sha256: string;
+            /** Vehicle Runtime Identity Sha256 */
+            vehicle_runtime_identity_sha256: string;
+            /** Car Identity */
+            car_identity: string;
+            /** Car Version */
+            car_version: string;
+            /** Iracing Build Version */
+            iracing_build_version: string;
+            /** Track Configuration */
+            track_configuration: string;
             /** Setup Id */
             setup_id: string;
             /** Setup Snapshot Sha256 */
@@ -4237,6 +4267,30 @@ export interface components {
             /** Learning Capture Blocker Reason */
             learning_capture_blocker_reason?: string | null;
         };
+        /** ControlledWorkflowCaseMutationResponse */
+        ControlledWorkflowCaseMutationResponse: {
+            /**
+             * Schema Version
+             * @default p3544.controlled-workflow-case-mutation.v1
+             * @constant
+             */
+            schema_version: "p3544.controlled-workflow-case-mutation.v1";
+            /** Mutation Id */
+            mutation_id: string;
+            /** Request Sha256 */
+            request_sha256: string;
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "cancel" | "stage" | "score";
+            /** Expected Case Sha256 */
+            expected_case_sha256: string;
+            /** Workflow Revision Sha256 */
+            workflow_revision_sha256: string;
+            workflow: components["schemas"]["ControlledWorkflow"];
+            case_revision: components["schemas"]["EngineeringCaseRevision"];
+        };
         /** ControlledWorkflowCatalogItem */
         ControlledWorkflowCatalogItem: {
             /** Workflow Id */
@@ -4582,6 +4636,48 @@ export interface components {
              * @constant
              */
             p19_rank_modified: false;
+        };
+        /** CrewChiefMutationPublicationReceipt */
+        CrewChiefMutationPublicationReceipt: {
+            /**
+             * Schema Version
+             * @default p3544.crew-mutation-publication.v1
+             * @constant
+             */
+            schema_version: "p3544.crew-mutation-publication.v1";
+            /** Mutation Id */
+            mutation_id: string;
+            /** Request Sha256 */
+            request_sha256: string;
+            /** Action */
+            action: string;
+            /** Case Id */
+            case_id: string;
+            /** Case Revision */
+            case_revision: number;
+            /** Case Sha256 */
+            case_sha256: string;
+            /** Previous Case Sha256 */
+            previous_case_sha256?: string | null;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /** Receipt Sha256 */
+            receipt_sha256: string;
+            /**
+             * Authority
+             * @default durability_receipt_only
+             * @constant
+             */
+            authority: "durability_receipt_only";
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
         };
         /** CrewChiefObjectiveEnvelopeArtifact */
         CrewChiefObjectiveEnvelopeArtifact: {
@@ -4946,6 +5042,7 @@ export interface components {
             folded_state?: components["schemas"]["FoldedInvestigationState"] | null;
             evidence_index: components["schemas"]["EngineeringEvidenceIndex"];
             engineering_case: components["schemas"]["CanonicalEngineeringCase"];
+            mutation_receipt?: components["schemas"]["CrewChiefMutationPublicationReceipt"] | null;
             /** Available Tools */
             available_tools: components["schemas"]["CrewChiefToolDefinition"][];
             /**
@@ -5021,6 +5118,11 @@ export interface components {
             session_id: string;
             /** Selected Scope Hash */
             selected_scope_hash: string;
+            /**
+             * Selected Run Ids
+             * @default []
+             */
+            selected_run_ids: string[];
             /** Reasoning Snapshot Sha256 */
             reasoning_snapshot_sha256: string;
             /** P20 State Revision */
@@ -5762,6 +5864,8 @@ export interface components {
             session_id: string;
             /** Expected Workspace Revision */
             expected_workspace_revision: string;
+            /** Expected Case Sha256 */
+            expected_case_sha256: string;
             /** Answer */
             answer: string;
         };
@@ -7286,6 +7390,35 @@ export interface components {
             version: string;
             /** Instance Id */
             instance_id?: string | null;
+        };
+        /** HealthUnavailableResponse */
+        HealthUnavailableResponse: {
+            /**
+             * Status
+             * @default unavailable
+             * @constant
+             */
+            status: "unavailable";
+            /**
+             * App
+             * @default RacerZLab
+             * @constant
+             */
+            app: "RacerZLab";
+            /** Version */
+            version: string;
+            /** Instance Id */
+            instance_id?: string | null;
+            /**
+             * Readiness Code
+             * @enum {string}
+             */
+            readiness_code: "database_unavailable" | "data_storage_unavailable";
+            /**
+             * Recovery Code
+             * @enum {string}
+             */
+            recovery_code: "restart_or_restore_local_storage" | "free_space_or_restore_local_storage";
         };
         /** HiddenEvidenceSummary */
         HiddenEvidenceSummary: {
@@ -10004,6 +10137,8 @@ export interface components {
             session_id: string;
             /** Expected Workspace Revision */
             expected_workspace_revision: string;
+            /** Expected Case Sha256 */
+            expected_case_sha256: string;
             objective: components["schemas"]["EngineeringObjective"];
         };
         /** ObservationCitation */
@@ -10048,6 +10183,8 @@ export interface components {
             driver_report: string;
             /** Expected Workspace Revision */
             expected_workspace_revision: string;
+            /** Expected Case Sha256 */
+            expected_case_sha256: string;
             /** @default race_long_run */
             objective: components["schemas"]["EngineeringObjective"];
             /**
@@ -12578,6 +12715,8 @@ export interface components {
             session_id: string;
             /** Stale Workspace Revision */
             stale_workspace_revision: string;
+            /** Expected Case Sha256 */
+            expected_case_sha256: string;
         };
         /** RecurringProblemMatch */
         RecurringProblemMatch: {
@@ -12852,6 +12991,8 @@ export interface components {
             session_id: string;
             /** Expected Workspace Revision */
             expected_workspace_revision: string;
+            /** Expected Case Sha256 */
+            expected_case_sha256: string;
         };
         /** RunEvidenceGroup */
         RunEvidenceGroup: {
@@ -15963,6 +16104,15 @@ export interface components {
              */
             source: "verified_telemetry_artifact";
         };
+        /** WorkflowCaseMutationRequest */
+        WorkflowCaseMutationRequest: {
+            /** Case Run Id */
+            case_run_id: string;
+            /** Session Id */
+            session_id: string;
+            /** Expected Case Sha256 */
+            expected_case_sha256: string;
+        };
         /** WorkflowReportResponse */
         WorkflowReportResponse: {
             /** Workflow Id */
@@ -15972,6 +16122,12 @@ export interface components {
         };
         /** WorkflowStageRequest */
         WorkflowStageRequest: {
+            /** Case Run Id */
+            case_run_id: string;
+            /** Session Id */
+            session_id: string;
+            /** Expected Case Sha256 */
+            expected_case_sha256: string;
             /** Run Id */
             run_id: string;
         };
@@ -16039,6 +16195,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+            /** @description Configured local storage is not ready. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthUnavailableResponse"];
                 };
             };
         };
@@ -17491,7 +17656,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowCaseMutationRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -17499,7 +17668,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ControlledWorkflow"];
+                    "application/json": components["schemas"]["ControlledWorkflowCaseMutationResponse"];
                 };
             };
             /** @description Validation Error */
@@ -17566,7 +17735,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ControlledWorkflow"];
+                    "application/json": components["schemas"]["ControlledWorkflowCaseMutationResponse"];
                 };
             };
             /** @description Validation Error */
@@ -17622,7 +17791,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowCaseMutationRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -17630,7 +17803,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ControlledWorkflow"];
+                    "application/json": components["schemas"]["ControlledWorkflowCaseMutationResponse"];
                 };
             };
             /** @description Validation Error */
@@ -17648,7 +17821,7 @@ export interface operations {
         parameters: {
             query: {
                 session_id: string;
-                objective?: components["schemas"]["EngineeringObjective"];
+                objective?: components["schemas"]["EngineeringObjective"] | null;
                 expected_case_sha256?: string | null;
             };
             header?: never;

@@ -19,8 +19,9 @@ def test_platform_broadcasts_diagnostic_scope_and_withheld_setup_authority() -> 
     assert "This is a diagnostic finding, not an authorized setup target." in platform
     assert "No setup change is authorized from this Platform state." in platform
     assert "No setup target is authorized by this event." in platform
-    assert "const platformBroadcastNext" in platform
-    assert "<strong>What next:</strong> {platformBroadcastNext}" in platform
+    assert "platformBroadcastNext" not in platform
+    assert "<strong>What next:</strong>" not in platform
+    assert 'aria-label="Platform evidence status and supporting views"' in platform
     assert "<strong>Next action:</strong>" not in platform
     assert "<strong>Recommended:</strong>" not in platform
     assert 'selection.selectedMode === "learning"' in platform
@@ -49,9 +50,9 @@ def test_platform_handoffs_preserve_exact_evidence_without_inventing_setup_links
     assert "lapPct" in engineer_handoff
     assert '}, "engineer");' in engineer_handoff
 
-    assert "Inspect setup" in platform
-    assert "Ask Engineer" in platform
-    assert "Show on map" in platform
+    assert "Inspect setup evidence" in platform
+    assert "Open Engineer evidence" in platform
+    assert "Show evidence on map" in platform
 
 
 def test_platform_trace_failure_states_broadcast_no_call_and_recovery() -> None:

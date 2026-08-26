@@ -87,7 +87,8 @@ def _identity() -> CrewChiefWorkspaceIdentity:
     return CrewChiefWorkspaceIdentity(
         run_id="run-1",
         session_id="session-1",
-        selected_scope_hash="1" * 64,
+        selected_scope_hash=canonical_json_sha256(("run-1",)),
+        selected_run_ids=("run-1",),
         reasoning_snapshot_sha256="2" * 64,
         p20_state_revision="3" * 64,
         p20_profile_hash="4" * 64,
@@ -641,6 +642,12 @@ def test_terminal_lifecycle_uses_only_the_atomic_event_and_experience_path(
             assert investigation_id == investigation.investigation_id
             return (prior_event,)
 
+        def mutation_receipt(self, *_args, **_kwargs):
+            return None
+
+        def record_continue_action_in_transaction(self, *_args) -> None:
+            return None
+
         def append_event(self, _event) -> None:
             pytest.fail(
                 "terminal events must not be appended outside the P33 transaction"
@@ -684,6 +691,10 @@ def test_terminal_lifecycle_uses_only_the_atomic_event_and_experience_path(
     monkeypatch.setattr(
         "racelab_engine.services.crew_chief_service.clear_learning_cache",
         lambda: cache_clears.append(True),
+    )
+    monkeypatch.setattr(
+        "racelab_engine.services.crew_chief_service._commit_crew_case_mutation",
+        lambda **values: (values["apply"](object()), current)[1],
     )
 
     result = continue_investigation(
@@ -741,6 +752,18 @@ def test_continue_emits_one_atomic_tool_request_and_completion_pair(
         def append_events(self, events) -> None:
             captured["events"] = events
 
+        def mutation_receipt(self, *_args, **_kwargs):
+            return None
+
+        def record_continue_action_in_transaction(self, *_args) -> None:
+            return None
+
+        def validate_inspection_trace(self, events) -> None:
+            captured["validated_events"] = events
+
+        def append_events_in_transaction(self, _connection, events) -> None:
+            captured["events"] = events
+
     monkeypatch.setattr(
         "racelab_engine.services.crew_chief_service.build_crew_chief_workspace",
         lambda *_args, **_kwargs: current,
@@ -755,6 +778,10 @@ def test_continue_emits_one_atomic_tool_request_and_completion_pair(
             SimpleNamespace(artifact_id="track-demand-artifact", component_ids=()),
         ),
     )
+    monkeypatch.setattr(
+        "racelab_engine.services.crew_chief_service._commit_crew_case_mutation",
+        lambda **values: (values["apply"](object()), current)[1],
+    )
 
     result = continue_investigation(
         identity.run_id,
@@ -764,7 +791,7 @@ def test_continue_emits_one_atomic_tool_request_and_completion_pair(
         db_path=tmp_path / "tool-pair.sqlite",
     )
 
-    invocation, tool_result = captured["events"]
+    invocation, tool_result, subgoal_event, critique_event = captured["events"]
     assert (invocation.sequence, tool_result.sequence) == (5, 6)
     assert invocation.event_type == "tool_invoked"
     assert invocation.payload.requested_measurement_ids == ("inspect_track_demand",)
@@ -773,6 +800,8 @@ def test_continue_emits_one_atomic_tool_request_and_completion_pair(
     assert tool_result.payload.requested_measurement_ids == ()
     assert tool_result.payload.completed_measurement_ids == ("inspect_track_demand",)
     assert invocation.workspace_revision == tool_result.workspace_revision
+    assert subgoal_event.event_type == "subgoal_completed"
+    assert critique_event.event_type == "critique_completed"
     assert result is current
 
 
@@ -812,6 +841,12 @@ def test_terminal_measurement_decision_requests_the_exact_p19_contract(
         def list_events(self, _investigation_id: str):
             return ()
 
+        def mutation_receipt(self, *_args, **_kwargs):
+            return None
+
+        def record_continue_action_in_transaction(self, *_args) -> None:
+            return None
+
         def append_terminal_event_and_experience(
             self, event, experience, **_capture
         ):
@@ -842,6 +877,10 @@ def test_terminal_measurement_decision_requests_the_exact_p19_contract(
     monkeypatch.setattr(
         "racelab_engine.services.crew_chief_service.clear_learning_cache",
         lambda: None,
+    )
+    monkeypatch.setattr(
+        "racelab_engine.services.crew_chief_service._commit_crew_case_mutation",
+        lambda **values: (values["apply"](object()), current)[1],
     )
 
     result = continue_investigation(
@@ -3187,7 +3226,11 @@ def test_rebase_rejects_a_foreign_stale_revision(monkeypatch, tmp_path) -> None:
     [
         (
             RevisionRequest,
-            {"session_id": "session-1", "expected_workspace_revision": "8" * 64},
+            {
+                "session_id": "session-1",
+                "expected_workspace_revision": "8" * 64,
+                "expected_case_sha256": "9" * 64,
+            },
         ),
         (
             OpenInvestigationRequest,
@@ -3195,6 +3238,7 @@ def test_rebase_rejects_a_foreign_stale_revision(monkeypatch, tmp_path) -> None:
                 "session_id": "session-1",
                 "driver_report": "Loose on entry.",
                 "expected_workspace_revision": "8" * 64,
+                "expected_case_sha256": "9" * 64,
             },
         ),
     ],

@@ -22,7 +22,8 @@ def test_overview_broadcast_uses_one_fail_closed_decision_contract_in_both_modes
     assert "const broadcastWarning = blockingOverviewBlockers[0]?.message ?? overview.warnings[0] ?? null;" in source
     assert "const topObservedEvent = useMemo" in source
     assert "Evidence only - this signal does not authorize a setup call." in source
-    assert "Only the current P19 report can authorize one controlled setup test." in source
+    assert 'aria-label="Overview evidence status"' in source
+    assert "<strong>What next:</strong>" not in source
     assert 'l.lap_type === "timed" || l.lap_type === "flying"' in source
     assert source.count("{decisionBroadcast}") == 2
 
@@ -82,3 +83,5 @@ def test_laps_broadcast_hands_only_qualified_exact_scope_to_other_tabs() -> None
     assert 'selection.selectedMode === "learning"' in source
     assert ': "Current run"' in source
     assert 'disabled={!paceDecisionWindow && !paceDecisionLap}' in source
+    assert 'aria-label="Laps pace evidence status"' in source
+    assert "<strong>What next:</strong>" not in source

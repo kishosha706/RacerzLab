@@ -2557,8 +2557,9 @@ td {
   color: var(--muted);
 }
 
-.selector-group { display: flex; flex-direction: column; gap: 4px; }
-.selector-group label { font-size: 0.7rem; color: var(--muted); font-weight: 600; text-transform: uppercase; }
+.selector-group { display: flex; flex-direction: column; gap: 4px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.selector-group > label,
+.selector-group > legend { padding: 0; font-size: 0.7rem; color: var(--muted); font-weight: 600; text-transform: uppercase; }
 .selector-group select, .selector-group input {
   background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
   color: var(--text); padding: 4px 8px; font-size: 0.8rem;
@@ -3579,6 +3580,10 @@ td {
   gap: 8px;
 }
 
+.engineering-mission-strip[data-mode="race"] .engineering-mission-fields {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .engineering-mission-fields article {
   display: grid;
   align-content: start;
@@ -3631,6 +3636,11 @@ td {
   font-weight: 800;
 }
 
+.engineering-scope-stack button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .engineering-mission-strip.loading,
 .engineering-mission-strip.error {
   grid-template-columns: minmax(0, 1fr) auto;
@@ -3664,6 +3674,11 @@ td {
   background: rgba(56, 189, 248, 0.08);
   outline: 1px solid rgba(56, 189, 248, 0.42);
   outline-offset: -1px;
+}
+
+.gr-row.is-selectable.active {
+  background: rgba(56, 189, 248, 0.14);
+  box-shadow: inset 3px 0 0 #38bdf8;
 }
 
 .engineer-learning-section-nav {
@@ -3716,8 +3731,8 @@ td {
     grid-template-columns: 1fr 1fr;
   }
 
-  .engineering-mission-fields article:nth-child(3),
-  .engineering-mission-fields article:nth-child(4) {
+  .engineering-mission-strip[data-mode="learning"] .engineering-mission-fields article:nth-child(3),
+  .engineering-mission-strip[data-mode="learning"] .engineering-mission-fields article:nth-child(4) {
     display: none;
   }
 
@@ -5891,6 +5906,7 @@ td {
 }
 
 .engineer-workspace-header,
+.engineer-focused-context,
 .engineer-briefing,
 .engineer-quality-card,
 .engineer-measurement-card,
@@ -5933,6 +5949,47 @@ td {
   margin: 5px 0 0;
   color: #94a3b8;
   font-size: 12px;
+}
+
+.engineer-focused-context {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border-color: rgba(56, 189, 248, 0.3);
+  background: rgba(14, 116, 144, 0.08);
+}
+
+.engineer-focused-context > span {
+  color: #7dd3fc;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.engineer-focused-context > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #e2e8f0;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.engineer-focused-context > small {
+  color: #94a3b8;
+  font-size: 11px;
+  text-align: right;
+}
+
+@media (max-width: 760px) {
+  .engineer-focused-context {
+    grid-template-columns: 1fr;
+  }
+
+  .engineer-focused-context > small { text-align: left; }
 }
 
 .engineer-header-badges {
@@ -12981,38 +13038,41 @@ button:focus:not(:focus-visible) {
 
   /* Narrow shell: keep unresolved evidence visible without consuming the workspace. */
   .cockpit-body[data-priority-rail-layout="overlay"] {
-    position: relative;
     isolation: isolate;
   }
 
   .priority-modal-backdrop {
-    position: absolute;
-    z-index: 29;
+    position: fixed;
+    z-index: 9998;
     inset: 0;
-    width: 100%;
-    height: 100%;
+    width: 100vw;
+    height: 100dvh;
     padding: 0;
     border: 0;
     background: rgba(0, 0, 0, 0.66);
   }
 
-  .cockpit-body[data-priority-rail-layout="overlay"] > .priority-rail {
-    position: absolute;
-    z-index: 30;
+  .cockpit-body[data-priority-rail-layout="overlay"] > .priority-rail[role="dialog"] {
+    position: fixed;
+    z-index: 9999;
     top: 0;
     bottom: 0;
-    left: 52px;
-    width: min(280px, calc(100vw - 110px));
+    left: 0;
+    width: min(320px, calc(100vw - 40px));
     min-width: 0;
-    max-width: calc(100vw - 110px);
+    max-width: calc(100vw - 40px);
+    height: 100dvh;
     border: 1px solid rgba(148, 163, 184, 0.2);
-    border-top: 0;
+    border-block: 0;
     box-shadow: 18px 0 34px rgba(0, 0, 0, 0.42);
   }
 
   .cockpit-body[data-priority-rail-layout="overlay"] > .priority-rail.collapsed {
+    position: absolute;
+    z-index: 30;
     top: 8px;
     bottom: auto;
+    left: 52px;
     width: 38px;
     min-width: 38px;
     height: 38px;
@@ -15793,19 +15853,9 @@ button:focus:not(:focus-visible) {
 .crew-chief-race-brief p, .crew-chief-learning section, .crew-chief-exact-test { padding: 0.7rem; border: 1px solid var(--border); border-radius: 8px; }
 .crew-chief-race-brief b { display: block; color: var(--accent); font-size: 0.7rem; letter-spacing: 0.08em; }
 .speed-story p { min-height: 4.25rem; }
-.speed-story .speed-story-next {
-  grid-column: 1 / -1;
-  min-height: 0;
-  padding: 0.9rem 1rem;
-  border-color: color-mix(in srgb, var(--accent) 72%, var(--border));
-  background: color-mix(in srgb, var(--panel) 74%, var(--accent));
-  font-size: 1rem;
-  line-height: 1.45;
-}
-.speed-story .speed-story-next b { margin-bottom: 0.25rem; font-size: 0.78rem; }
 .speed-story .speed-story-contradiction { border-color: color-mix(in srgb, var(--danger) 52%, var(--border)); }
-.crew-chief-deck[data-mode="race"] .crew-chief-race-brief { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.crew-chief-deck[data-mode="race"] .speed-story p:not(.speed-story-next) { min-height: 0; }
+.crew-chief-deck[data-mode="race"] .crew-chief-race-brief { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.crew-chief-deck[data-mode="race"] .speed-story p { min-height: 0; }
 .crew-chief-race-secondary {
   display: grid;
   grid-template-columns: minmax(12rem, 0.45fr) minmax(0, 1fr);
@@ -16845,7 +16895,6 @@ button:focus:not(:focus-visible) {
 .engineer-briefing p,
 .engineer-decision-action strong,
 .crew-chief-deck > header,
-.crew-chief-deck .speed-story-next,
 .dialin-panel p,
 .garage-board .gr-row .gr-value,
 .garage-board .gr-row .gr-label {

@@ -555,7 +555,7 @@ export function VehicleDynamicsBlackboard({
       </article>
 
       <article className="vehicle-dynamics-evidence-card" data-evidence-role="discriminator">
-        <h4>Next bounded inspection</h4>
+        <h4>Bounded inspection evidence</h4>
         <p>{discriminator?.summary
           ?? (assessment.next_discriminator_contract_id === null
             ? "No candidate-owned discriminator is available."
@@ -588,7 +588,7 @@ export function VehicleDynamicsBlackboard({
       </article>
 
       <article className="vehicle-dynamics-next">
-        <h4>NEXT · P19</h4>
+        <h4>P19 MISSION EVIDENCE</h4>
         <p>{p19Next}</p>
         <small>P19 remains the sole terminal cause, test, and setup authority.</small>
       </article>

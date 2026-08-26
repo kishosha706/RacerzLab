@@ -169,7 +169,8 @@ def _fixture_workspace_identity(
     return CrewChiefWorkspaceIdentity(
         run_id="run-1",
         session_id="session-1",
-        selected_scope_hash="1" * 64,
+        selected_scope_hash=canonical_json_sha256(("run-1",)),
+        selected_run_ids=("run-1",),
         reasoning_snapshot_sha256=p19_sha256,
         p20_state_revision=p20_sha256,
         p20_profile_hash=None,

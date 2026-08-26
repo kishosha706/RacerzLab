@@ -305,10 +305,11 @@ def test_p35_blackboard_is_learning_only_complete_and_noncausal() -> None:
         "Component families",
         "Strongest support",
         "Strongest contradiction",
-        "Next bounded inspection",
+        "Bounded inspection evidence",
     ):
         assert heading in component
-    assert "NEXT" in component and "P19" in component
+    assert "P19 MISSION EVIDENCE" in component
+    assert "NEXT · P19" not in component
     assert "zero component causal claims" in component
     assert "no setup authority" in component
     assert "onFocusEvidence(entry)" in component

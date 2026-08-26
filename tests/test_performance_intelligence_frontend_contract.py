@@ -20,7 +20,6 @@ def test_speed_story_is_one_race_mode_brief_and_learning_exposes_full_chain() ->
         "SYSTEMS",
         "MEMORY",
         "STRONGEST CONTRADICTION",
-        "NEXT · P19",
     ):
         assert label in deck
     for learning_surface in (
@@ -35,7 +34,7 @@ def test_speed_story_is_one_race_mode_brief_and_learning_exposes_full_chain() ->
     ):
         assert learning_surface in deck
     assert "onFocusEvidence(evidence)" in deck
-    assert deck.index("NEXT · P19") < deck.index("OBSERVED")
+    assert "NEXT · P19" not in deck
 
 
 def test_client_requires_atomic_p32_identity_and_rejects_authority_smuggling() -> None:

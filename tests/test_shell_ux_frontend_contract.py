@@ -138,12 +138,21 @@ def test_controlled_workflow_shell_uses_exact_scope_and_withholds_ambiguous_cata
     assert "workflow.stage_run_ids.B != null && workflow.stage_run_ids.A == null" in ribbon
     assert "workflow.stage_run_ids.A2 != null && workflow.stage_run_ids.B == null" in ribbon
     for copy in (
+        "Baseline A pending",
+        "Changed run B pending",
+        "Restore run A2 pending",
+        "Scoring pending",
+        "Review workflow evidence",
+    ):
+        assert copy in ribbon
+    for competing_command in (
         "Record baseline A",
         "Record changed run B",
         "Restore and record A2",
         "Score the controlled test",
+        "Now:",
     ):
-        assert copy in ribbon
+        assert competing_command not in ribbon
     assert ribbon.count("<button") == 1
 
 
@@ -186,10 +195,17 @@ def test_narrow_priority_rail_is_an_overlay_instead_of_a_workspace_sibling() -> 
 
     assert 'data-priority-rail-layout={priorityRailUsesOverlay ? "overlay" : "inline"}' in app
     assert 'data-priority-rail-state={priorityRailExpanded ? "expanded" : "collapsed"}' in app
-    assert '.cockpit-body[data-priority-rail-layout="overlay"] > .priority-rail' in mobile
+    assert '.cockpit-body[data-priority-rail-layout="overlay"] > .priority-rail[role="dialog"]' in mobile
+    assert "position: fixed" in mobile
+    assert "height: 100dvh" in mobile
+    assert "width: min(320px, calc(100vw - 40px))" in mobile
+    assert "z-index: 9999" in mobile
+    assert ".priority-modal-backdrop" in mobile
+    assert "inset: 0" in mobile
+    assert "z-index: 9998" in mobile
+    assert '.cockpit-body[data-priority-rail-layout="overlay"] > .priority-rail.collapsed' in mobile
     assert "position: absolute" in mobile
     assert "left: 52px" in mobile
-    assert "width: min(280px, calc(100vw - 110px))" in mobile
     assert "z-index: 30" in mobile
     assert '.priority-rail.collapsed {' in mobile
     assert "width: 38px" in mobile
@@ -198,13 +214,17 @@ def test_narrow_priority_rail_is_an_overlay_instead_of_a_workspace_sibling() -> 
 def test_narrow_priority_rail_keeps_an_accessible_attention_trigger_and_focus_return() -> None:
     app = _read("ui/src/App.tsx")
     styles = _read("ui/src/styles.css")
+    isolation = _read("ui/src/utils/modalIsolation.ts")
 
     assert "Priority evidence needs attention; expand Priority Rail" in app
     assert "priorityRailTriggerRef" in app
     assert "priorityRailTriggerRef.current?.focus()" in app
     assert 'event.key === "Escape"' in app
     assert 'event.key !== "Tab"' in app
-    assert 'element.setAttribute("inert", "")' in app
+    assert "isolateCockpitForPriorityModal(shell)" in app
+    assert 'element.setAttribute("inert", "")' in isolation
+    assert 'element.setAttribute("aria-hidden", "true")' in isolation
+    assert "new MutationObserver(scan)" in isolation
     assert "closePriorityRail();" in app
     assert "'.cockpit-body > .priority-rail[role=\"dialog\"]'" in app
     assert '<AlertTriangle size={16} aria-hidden="true" />' in app
@@ -322,7 +342,7 @@ def test_premium_shell_preserves_fast_scan_keyboard_and_reduced_motion_contracts
     assert '<h1 className="shell-workspace-name">{currentWorkspaceLabel}</h1>' in app
     engineer = _read("ui/src/tabs/EngineerTab.tsx")
     assert "<h1>" not in engineer
-    assert '<h2>{learning ? "Decision, causes, and evidence" : missionHeadline}</h2>' in engineer
+    assert '<h2>{learning ? "Evidence, causes, and context" : "Engineering evidence status"}</h2>' in engineer
     assert 'aria-label={`${currentWorkspaceLabel} status:' in app
     assert 'className="workspace-placeholder shell-workspace-loading"' in app
     assert 'aria-busy="true"' in app

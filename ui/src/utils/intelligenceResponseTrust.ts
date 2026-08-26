@@ -352,7 +352,11 @@ export function isIntelligenceShellProjection(
 
 export function isRunIntelligenceResponse(
   value: unknown,
-  expectation: { runId: string; sessionId: string | null },
+  expectation: {
+    runId: string;
+    sessionId: string | null;
+    reasoningSnapshotSha256?: string | null;
+  },
 ): value is RunIntelligenceReport {
   if (!isRecord(value) || !hasSnapshotIdentity(value) || !isRecord(value.briefing)) return false;
   const action = value.briefing.action;
@@ -360,6 +364,8 @@ export function isRunIntelligenceResponse(
     value.schema_version !== "p19.run-intelligence.v1"
     || value.run_id !== expectation.runId
     || value.session_id !== expectation.sessionId
+    || (expectation.reasoningSnapshotSha256 != null
+      && value.reasoning_snapshot_sha256 !== expectation.reasoningSnapshotSha256)
     || !isIntelligenceAction(action)
     || (action.setup_authorized && value.setup_id === null)
   ) return false;

@@ -146,8 +146,8 @@ class ControlledWorkflow(BaseModel):
                 "controlled response receipt must bind the exact scored A/B/A2 workflow"
             )
         if self.status == "scored" and self.controlled_response_receipt is None:
-            # Persisted pre-P35.4.3 workflows remain readable. New scoring paths
-            # always attach a receipt before persistence.
+            # The repository marks persisted pre-receipt workflows explicitly as
+            # ``legacy_unavailable``. Current scoring paths attach a receipt.
             pass
         if execution is not None and not complete_scope and any(
             value is not None

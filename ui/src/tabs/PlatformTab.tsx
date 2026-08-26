@@ -3369,17 +3369,6 @@ function PlatformTraceWorkbench({
           : platformEventsLoadStatus === "unavailable"
             ? "Required physical-position or platform channels are unavailable for this scope."
             : "No qualified actionable event was returned; this is not a clear-data certificate.";
-  const platformBroadcastNext = focusedPlatformEvent
-    ? "Lock the exact location and ask Engineer which measurement would separate the leading explanations."
-    : platformEventsLoadStatus === "clear"
-      ? "Hold the platform call for this lap and move to another evidence-backed priority."
-      : platformEventsLoadStatus === "loading"
-        ? "Wait for the exact-scope result before inspecting or comparing a platform signal."
-        : platformEventsLoadStatus === "error"
-          ? "Retry this exact-scope request for the same run and lap."
-          : platformEventsLoadStatus === "unavailable"
-            ? "Recover the missing telemetry, then repeat one eligible lap in the same context."
-            : "Use Learning Mode for internal/proxy evidence, or ask Engineer for the highest-value missing measurement.";
   const platformSignalSummary = focusedPlatformEvent
     ? `${focusedPlatformEvent.severity} | ${focusedPlatformEvent.confidence} confidence`
     : platformEventsLoadStatus === "clear"
@@ -3670,14 +3659,13 @@ function PlatformTraceWorkbench({
         data-state={platformDecisionState}
         data-diagnostic-state={platformDiagnosticState}
         data-authority="withheld"
-        aria-label="Platform status and exact workspace handoffs"
+        aria-label="Platform evidence status and supporting views"
         role={platformEventsLoadStatus === "error" ? "alert" : undefined}
         aria-live={platformEventsLoadStatus === "error" ? undefined : "polite"}
       >
         <div>
           <h3>{platformBroadcastHeadline}</h3>
           <p><strong>Why:</strong> {platformBroadcastWhy}</p>
-          <p><strong>What next:</strong> {platformBroadcastNext}</p>
           {selection.selectedMode === "learning" && (
             <p>
               {focusedPlatformEvent
@@ -3709,15 +3697,15 @@ function PlatformTraceWorkbench({
           )}
           {focusedPlatformEvent && (
             <button type="button" onClick={() => handleOpenSetupFromPlatformEvent(focusedPlatformEvent)}>
-              <Wrench size={14} /> Inspect setup
+              <Wrench size={14} /> Inspect setup evidence
             </button>
           )}
           <button type="button" onClick={() => handleOpenEngineerFromPlatformEvent(focusedPlatformEvent)}>
-            <BrainCircuit size={14} /> Ask Engineer
+            <BrainCircuit size={14} /> Open Engineer evidence
           </button>
           {focusedPlatformEvent && onToggleMapOverlay && (
             <button type="button" onClick={() => handleOpenMapFromPlatformEvent(focusedPlatformEvent)}>
-              <MapPin size={14} /> Show on map
+              <MapPin size={14} /> Show evidence on map
             </button>
           )}
         </div>
@@ -3826,7 +3814,7 @@ function PlatformTraceWorkbench({
         >
         <header>
           <div>
-            <span className="eyebrow">Decision first</span>
+            <span className="eyebrow">Platform evidence</span>
             <h3 id="platform-decision-title">
               {selectedVisiblePlatformEvent ? "Selected platform evidence" : "Highest-priority platform evidence"}
             </h3>
@@ -3888,7 +3876,7 @@ function PlatformTraceWorkbench({
                 {` · ${platformEventScopeLabel(focusedPlatformEvent)}`}
               </span>
               {focusedPlatformEvent.evidence[0] && <p>{focusedPlatformEvent.evidence[0]}</p>}
-              <p className="proxy-note">No setup target is authorized by this event. Use Dial-In to verify one legal change before testing.</p>
+              <p className="proxy-note">No setup target is authorized by this event. Verification of one legal change belongs in Dial-In.</p>
               {focusedPlatformEvent.is_proxy_based && (
                 <p className="proxy-note">Proxy evidence only. It does not measure aerodynamic force.</p>
               )}
@@ -3920,7 +3908,7 @@ function PlatformTraceWorkbench({
                 <Wrench size={14} /> Inspect linked controls
               </button>
               <button type="button" className="secondary-button" onClick={() => handleOpenEngineerFromPlatformEvent(focusedPlatformEvent)}>
-                <BrainCircuit size={14} /> Explain evidence
+                <BrainCircuit size={14} /> Open Engineer evidence
               </button>
             </div>
           </div>

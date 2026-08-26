@@ -10,10 +10,11 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from threading import RLock
 from time import perf_counter
 from types import SimpleNamespace
-from typing import Iterable, Literal
+from typing import Any, Callable, Iterable, Literal
 
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.crew_chief import (
@@ -27,6 +28,7 @@ from racelab_engine.models.crew_chief import (
     CrewChiefExitCarryArtifact,
     CrewChiefInvestigation,
     CrewChiefLapTimeOpportunityArtifact,
+    CrewChiefMutationPublicationReceipt,
     CrewChiefObjectiveEnvelopeArtifact,
     CrewChiefPathEfficiencyArtifact,
     CrewChiefProspectiveConsumption,
@@ -175,6 +177,7 @@ from racelab_engine.services.engineering_case_service import (
     build_evidence_deficits,
     build_response_expectation_contracts,
     build_setup_effect_readiness,
+    engineering_case_projection_revision_sha256,
     engineering_case_id,
 )
 from racelab_engine.services.p19_response_admission_service import (
@@ -517,7 +520,7 @@ def _mechanisms(values: Iterable[str]) -> tuple[MechanismKind, ...]:
     return tuple(resolved)
 
 
-def _active_workflow_identity(
+def _active_workflow_public_reference(
     bundle: RunIntelligenceBundle,
 ) -> tuple[str | None, str | None]:
     move = (
@@ -528,6 +531,35 @@ def _active_workflow_identity(
     if move is None or move.workflow_id is None or move.workflow_updated_at is None:
         return None, None
     return move.workflow_id, move.workflow_updated_at.isoformat()
+
+
+def _active_workflow_identity(
+    bundle: RunIntelligenceBundle,
+    workflow: ControlledWorkflow | None,
+) -> tuple[str | None, str | None]:
+    """Bind Crew identity to the complete durable workflow, not a timestamp hint."""
+
+    workflow_id, public_updated_at = _active_workflow_public_reference(bundle)
+    if workflow_id is None:
+        if workflow is not None:
+            raise ValueError(
+                "Crew Chief workflow catalog and public guidance disagree."
+            )
+        return None, None
+    if (
+        workflow is None
+        or workflow.workflow_id != workflow_id
+        or workflow.updated_at.isoformat() != public_updated_at
+    ):
+        raise ValueError(
+            "Crew Chief workflow catalog and public guidance disagree."
+        )
+    return workflow_id, canonical_json_sha256(
+        {
+            "schema": "controlled-workflow-revision.v2",
+            "workflow": workflow.model_dump(mode="json"),
+        }
+    )
 
 
 def _workspace_identity(
@@ -545,6 +577,7 @@ def _workspace_identity(
     learning_prior: CrewChiefLearningPrior,
     learning_ledger_head_sha256: str | None,
     run_sentinel: RunSentinelState,
+    active_workflow: ControlledWorkflow | None,
 ) -> CrewChiefWorkspaceIdentity:
     report = bundle.report
     setup_id = getattr(p26, "setup_id", None)
@@ -556,9 +589,18 @@ def _workspace_identity(
         runtime_identity = VehicleSystemsRuntimeIdentity.model_validate(
             raw_runtime_identity
         )
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
+        if not (
+            isinstance(raw_runtime_identity, dict)
+            and raw_runtime_identity.get("state") == "unavailable"
+        ):
+            raise ValueError(
+                "Crew Chief vehicle runtime identity payload is invalid."
+            ) from exc
         runtime_identity = None
-    workflow_id, workflow_revision = _active_workflow_identity(bundle)
+    workflow_id, workflow_revision = _active_workflow_identity(
+        bundle, active_workflow
+    )
     p20_projection_sha256 = engineering_awareness_scientific_sha256(p20)
     base = {
         "run_id": report.run_id,
@@ -590,6 +632,7 @@ def _workspace_identity(
         run_id=report.run_id,
         session_id=session_id,
         selected_scope_hash=canonical_json_sha256(scope_run_ids),
+        selected_run_ids=scope_run_ids,
         reasoning_snapshot_sha256=base["p19"],
         p20_state_revision=base["p20"],
         p20_profile_hash=base["p20_profile"],
@@ -2455,22 +2498,30 @@ def _memory_record_times(
     }
 
 
-def _usable_response_relations(
+def _usable_response_artifact_ids(
     engineering_case: CanonicalEngineeringCase,
 ) -> frozenset[str]:
-    """Only decisive exact-contract evaluations may satisfy Crew inspection debt."""
+    """Return only artifacts admitted by P19 with a decisive exact evaluation."""
 
     admitted_artifact_ids = {
         item.response_artifact_id
         for item in engineering_case.p19_response_admissions
         if item.state == "admitted"
     }
-    usable_artifact_ids = {
+    return frozenset(
         item.response_artifact_id
         for item in engineering_case.response_expectation_evaluations
         if item.result in {"matched", "contradicted"}
         and item.response_artifact_id in admitted_artifact_ids
-    }
+    )
+
+
+def _usable_response_relations(
+    engineering_case: CanonicalEngineeringCase,
+) -> frozenset[str]:
+    """Only decisive exact-contract evaluations may satisfy Crew inspection debt."""
+
+    usable_artifact_ids = _usable_response_artifact_ids(engineering_case)
     return frozenset(
         item.relation
         for item in engineering_case.response_artifacts
@@ -2485,7 +2536,7 @@ def _inspection_evidence_qualifications(
         compile_engineering_semantic_registry,
     )
 
-    usable_relations = _usable_response_relations(engineering_case)
+    usable_artifact_ids = _usable_response_artifact_ids(engineering_case)
     artifacts_by_relation: dict[str, tuple[str, ...]] = {}
     for artifact in engineering_case.response_artifacts:
         artifacts_by_relation.setdefault(artifact.relation, ())
@@ -2522,8 +2573,8 @@ def _inspection_evidence_qualifications(
         accepted = tuple(
             artifact_id
             for relation in requirements
-            if relation in usable_relations
             for artifact_id in artifacts_by_relation.get(relation, ())
+            if artifact_id in usable_artifact_ids
         )
         rejected = tuple(
             item for item in related_artifacts if item not in set(accepted)
@@ -4429,7 +4480,7 @@ def _sentinel(
         else tuple(plan.blocker_reasons) or (plan.instruction,)
     )
     preflight = report.smart_guidance.test_preflight if report.smart_guidance else None
-    if _active_workflow_identity(bundle)[0] is not None:
+    if _active_workflow_public_reference(bundle)[0] is not None:
         move = (
             report.smart_guidance.next_trustworthy_move
             if report.smart_guidance
@@ -4991,7 +5042,7 @@ def build_crew_chief_workspace(
             f"{exc}"
         )
     repository = CrewChiefRepository(db_path)
-    active_workflow_id, _ = _active_workflow_identity(bundle)
+    active_workflow_id, _ = _active_workflow_public_reference(bundle)
     try:
         active_workflow = (
             storage_repository.get_controlled_workflow(active_workflow_id)
@@ -5004,6 +5055,7 @@ def build_crew_chief_workspace(
         ) from exc
     if active_workflow_id is not None and active_workflow is None:
         raise ValueError("Crew Chief active workflow identity is missing.")
+    _active_workflow_identity(bundle, active_workflow)
     investigation = (
         repository.get_investigation(investigation_id)
         if investigation_id
@@ -5029,8 +5081,25 @@ def build_crew_chief_workspace(
         if investigation
         else None
     )
+    case_repository = EngineeringCaseRepository(db_path)
+    stable_case_id = engineering_case_id(run_id=run_id, session_id=session_id)
+    driver_intent = case_repository.current_driver_intent(stable_case_id)
     if folded is not None:
         objective = folded.objective
+        if (
+            driver_intent is not None
+            and driver_intent.objective != objective.value
+        ):
+            raise ValueError(
+                "Crew Chief objective and DriverIntent ledger disagree."
+            )
+    elif driver_intent is not None:
+        try:
+            objective = EngineeringObjective(driver_intent.objective)
+        except ValueError as exc:
+            raise ValueError(
+                "Crew Chief DriverIntent objective is not supported."
+            ) from exc
     p32 = build_performance_intelligence(
         run_id,
         session_id=session_id,
@@ -5189,6 +5258,7 @@ def build_crew_chief_workspace(
         learning_prior=learning_prior,
         learning_ledger_head_sha256=learning_ledger_head_sha256,
         run_sentinel=run_sentinel,
+        active_workflow=active_workflow,
     )
     stale_reasons = _authority_stale_reasons(investigation, events, identity)
     if folded is not None and stale_reasons:
@@ -5203,9 +5273,6 @@ def build_crew_chief_workspace(
         p34_ledger_revision = canonical_json_sha256(
             {"state": "blocked", "reason": str(exc)}
         )
-    case_repository = EngineeringCaseRepository(db_path)
-    stable_case_id = engineering_case_id(run_id=run_id, session_id=session_id)
-    driver_intent = case_repository.current_driver_intent(stable_case_id)
     cache_key = (
         *_workspace_cache_key(identity, db_path),
         p34_ledger_revision,
@@ -5464,6 +5531,120 @@ def build_crew_chief_workspace(
             else bundle.report.briefing.success_check
         ),
     )
+    case_projection_revision = engineering_case_projection_revision_sha256(
+        identity=identity,
+        recording_sha256=recording_sha256,
+        evidence_index=evidence_index,
+        p351_projection=engineering_knowledge,
+        response_artifacts=response_artifacts,
+        response_expectation_contracts=response_expectation_contracts,
+        response_expectation_evaluations=response_evaluations,
+        p19_admissions=p19_response_admissions,
+        terminal_decision=decision,
+        effect_readiness=effect_readiness,
+        evidence_deficits=evidence_deficits,
+        capability_resolutions=capability_resolutions,
+        investigation_id=(investigation.investigation_id if investigation else None),
+        mission=mission,
+        driver_intent=driver_intent,
+        crew_event_head_sha256=(events[-1].event_hash if events else None),
+        crew_current_subgoal=(
+            baseline_subgoal.subgoal_id if baseline_subgoal is not None else None
+        ),
+        crew_critic_state=critique.outcome,
+    )
+    response_artifacts = build_engineering_response_artifacts(
+        workspace_revision=case_projection_revision,
+        run_id=run_id,
+        session_id=session_id,
+        setup_id=identity.setup_id,
+        recording_sha256=recording_sha256,
+        operational_evidence=p35.operational_response_evidence,
+    )
+    evidence_index = _evidence_index(
+        bundle,
+        identity,
+        objective,
+        p26,
+        p32,
+        storage_repository,
+        learning_prior,
+        p35,
+        response_artifacts,
+    )
+    response_evaluations, p19_response_admissions = (
+        build_p19_response_evaluations_and_admissions(
+            case_id=(
+                response_artifacts[0].case_id
+                if response_artifacts
+                else engineering_case_id(run_id=run_id, session_id=session_id)
+            ),
+            case_revision_sha256=case_projection_revision,
+            p19_reasoning_snapshot_sha256=identity.reasoning_snapshot_sha256,
+            causes=bundle.report.reasoning_snapshot.causes,
+            response_artifacts=response_artifacts,
+            expectation_contracts=response_expectation_contracts,
+            driver_demand_state=(
+                response_observation.driver_demand_state
+                if response_observation is not None
+                else "unavailable"
+            ),
+            context_state=(
+                response_observation.context_state
+                if response_observation is not None
+                else "unavailable"
+            ),
+            traffic_blocked=p35.traffic_blocked,
+        )
+    )
+    effect_readiness = build_setup_effect_readiness(
+        engineering_knowledge.hypotheses,
+        response_artifacts,
+        p19_response_admissions,
+    )
+    evidence_deficits = build_evidence_deficits(
+        effect_readiness,
+        response_artifacts,
+    )
+    effect_readiness = attach_deficits_to_readiness(
+        effect_readiness, evidence_deficits
+    )
+    capability_resolutions = build_capability_resolutions(
+        evidence_deficits,
+        response_artifacts,
+    )
+    confirmed_case_projection_revision = (
+        engineering_case_projection_revision_sha256(
+            identity=identity,
+            recording_sha256=recording_sha256,
+            evidence_index=evidence_index,
+            p351_projection=engineering_knowledge,
+            response_artifacts=response_artifacts,
+            response_expectation_contracts=response_expectation_contracts,
+            response_expectation_evaluations=response_evaluations,
+            p19_admissions=p19_response_admissions,
+            terminal_decision=decision,
+            effect_readiness=effect_readiness,
+            evidence_deficits=evidence_deficits,
+            capability_resolutions=capability_resolutions,
+            investigation_id=(
+                investigation.investigation_id if investigation else None
+            ),
+            mission=mission,
+            driver_intent=driver_intent,
+            crew_event_head_sha256=(events[-1].event_hash if events else None),
+            crew_current_subgoal=(
+                baseline_subgoal.subgoal_id
+                if baseline_subgoal is not None
+                else None
+            ),
+            crew_critic_state=critique.outcome,
+        )
+    )
+    if confirmed_case_projection_revision != case_projection_revision:
+        raise ValueError(
+            "Engineering Case projection revision changed while binding its exact artifacts."
+        )
     engineering_case = build_canonical_engineering_case(
         identity=identity,
         recording_sha256=recording_sha256,
@@ -5487,6 +5668,7 @@ def build_crew_chief_workspace(
             baseline_subgoal.subgoal_id if baseline_subgoal is not None else None
         ),
         crew_critic_state=critique.outcome,
+        case_revision_sha256=case_projection_revision,
     )
     tool_eligibility = _tool_eligibility(
         folded, evidence_index, p35, engineering_knowledge, engineering_case
@@ -6089,23 +6271,350 @@ def _review_p34_terminal_capture(
         _CACHE.clear()
 
 
+def _refresh_p34_attention_after_commit(
+    workspace: CrewChiefWorkspace,
+    *,
+    db_path: str | Path | None,
+) -> None:
+    """Keep an attention-only refresh from disguising committed Crew success."""
+
+    try:
+        _freeze_p34_pair_for_workspace(workspace, db_path=db_path)
+    except Exception:
+        return
+
+
+def _assert_crew_mutation_identity(
+    current: CrewChiefWorkspace,
+    *,
+    expected_workspace_revision: str | None = None,
+    expected_case_sha256: str | None = None,
+) -> None:
+    if (
+        expected_workspace_revision is not None
+        and current.identity.workspace_revision != expected_workspace_revision
+    ):
+        raise ValueError(
+            "Crew Chief workspace revision is stale; rebase before continuing."
+        )
+    if (
+        expected_case_sha256 is not None
+        and current.engineering_case.case_sha256 != expected_case_sha256
+    ):
+        raise ValueError(
+            "Crew Chief Engineering Case revision is stale; refresh before continuing."
+        )
+
+
+def _crew_mutation_identity(action: str, request: dict[str, Any]) -> tuple[str, str]:
+    request_sha256 = canonical_json_sha256(
+        {"schema": "p3544.crew-case-mutation.v1", "action": action, **request}
+    )
+    return f"ccm_{request_sha256[:24]}", request_sha256
+
+
+def _transaction_workspace(
+    connection: sqlite3.Connection,
+    *,
+    run_id: str,
+    session_id: str,
+    investigation_id: str | None,
+    objective: EngineeringObjective,
+) -> CrewChiefWorkspace:
+    with TemporaryDirectory(prefix="racelab-crew-case-preview-") as directory:
+        preview_path = Path(directory) / "crew-case-preview.sqlite"
+        preview_path.write_bytes(connection.serialize())
+        return build_crew_chief_workspace(
+            run_id,
+            session_id=session_id,
+            objective=objective,
+            investigation_id=investigation_id,
+            db_path=preview_path,
+        )
+
+
+def _commit_crew_case_mutation(
+    *,
+    db_path: str | Path | None,
+    action: str,
+    request: dict[str, Any],
+    run_id: str,
+    session_id: str,
+    investigation_id: str | None,
+    objective: EngineeringObjective,
+    expected_workspace_revision: str,
+    expected_case_sha256: str | None,
+    apply: Callable[[sqlite3.Connection], None],
+    mutation_identity: tuple[str, str] | None = None,
+) -> CrewChiefWorkspace:
+    """Atomically publish Crew truth, its exact case revision, and replay receipt."""
+
+    mutation_id, request_sha256 = mutation_identity or _crew_mutation_identity(
+        action, request
+    )
+    crew_repository = CrewChiefRepository(db_path)
+    replay = crew_repository.mutation_receipt(
+        mutation_id, request_sha256=request_sha256
+    )
+    if replay is not None:
+        return replay
+
+    case_repository = EngineeringCaseRepository(db_path)
+    connection = initialize_database(db_path)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        replay = crew_repository.mutation_receipt_in_transaction(
+            connection, mutation_id, request_sha256=request_sha256
+        )
+        if replay is not None:
+            connection.commit()
+            return replay
+        if expected_case_sha256 is not None:
+            persisted = case_repository.current_for_scope_in_transaction(
+                connection, run_id, session_id
+            )
+            if persisted is None or persisted.case_sha256 != expected_case_sha256:
+                raise ValueError(
+                    "Crew Chief Engineering Case revision is stale; refresh before continuing."
+                )
+        apply(connection)
+        workspace = _transaction_workspace(
+            connection,
+            run_id=run_id,
+            session_id=session_id,
+            investigation_id=investigation_id,
+            objective=objective,
+        )
+        revision = case_repository.finalize_case_in_transaction(
+            connection,
+            workspace.engineering_case,
+            change_category="investigation",
+        )
+        if revision.case != workspace.engineering_case:
+            raise ValueError(
+                "Crew Chief mutation did not finalize the exact returned Engineering Case."
+            )
+        publication_receipt = CrewChiefMutationPublicationReceipt.build(
+            mutation_id=mutation_id,
+            request_sha256=request_sha256,
+            action=action,
+            case_id=revision.case_id,
+            case_revision=revision.case_revision,
+            case_sha256=revision.case_sha256,
+            previous_case_sha256=revision.previous_case_sha256,
+            published_at=revision.created_at,
+        )
+        workspace = CrewChiefWorkspace.model_validate(
+            {
+                **workspace.model_dump(mode="python"),
+                "mutation_receipt": publication_receipt,
+            }
+        )
+        crew_repository.save_mutation_receipt_in_transaction(
+            connection,
+            mutation_id=mutation_id,
+            request_sha256=request_sha256,
+            action=action,
+            expected_workspace_revision=expected_workspace_revision,
+            expected_case_sha256=expected_case_sha256,
+            workspace=workspace,
+        )
+        persisted = case_repository.current_for_scope_in_transaction(
+            connection, run_id, session_id
+        )
+        if persisted is None or persisted.case_sha256 != workspace.engineering_case.case_sha256:
+            raise ValueError(
+                "Crew Chief mutation case head does not match its response receipt."
+            )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+    with _CACHE_LOCK:
+        _CACHE.clear()
+    return workspace
+
+
+def _append_objective_intent_refinement(
+    connection: sqlite3.Connection,
+    *,
+    engineering_case: CanonicalEngineeringCase,
+    objective: EngineeringObjective,
+    source_reference: str,
+    created_at: datetime,
+) -> None:
+    """Keep objective selection and the case-bound DriverIntent ledger coherent."""
+
+    repository = EngineeringCaseRepository()
+    current = repository.current_driver_intent_in_transaction(
+        connection, engineering_case.case_id
+    )
+    if current is None or current.objective == objective.value:
+        return
+    repository.append_driver_intent_in_transaction(
+        connection,
+        case_id=current.case_id,
+        raw_driver_wording=current.raw_driver_wording,
+        canonical_symptom=current.canonical_symptom,
+        phase_scope=current.phase_scope,
+        response_regime_scope=current.response_regime_scope,
+        traffic_context=current.traffic_context,
+        stint_context=current.stint_context,
+        power_state_context=current.power_state_context,
+        time_origin_scope=current.time_origin_scope,
+        driver_demand_scope=current.driver_demand_scope,
+        objective=objective.value,
+        source="crew_question",
+        typed_interpretation_provenance=tuple(
+            dict.fromkeys(
+                (
+                    *current.typed_interpretation_provenance,
+                    "p35.4.4.crew-objective-refinement",
+                    source_reference,
+                )
+            )
+        ),
+        created_at=created_at,
+    )
+
+
+def _append_driver_answer_intent_refinement(
+    connection: sqlite3.Connection,
+    *,
+    engineering_case: CanonicalEngineeringCase,
+    investigation: CrewChiefInvestigation,
+    interpretation: DriverAnswerInterpretation,
+    source_event: CrewChiefEvent,
+) -> None:
+    """Append a context-only DriverIntent revision for a material typed answer."""
+
+    if interpretation.context_record_only:
+        return
+    repository = EngineeringCaseRepository()
+    current = repository.current_driver_intent_in_transaction(
+        connection, engineering_case.case_id
+    )
+    phase_scope = (
+        ",".join(interpretation.phase_scope)
+        if interpretation.phase_scope
+        else current.phase_scope if current is not None else None
+    )
+    response_regime_scope = (
+        interpretation.response_regime_scope[0]
+        if len(interpretation.response_regime_scope) == 1
+        else "context_only"
+        if interpretation.response_regime_scope
+        else current.response_regime_scope if current is not None else "unknown"
+    )
+    traffic_context = (
+        {
+            "disturbed_air": "exposed",
+            "clean_air": "clear",
+            "compare_air_states": "context_only",
+        }.get(interpretation.traffic_scope)
+        if interpretation.traffic_scope != "all"
+        else current.traffic_context if current is not None else "unknown"
+    )
+    stint_context = (
+        interpretation.stint_scope
+        if interpretation.stint_scope != "all"
+        else current.stint_context if current is not None else None
+    )
+    power_state_context = (
+        interpretation.power_state_scope
+        if interpretation.power_state_scope != "all"
+        else current.power_state_context if current is not None else None
+    )
+    time_origin_scope = (
+        interpretation.time_origin_scope
+        if interpretation.time_origin_scope != "all"
+        else current.time_origin_scope if current is not None else None
+    )
+    driver_demand_scope = (
+        ",".join(interpretation.driver_demand_scope)
+        if interpretation.driver_demand_scope
+        else current.driver_demand_scope if current is not None else None
+    )
+    refined = {
+        "phase_scope": phase_scope,
+        "response_regime_scope": response_regime_scope,
+        "traffic_context": traffic_context,
+        "stint_context": stint_context,
+        "power_state_context": power_state_context,
+        "time_origin_scope": time_origin_scope,
+        "driver_demand_scope": driver_demand_scope,
+    }
+    if current is not None and all(
+        getattr(current, field) == value for field, value in refined.items()
+    ):
+        return
+    repository.append_driver_intent_in_transaction(
+        connection,
+        case_id=engineering_case.case_id,
+        raw_driver_wording=(
+            current.raw_driver_wording
+            if current is not None
+            else investigation.raw_driver_report
+        ),
+        canonical_symptom=(
+            current.canonical_symptom if current is not None else None
+        ),
+        **refined,
+        objective=engineering_case.objective_id,
+        source="crew_question",
+        typed_interpretation_provenance=tuple(
+            dict.fromkeys(
+                (
+                    *(current.typed_interpretation_provenance if current else ()),
+                    "p35.4.4.crew-driver-answer-refinement",
+                    f"crew-event:{source_event.event_id}",
+                )
+            )
+        ),
+        created_at=source_event.created_at,
+    )
+
+
 def open_investigation(
     run_id: str,
     *,
     session_id: str,
     driver_report: str,
     expected_workspace_revision: str,
+    expected_case_sha256: str | None = None,
     objective: EngineeringObjective = EngineeringObjective.RACE_LONG_RUN,
     origin: str = "driver_report",
     db_path: str | Path | None = None,
 ) -> CrewChiefWorkspace:
+    normalized = " ".join(driver_report.split())
+    if not normalized:
+        raise ValueError("A driver report is required.")
+    mutation_request = {
+        "run_id": run_id,
+        "session_id": session_id,
+        "investigation_id": None,
+        "expected_workspace_revision": expected_workspace_revision,
+        "expected_case_sha256": expected_case_sha256,
+        "driver_report": normalized,
+        "objective": objective.value,
+        "origin": origin,
+    }
+    mutation_identity = _crew_mutation_identity("open", mutation_request)
+    replay = CrewChiefRepository(db_path).mutation_receipt(
+        mutation_identity[0], request_sha256=mutation_identity[1]
+    )
+    if replay is not None:
+        return replay
     current = build_crew_chief_workspace(
         run_id, session_id=session_id, objective=objective, db_path=db_path
     )
-    if current.identity.workspace_revision != expected_workspace_revision:
-        raise ValueError(
-            "Crew Chief workspace revision is stale; rebase before continuing."
-        )
+    _assert_crew_mutation_identity(
+        current,
+        expected_workspace_revision=expected_workspace_revision,
+        expected_case_sha256=expected_case_sha256,
+    )
     if (
         current.investigation
         and current.folded_state
@@ -6114,9 +6623,6 @@ def open_investigation(
         raise ValueError(
             "An open Crew Chief investigation already exists for this scope."
         )
-    normalized = " ".join(driver_report.split())
-    if not normalized:
-        raise ValueError("A driver report is required.")
     learning_inputs = _learning_inputs_for_workspace(current, db_path=db_path)
     investigation_id = f"cci_{canonical_json_sha256([run_id, session_id, normalized, current.identity.workspace_revision])[:24]}"
     opened_at = _now()
@@ -6148,47 +6654,69 @@ def open_investigation(
         ),
     )
     repository = CrewChiefRepository(db_path)
-    repository.save_investigation(investigation)
-    opened = build_crew_chief_workspace(
-        run_id,
-        session_id=session_id,
-        objective=objective,
-        investigation_id=investigation_id,
-        db_path=db_path,
-    )
-    repository.save_objective(
-        investigation_id, opened.identity.workspace_revision, objective
-    )
-    opening_events: list[CrewChiefEvent] = [
-        _event(
-            investigation_id,
-            1,
-            opened.identity.workspace_revision,
-            "problem_interpreted",
-            CrewChiefEventPayload(message=f"Driver report normalized: {normalized}"),
+    def apply(connection: sqlite3.Connection) -> None:
+        repository.save_investigation_in_transaction(connection, investigation)
+        _append_objective_intent_refinement(
+            connection,
+            engineering_case=current.engineering_case,
+            objective=objective,
+            source_reference=f"crew-investigation:{investigation_id}",
+            created_at=opened_at,
         )
-    ]
-    for sequence, cause in enumerate(investigation.opening_reasoning.causes, start=2):
-        opening_events.append(
+        opened = _transaction_workspace(
+            connection,
+            run_id=run_id,
+            session_id=session_id,
+            investigation_id=investigation_id,
+            objective=objective,
+        )
+        repository.save_objective_in_transaction(
+            connection, investigation_id, opened.identity.workspace_revision, objective
+        )
+        opening_events: list[CrewChiefEvent] = [
             _event(
                 investigation_id,
-                sequence,
+                1,
                 opened.identity.workspace_revision,
-                "hypothesis_registered",
-                CrewChiefEventPayload(
-                    message=f"Registered exact P19 hypothesis {cause.cause_id} in state {cause.status}.",
-                    cause_ids=(cause.cause_id,),
-                ),
+                "problem_interpreted",
+                CrewChiefEventPayload(message=f"Driver report normalized: {normalized}"),
             )
-        )
-    repository.append_events(tuple(opening_events))
-    updated = build_crew_chief_workspace(
-        run_id,
+        ]
+        for sequence, cause in enumerate(
+            investigation.opening_reasoning.causes, start=2
+        ):
+            opening_events.append(
+                _event(
+                    investigation_id,
+                    sequence,
+                    opened.identity.workspace_revision,
+                    "hypothesis_registered",
+                    CrewChiefEventPayload(
+                        message=(
+                            "Registered exact P19 hypothesis "
+                            f"{cause.cause_id} in state {cause.status}."
+                        ),
+                        cause_ids=(cause.cause_id,),
+                    ),
+                )
+            )
+        repository.append_events_in_transaction(connection, tuple(opening_events))
+
+    updated = _commit_crew_case_mutation(
+        db_path=db_path,
+        action="open",
+        request=mutation_request,
+        run_id=run_id,
         session_id=session_id,
         investigation_id=investigation_id,
-        db_path=db_path,
+        objective=objective,
+        expected_workspace_revision=expected_workspace_revision,
+        expected_case_sha256=expected_case_sha256,
+        apply=apply,
+        mutation_identity=mutation_identity,
     )
-    return _freeze_next_p34_pair_and_refresh(updated, db_path=db_path)
+    _refresh_p34_attention_after_commit(updated, db_path=db_path)
+    return updated
 
 
 def continue_investigation(
@@ -6197,19 +6725,39 @@ def continue_investigation(
     *,
     session_id: str,
     expected_workspace_revision: str,
+    expected_case_sha256: str | None = None,
     db_path: str | Path | None = None,
     _record_continue_action: bool = True,
+    _mutation_identity_override: tuple[str, str] | None = None,
 ) -> CrewChiefWorkspace:
+    mutation_request = {
+        "run_id": run_id,
+        "session_id": session_id,
+        "investigation_id": investigation_id,
+        "expected_workspace_revision": expected_workspace_revision,
+        "expected_case_sha256": expected_case_sha256,
+        "record_continue_action": _record_continue_action,
+    }
+    mutation_identity = (
+        _mutation_identity_override
+        or _crew_mutation_identity("continue", mutation_request)
+    )
+    replay = CrewChiefRepository(db_path).mutation_receipt(
+        mutation_identity[0], request_sha256=mutation_identity[1]
+    )
+    if replay is not None:
+        return replay
     current = build_crew_chief_workspace(
         run_id,
         session_id=session_id,
         investigation_id=investigation_id,
         db_path=db_path,
     )
-    if current.identity.workspace_revision != expected_workspace_revision:
-        raise ValueError(
-            "Crew Chief workspace revision is stale; rebase before continuing."
-        )
+    _assert_crew_mutation_identity(
+        current,
+        expected_workspace_revision=expected_workspace_revision,
+        expected_case_sha256=expected_case_sha256,
+    )
     if current.folded_state is None or current.folded_state.status != "open":
         raise ValueError("Crew Chief investigation is not open.")
     if current.folded_state.pending_driver_question_id is not None:
@@ -6218,11 +6766,36 @@ def continue_investigation(
         )
     frozen_pair = _freeze_p34_pair_for_workspace(current, db_path=db_path)
     repository = CrewChiefRepository(db_path)
-    if _record_continue_action:
-        record_action = getattr(repository, "record_continue_action", None)
-        if record_action is not None:
-            record_action(investigation_id)
     sequence = current.folded_state.last_sequence + 1
+
+    def commit_event_unit(
+        events: tuple[CrewChiefEvent, ...], *, inspection_trace: bool = False
+    ) -> CrewChiefWorkspace:
+        def apply(connection: sqlite3.Connection) -> None:
+            if _record_continue_action:
+                repository.record_continue_action_in_transaction(
+                    connection, investigation_id
+                )
+            if inspection_trace:
+                repository.validate_inspection_trace(events)
+            repository.append_events_in_transaction(connection, events)
+
+        committed = _commit_crew_case_mutation(
+            db_path=db_path,
+            action="continue",
+            request=mutation_request,
+            run_id=run_id,
+            session_id=session_id,
+            investigation_id=investigation_id,
+            objective=current.identity.objective_id,
+            expected_workspace_revision=expected_workspace_revision,
+            expected_case_sha256=expected_case_sha256,
+            apply=apply,
+            mutation_identity=mutation_identity,
+        )
+        _refresh_p34_attention_after_commit(committed, db_path=db_path)
+        return committed
+
     production_subgoal = _production_subgoal_from_pair(
         current.current_subgoal,
         current.folded_state,
@@ -6431,11 +7004,7 @@ def continue_investigation(
                 ),
             )
         )
-        append_trace = getattr(repository, "append_inspection_trace", None)
-        if append_trace is not None:
-            append_trace(tuple(trace))
-        else:
-            repository.append_events((invocation, result))
+        return commit_event_unit(tuple(trace), inspection_trace=True)
     elif (
         current.folded_state.pending_driver_question_id is None
         and len(current.folded_state.driver_answers) == 0
@@ -6471,7 +7040,7 @@ def continue_investigation(
                 ),
             ),
         )
-        repository.append_events((question_event, critique_event))
+        return commit_event_unit((question_event, critique_event))
     else:
         if (
             current.terminal_decision.kind == "measurement_mission"
@@ -6555,22 +7124,45 @@ def continue_investigation(
             discriminator_outcome=discriminator_outcome,
             compared_at=terminal_event.created_at,
         )
-        captured_event = repository.append_terminal_event_and_experience(
-            terminal_event,
-            experience,
-            outcome_certificate=outcome_certificate,
-            outcome_comparison=outcome_comparison,
-            discriminator_outcome=discriminator_outcome,
+        captured_event_box: list[CrewChiefEvent] = []
+
+        def apply_terminal(connection: sqlite3.Connection) -> None:
+            if _record_continue_action:
+                repository.record_continue_action_in_transaction(
+                    connection, investigation_id
+                )
+            captured_event_box.append(
+                repository.append_terminal_event_and_experience(
+                    terminal_event,
+                    experience,
+                    outcome_certificate=outcome_certificate,
+                    outcome_comparison=outcome_comparison,
+                    discriminator_outcome=discriminator_outcome,
+                    connection=connection,
+                )
+            )
+
+        updated = _commit_crew_case_mutation(
+            db_path=db_path,
+            action="continue",
+            request=mutation_request,
+            run_id=run_id,
+            session_id=session_id,
+            investigation_id=investigation_id,
+            objective=current.identity.objective_id,
+            expected_workspace_revision=expected_workspace_revision,
+            expected_case_sha256=expected_case_sha256,
+            apply=apply_terminal,
+            mutation_identity=mutation_identity,
+        )
+        captured_event = (
+            captured_event_box[0]
+            if captured_event_box
+            else repository.list_events(investigation_id)[-1]
         )
         _review_p34_terminal_capture(captured_event, db_path=db_path)
         clear_learning_cache()
-    updated = build_crew_chief_workspace(
-        run_id,
-        session_id=session_id,
-        investigation_id=investigation_id,
-        db_path=db_path,
-    )
-    return _freeze_next_p34_pair_and_refresh(updated, db_path=db_path)
+        return updated
 
 
 def record_driver_answer(
@@ -6579,19 +7171,35 @@ def record_driver_answer(
     *,
     session_id: str,
     expected_workspace_revision: str,
+    expected_case_sha256: str | None = None,
     answer: str,
     db_path: str | Path | None = None,
 ) -> CrewChiefWorkspace:
+    mutation_request = {
+        "run_id": run_id,
+        "session_id": session_id,
+        "investigation_id": investigation_id,
+        "expected_workspace_revision": expected_workspace_revision,
+        "expected_case_sha256": expected_case_sha256,
+        "answer": answer,
+    }
+    mutation_identity = _crew_mutation_identity("driver_answer", mutation_request)
+    replay = CrewChiefRepository(db_path).mutation_receipt(
+        mutation_identity[0], request_sha256=mutation_identity[1]
+    )
+    if replay is not None:
+        return replay
     current = build_crew_chief_workspace(
         run_id,
         session_id=session_id,
         investigation_id=investigation_id,
         db_path=db_path,
     )
-    if current.identity.workspace_revision != expected_workspace_revision:
-        raise ValueError(
-            "Crew Chief workspace revision is stale; rebase before continuing."
-        )
+    _assert_crew_mutation_identity(
+        current,
+        expected_workspace_revision=expected_workspace_revision,
+        expected_case_sha256=expected_case_sha256,
+    )
     question = current.pending_driver_question
     if (
         current.folded_state is None
@@ -6634,7 +7242,6 @@ def record_driver_answer(
             ),
         ),
     )
-    repository.append_events((answer_event, critique_event))
     investigation = current.investigation
     if investigation is None:
         raise ValueError("Crew Chief investigation identity is unavailable.")
@@ -6645,8 +7252,7 @@ def record_driver_answer(
         question.distinguishes_cause_ids,
         question.distinguishes_component_ids,
     ]
-    repository.save_driver_memory(
-        DriverKnowledgeRecord(
+    memory = DriverKnowledgeRecord(
             record_id=f"ccdm_{canonical_json_sha256(memory_identity)[:24]}",
             investigation_id=investigation_id,
             session_id=session_id,
@@ -6656,14 +7262,35 @@ def record_driver_answer(
             source_event_ids=(answer_event.event_id,),
             recorded_at=answer_event.created_at,
         )
-    )
-    updated = build_crew_chief_workspace(
-        run_id,
+
+    def apply(connection: sqlite3.Connection) -> None:
+        repository.append_events_in_transaction(
+            connection, (answer_event, critique_event)
+        )
+        repository.save_driver_memory_in_transaction(connection, memory)
+        _append_driver_answer_intent_refinement(
+            connection,
+            engineering_case=current.engineering_case,
+            investigation=investigation,
+            interpretation=interpretation,
+            source_event=answer_event,
+        )
+
+    updated = _commit_crew_case_mutation(
+        db_path=db_path,
+        action="driver_answer",
+        request=mutation_request,
+        run_id=run_id,
         session_id=session_id,
         investigation_id=investigation_id,
-        db_path=db_path,
+        objective=current.identity.objective_id,
+        expected_workspace_revision=expected_workspace_revision,
+        expected_case_sha256=expected_case_sha256,
+        apply=apply,
+        mutation_identity=mutation_identity,
     )
-    return _freeze_next_p34_pair_and_refresh(updated, db_path=db_path)
+    _refresh_p34_attention_after_commit(updated, db_path=db_path)
+    return updated
 
 
 def advance_until_boundary(
@@ -6672,6 +7299,7 @@ def advance_until_boundary(
     *,
     session_id: str,
     expected_workspace_revision: str,
+    expected_case_sha256: str | None = None,
     max_read_only_steps: int = 4,
     db_path: str | Path | None = None,
 ) -> CrewChiefWorkspace:
@@ -6679,24 +7307,64 @@ def advance_until_boundary(
 
     if not 1 <= max_read_only_steps <= 4:
         raise ValueError("Crew Chief batch advancement allows one to four safe steps.")
-    current = build_crew_chief_workspace(
-        run_id,
-        session_id=session_id,
-        investigation_id=investigation_id,
-        db_path=db_path,
+    mutation_request = {
+        "run_id": run_id,
+        "session_id": session_id,
+        "investigation_id": investigation_id,
+        "expected_workspace_revision": expected_workspace_revision,
+        "expected_case_sha256": expected_case_sha256,
+        "max_read_only_steps": max_read_only_steps,
+    }
+    mutation_identity = _crew_mutation_identity("advance", mutation_request)
+    repository = CrewChiefRepository(db_path)
+    replay = repository.mutation_receipt(
+        mutation_identity[0], request_sha256=mutation_identity[1]
     )
-    if current.identity.workspace_revision != expected_workspace_revision:
-        raise ValueError(
-            "Crew Chief workspace revision is stale; rebase before continuing."
+    if replay is not None:
+        return replay
+    count_request = {"parent_mutation_id": mutation_identity[0], "unit": "count"}
+    count_identity = _crew_mutation_identity("advance_count", count_request)
+    current = repository.mutation_receipt(
+        count_identity[0], request_sha256=count_identity[1]
+    )
+    if current is None:
+        current = build_crew_chief_workspace(
+            run_id,
+            session_id=session_id,
+            investigation_id=investigation_id,
+            db_path=db_path,
         )
-    if current.folded_state is None or current.folded_state.status != "open":
-        raise ValueError("Crew Chief investigation is not open.")
-    if current.pending_driver_question is not None:
-        raise ValueError(
-            "A Crew Chief driver question is pending; record its contextual answer before advancing."
+        _assert_crew_mutation_identity(
+            current,
+            expected_workspace_revision=expected_workspace_revision,
+            expected_case_sha256=expected_case_sha256,
         )
-    CrewChiefRepository(db_path).record_continue_action(investigation_id)
-    for _ in range(max_read_only_steps):
+        if current.folded_state is None or current.folded_state.status != "open":
+            raise ValueError("Crew Chief investigation is not open.")
+        if current.pending_driver_question is not None:
+            raise ValueError(
+                "A Crew Chief driver question is pending; record its contextual answer before advancing."
+            )
+
+        def record_count(connection: sqlite3.Connection) -> None:
+            repository.record_continue_action_in_transaction(
+                connection, investigation_id
+            )
+
+        current = _commit_crew_case_mutation(
+            db_path=db_path,
+            action="advance_count",
+            request=count_request,
+            run_id=run_id,
+            session_id=session_id,
+            investigation_id=investigation_id,
+            objective=current.identity.objective_id,
+            expected_workspace_revision=expected_workspace_revision,
+            expected_case_sha256=expected_case_sha256,
+            apply=record_count,
+            mutation_identity=count_identity,
+        )
+    for step_index in range(max_read_only_steps):
         if (
             current.folded_state is None
             or current.folded_state.status != "open"
@@ -6713,15 +7381,36 @@ def advance_until_boundary(
             # P19 terminal is available; presenting it remains an explicit
             # boundary rather than an automatic authority-bearing mutation.
             break
+        step_request = {
+            "parent_mutation_id": mutation_identity[0],
+            "step_index": step_index,
+        }
         current = continue_investigation(
             run_id,
             investigation_id,
             session_id=session_id,
             expected_workspace_revision=current.identity.workspace_revision,
+            expected_case_sha256=current.engineering_case.case_sha256,
             db_path=db_path,
             _record_continue_action=False,
+            _mutation_identity_override=_crew_mutation_identity(
+                "advance_step", step_request
+            ),
         )
-    return current
+
+    return _commit_crew_case_mutation(
+        db_path=db_path,
+        action="advance",
+        request=mutation_request,
+        run_id=run_id,
+        session_id=session_id,
+        investigation_id=investigation_id,
+        objective=current.identity.objective_id,
+        expected_workspace_revision=current.identity.workspace_revision,
+        expected_case_sha256=current.engineering_case.case_sha256,
+        apply=lambda _connection: None,
+        mutation_identity=mutation_identity,
+    )
 
 
 def abandon_investigation(
@@ -6730,19 +7419,36 @@ def abandon_investigation(
     *,
     session_id: str,
     expected_workspace_revision: str,
+    expected_case_sha256: str | None = None,
     reason: str,
     db_path: str | Path | None = None,
 ) -> CrewChiefWorkspace:
+    normalized_reason = " ".join(reason.split()) or "Abandoned by driver."
+    mutation_request = {
+        "run_id": run_id,
+        "session_id": session_id,
+        "investigation_id": investigation_id,
+        "expected_workspace_revision": expected_workspace_revision,
+        "expected_case_sha256": expected_case_sha256,
+        "reason": normalized_reason,
+    }
+    mutation_identity = _crew_mutation_identity("abandon", mutation_request)
+    replay = CrewChiefRepository(db_path).mutation_receipt(
+        mutation_identity[0], request_sha256=mutation_identity[1]
+    )
+    if replay is not None:
+        return replay
     current = build_crew_chief_workspace(
         run_id,
         session_id=session_id,
         investigation_id=investigation_id,
         db_path=db_path,
     )
-    if current.identity.workspace_revision != expected_workspace_revision:
-        raise ValueError(
-            "Crew Chief workspace revision is stale; rebase before continuing."
-        )
+    _assert_crew_mutation_identity(
+        current,
+        expected_workspace_revision=expected_workspace_revision,
+        expected_case_sha256=expected_case_sha256,
+    )
     if current.folded_state is None or current.folded_state.status != "open":
         raise ValueError("Crew Chief investigation is not open.")
     sequence = current.folded_state.last_sequence + 1
@@ -6752,9 +7458,7 @@ def abandon_investigation(
         sequence,
         current.identity.workspace_revision,
         "investigation_abandoned",
-        CrewChiefEventPayload(
-            message=" ".join(reason.split()) or "Abandoned by driver."
-        ),
+        CrewChiefEventPayload(message=normalized_reason),
     )
     investigation = current.investigation
     if investigation is None:
@@ -6800,21 +7504,41 @@ def abandon_investigation(
         discriminator_outcome=discriminator_outcome,
         compared_at=terminal_event.created_at,
     )
-    captured_event = repository.append_terminal_event_and_experience(
-        terminal_event,
-        experience,
-        outcome_certificate=outcome_certificate,
-        outcome_comparison=outcome_comparison,
-        discriminator_outcome=discriminator_outcome,
+    captured_event_box: list[CrewChiefEvent] = []
+
+    def apply(connection: sqlite3.Connection) -> None:
+        captured_event_box.append(
+            repository.append_terminal_event_and_experience(
+                terminal_event,
+                experience,
+                outcome_certificate=outcome_certificate,
+                outcome_comparison=outcome_comparison,
+                discriminator_outcome=discriminator_outcome,
+                connection=connection,
+            )
+        )
+
+    updated = _commit_crew_case_mutation(
+        db_path=db_path,
+        action="abandon",
+        request=mutation_request,
+        run_id=run_id,
+        session_id=session_id,
+        investigation_id=investigation_id,
+        objective=current.identity.objective_id,
+        expected_workspace_revision=expected_workspace_revision,
+        expected_case_sha256=expected_case_sha256,
+        apply=apply,
+        mutation_identity=mutation_identity,
+    )
+    captured_event = (
+        captured_event_box[0]
+        if captured_event_box
+        else repository.list_events(investigation_id)[-1]
     )
     _review_p34_terminal_capture(captured_event, db_path=db_path)
     clear_learning_cache()
-    return build_crew_chief_workspace(
-        run_id,
-        session_id=session_id,
-        investigation_id=investigation_id,
-        db_path=db_path,
-    )
+    return updated
 
 
 def select_objective(
@@ -6823,25 +7547,40 @@ def select_objective(
     *,
     session_id: str,
     expected_workspace_revision: str,
+    expected_case_sha256: str | None = None,
     objective: EngineeringObjective,
     db_path: str | Path | None = None,
 ) -> CrewChiefWorkspace:
+    mutation_request = {
+        "run_id": run_id,
+        "session_id": session_id,
+        "investigation_id": investigation_id,
+        "expected_workspace_revision": expected_workspace_revision,
+        "expected_case_sha256": expected_case_sha256,
+        "objective": objective.value,
+    }
+    mutation_identity = _crew_mutation_identity("objective", mutation_request)
+    replay = CrewChiefRepository(db_path).mutation_receipt(
+        mutation_identity[0], request_sha256=mutation_identity[1]
+    )
+    if replay is not None:
+        return replay
     current = build_crew_chief_workspace(
         run_id,
         session_id=session_id,
         investigation_id=investigation_id,
         db_path=db_path,
     )
-    if current.identity.workspace_revision != expected_workspace_revision:
-        raise ValueError(
-            "Crew Chief workspace revision is stale; rebase before continuing."
-        )
+    _assert_crew_mutation_identity(
+        current,
+        expected_workspace_revision=expected_workspace_revision,
+        expected_case_sha256=expected_case_sha256,
+    )
     if current.folded_state is None or current.folded_state.status != "open":
         raise ValueError("Crew Chief investigation is not open.")
     sequence = current.folded_state.last_sequence + 1
     repository = CrewChiefRepository(db_path)
-    repository.append_event(
-        _event(
+    objective_event = _event(
             investigation_id,
             sequence,
             current.identity.workspace_revision,
@@ -6850,17 +7589,45 @@ def select_objective(
                 message=f"Objective selected: {objective.value}.", objective=objective
             ),
         )
-    )
-    updated = build_crew_chief_workspace(
-        run_id,
+
+    def apply(connection: sqlite3.Connection) -> None:
+        repository.append_events_in_transaction(connection, (objective_event,))
+        _append_objective_intent_refinement(
+            connection,
+            engineering_case=current.engineering_case,
+            objective=objective,
+            source_reference=f"crew-event:{objective_event.event_id}",
+            created_at=objective_event.created_at,
+        )
+        interim = _transaction_workspace(
+            connection,
+            run_id=run_id,
+            session_id=session_id,
+            investigation_id=investigation_id,
+            objective=objective,
+        )
+        repository.save_objective_in_transaction(
+            connection,
+            investigation_id,
+            interim.identity.workspace_revision,
+            objective,
+        )
+
+    updated = _commit_crew_case_mutation(
+        db_path=db_path,
+        action="objective",
+        request=mutation_request,
+        run_id=run_id,
         session_id=session_id,
         investigation_id=investigation_id,
-        db_path=db_path,
+        objective=objective,
+        expected_workspace_revision=expected_workspace_revision,
+        expected_case_sha256=expected_case_sha256,
+        apply=apply,
+        mutation_identity=mutation_identity,
     )
-    repository.save_objective(
-        investigation_id, updated.identity.workspace_revision, objective
-    )
-    return _freeze_next_p34_pair_and_refresh(updated, db_path=db_path)
+    _refresh_p34_attention_after_commit(updated, db_path=db_path)
+    return updated
 
 
 def rebase_investigation(
@@ -6869,13 +7636,30 @@ def rebase_investigation(
     *,
     session_id: str,
     stale_workspace_revision: str,
+    expected_case_sha256: str | None = None,
     db_path: str | Path | None = None,
 ) -> CrewChiefWorkspace:
+    mutation_request = {
+        "run_id": run_id,
+        "session_id": session_id,
+        "investigation_id": investigation_id,
+        "stale_workspace_revision": stale_workspace_revision,
+        "expected_case_sha256": expected_case_sha256,
+    }
+    mutation_identity = _crew_mutation_identity("rebase", mutation_request)
+    replay = CrewChiefRepository(db_path).mutation_receipt(
+        mutation_identity[0], request_sha256=mutation_identity[1]
+    )
+    if replay is not None:
+        return replay
     current = build_crew_chief_workspace(
         run_id,
         session_id=session_id,
         investigation_id=investigation_id,
         db_path=db_path,
+    )
+    _assert_crew_mutation_identity(
+        current, expected_case_sha256=expected_case_sha256
     )
     if current.folded_state is None or current.folded_state.status not in {
         "open",
@@ -6886,7 +7670,21 @@ def rebase_investigation(
         )
     if current.folded_state.status == "open":
         if current.identity.workspace_revision == stale_workspace_revision:
-            return _freeze_next_p34_pair_and_refresh(current, db_path=db_path)
+            updated = _commit_crew_case_mutation(
+                db_path=db_path,
+                action="rebase",
+                request=mutation_request,
+                run_id=run_id,
+                session_id=session_id,
+                investigation_id=investigation_id,
+                objective=current.identity.objective_id,
+                expected_workspace_revision=stale_workspace_revision,
+                expected_case_sha256=expected_case_sha256,
+                apply=lambda _connection: None,
+                mutation_identity=mutation_identity,
+            )
+            _refresh_p34_attention_after_commit(updated, db_path=db_path)
+            return updated
         raise ValueError("Crew Chief rebase revision is stale.")
     events = CrewChiefRepository(db_path).list_events(investigation_id)
     accepted_workspace = _accepted_workspace_revision(current.investigation, events)
@@ -6895,8 +7693,8 @@ def rebase_investigation(
     accepted_authority = _accepted_authority_revision(current.investigation, events)
     current_authority = _authority_revision(current.identity)
     sequence = current.folded_state.last_sequence + 1
-    CrewChiefRepository(db_path).append_event(
-        _event(
+    repository = CrewChiefRepository(db_path)
+    rebase_event = _event(
             investigation_id,
             sequence,
             current.identity.workspace_revision,
@@ -6915,14 +7713,25 @@ def rebase_investigation(
                 ),
             ),
         )
-    )
-    updated = build_crew_chief_workspace(
-        run_id,
+
+    def apply(connection: sqlite3.Connection) -> None:
+        repository.append_events_in_transaction(connection, (rebase_event,))
+
+    updated = _commit_crew_case_mutation(
+        db_path=db_path,
+        action="rebase",
+        request=mutation_request,
+        run_id=run_id,
         session_id=session_id,
         investigation_id=investigation_id,
-        db_path=db_path,
+        objective=current.identity.objective_id,
+        expected_workspace_revision=stale_workspace_revision,
+        expected_case_sha256=expected_case_sha256,
+        apply=apply,
+        mutation_identity=mutation_identity,
     )
-    return _freeze_next_p34_pair_and_refresh(updated, db_path=db_path)
+    _refresh_p34_attention_after_commit(updated, db_path=db_path)
+    return updated
 
 
 __all__ = [

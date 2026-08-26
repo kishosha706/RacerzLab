@@ -7,7 +7,6 @@ import {
   fetchControlledWorkflow,
   fetchControlledWorkflowCatalog,
   fetchEvents,
-  fetchHealth,
   fetchIntelligenceShellProjection,
   fetchRunIntelligence,
   fetchLaps,
@@ -22,6 +21,11 @@ import {
   importIbtFile,
   importMt2File,
 } from "./api/client";
+import {
+  BackendReadinessError,
+  fetchBackendHealth,
+  type BackendReadinessFailure,
+} from "./api/backendHealth";
 import { ImportPanel } from "./components/ImportPanel";
 import { ControlledTestRibbon } from "./components/ControlledTestRibbon";
 import { RunContextBar } from "./components/RunContextBar";
@@ -38,6 +42,7 @@ import { TRACE_WORKBENCH_CHANNELS } from "./constants/workbenchChannels";
 import { importDebug } from "./utils/importDebug";
 import { isTauri } from "./utils/env";
 import { buildZoneEvidence } from "./utils/evidenceFocus";
+import { isolateCockpitForPriorityModal } from "./utils/modalIsolation";
 import {
   bestUsefulLapMatchesRun,
   engineeringBlockersMatchRun,
@@ -312,6 +317,7 @@ function ShellLoadingState({ eyebrow, title, detail }: { eyebrow: string; title:
 function CockpitShell() {
   const desktop = isTauri();
   const [engineStatus, setEngineStatus] = useState<"starting" | "ready" | "failed">("starting");
+  const [engineReadinessFailure, setEngineReadinessFailure] = useState<BackendReadinessFailure | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [currentSession, setCurrentSession] = useState<RaceLabSession | null>(null);
   const [sessionSelectionSource, setSessionSelectionSource] = useState<SessionSelectionSource | null>(null);
@@ -354,6 +360,7 @@ function CockpitShell() {
   const [activeControlledWorkflowRequestKey, setActiveControlledWorkflowRequestKey] = useState<string | null>(null);
   const [activeControlledWorkflowAmbiguous, setActiveControlledWorkflowAmbiguous] = useState(false);
   const [controlledWorkflowCatalogState, setControlledWorkflowCatalogState] = useState<ControlledWorkflowCatalogState>({ requestKey: null, status: "idle", error: null });
+  const [controlledWorkflowMutationIdentity, setControlledWorkflowMutationIdentity] = useState<string | null>(null);
   const [explicitControlledWorkflowId, setExplicitControlledWorkflowId] = useState<string | null>(null);
   const [intelligenceShellReportState, setIntelligenceShellReportState] = useState<IntelligenceShellReportState>({
     requestKey: null,
@@ -444,6 +451,7 @@ function CockpitShell() {
     }
   }, [priorityRailUsesOverlay]);
   const openPriorityRail = useCallback(() => {
+    setShortcutsOpen(false);
     setPriorityRailOpen(true);
     if (priorityRailUsesOverlay) {
       window.setTimeout(() => {
@@ -482,7 +490,10 @@ function CockpitShell() {
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      if (!rail.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
       } else if (!event.shiftKey && document.activeElement === last) {
@@ -496,14 +507,9 @@ function CockpitShell() {
 
   useEffect(() => {
     const covered = priorityRailUsesOverlay && priorityRailExpanded;
-    const elements = document.querySelectorAll<HTMLElement>(
-      ".cockpit-body > .workspace-nav-rail, .cockpit-body > .cockpit-workspace, .cockpit-body > .evidence-inspector",
-    );
-    elements.forEach((element) => {
-      if (covered) element.setAttribute("inert", "");
-      else element.removeAttribute("inert");
-    });
-    return () => elements.forEach((element) => element.removeAttribute("inert"));
+    if (!covered) return undefined;
+    const shell = document.querySelector<HTMLElement>(".cockpit-shell");
+    return shell ? isolateCockpitForPriorityModal(shell) : undefined;
   }, [priorityRailExpanded, priorityRailUsesOverlay]);
   const traceStateOwnsRequest = traceLoadState.requestKey === platformRequestKey;
   const currentTrace = traceStateOwnsRequest && traceLoadState.status === "ready" ? trace : null;
@@ -543,7 +549,8 @@ function CockpitShell() {
     selected_session_id: sessionId,
     loaded_session_id: currentSession?.session_id ?? null,
     scope: controlledWorkflowScopeKey,
-  }), [controlledWorkflowScopeKey, currentSession?.session_id, overview?.run_id, sessionId]);
+    mutation_identity: controlledWorkflowMutationIdentity,
+  }), [controlledWorkflowMutationIdentity, controlledWorkflowScopeKey, currentSession?.session_id, overview?.run_id, sessionId]);
   const controlledWorkflowCatalogCanLoad = Boolean(
     overview?.run_id
     && currentSession?.session_id
@@ -1173,20 +1180,36 @@ function CockpitShell() {
       let consecutiveFailures = 0;
       while (!cancelled) {
         let exactBackend = false;
+        let readinessFailure: BackendReadinessFailure | null = null;
         try {
-          const health = await fetchHealth();
+          const health = await fetchBackendHealth();
           exactBackend = health.status === "ok"
             && health.app === "RacerZLab"
             && (!requireExactDesktopInstance || (
               expectedInstanceId != null
               && health.instance_id === expectedInstanceId
             ));
-        } catch {
-          // The local engine may still be starting.
+        } catch (error) {
+          if (error instanceof BackendReadinessError
+            && (!requireExactDesktopInstance || (
+              expectedInstanceId != null
+              && error.instanceId === expectedInstanceId
+            ))) {
+            readinessFailure = error.failure;
+          }
+          // Other failures can occur while the local engine is still starting.
+        }
+        if (readinessFailure) {
+          if (!cancelled) {
+            setEngineReadinessFailure(readinessFailure);
+            setEngineStatus("failed");
+          }
+          return;
         }
         if (exactBackend) {
           wasReady = true;
           consecutiveFailures = 0;
+          setEngineReadinessFailure(null);
           setEngineStatus("ready");
         } else {
           consecutiveFailures += 1;
@@ -1195,13 +1218,20 @@ function CockpitShell() {
               wasReady = false;
               consecutiveFailures = 0;
               startupDeadline = Date.now() + 30_000;
+              setEngineReadinessFailure(null);
               setEngineStatus("starting");
             } else {
-              if (!cancelled) setEngineStatus("failed");
+              if (!cancelled) {
+                setEngineReadinessFailure(null);
+                setEngineStatus("failed");
+              }
               return;
             }
           } else if (!wasReady && Date.now() >= startupDeadline) {
-            if (!cancelled) setEngineStatus("failed");
+            if (!cancelled) {
+              setEngineReadinessFailure(null);
+              setEngineStatus("failed");
+            }
             return;
           }
         }
@@ -1271,6 +1301,7 @@ function CockpitShell() {
     onShowShortcuts: () => setShortcutsOpen(true),
     onHideShortcuts: () => setShortcutsOpen(false),
     shortcutsOpen,
+    priorityModalOpen: priorityRailUsesOverlay && priorityRailExpanded,
     eventTimelineOwnsKeyboard: timelineOwnsKeyboard,
     characterShortcutsEnabled,
   });
@@ -2067,6 +2098,7 @@ function CockpitShell() {
           currentIntelligenceAuthority={currentIntelligenceAuthority}
           intelligenceAuthorityStatus={currentIntelligenceAuthorityStatus}
           intelligenceAuthorityRecovery={currentIntelligenceAuthorityRecovery}
+          onWorkflowMutation={setControlledWorkflowMutationIdentity}
         />
       );
     }
@@ -2112,12 +2144,31 @@ function CockpitShell() {
   }
 
   if (engineStatus === "failed") {
+    const databaseUnavailable = engineReadinessFailure?.readinessCode === "database_unavailable";
+    const dataStorageUnavailable = engineReadinessFailure?.readinessCode === "data_storage_unavailable";
     return (
       <main className="empty-state">
         <section className="empty-panel">
           <span className="eyebrow">RACERZLAB</span>
-          <h1>Local engine failed to start.</h1>
-          <p className="muted">Close and reopen RacerZLab, then retry. Restarting does not delete your local sessions or telemetry files.</p>
+          <h1>
+            {databaseUnavailable
+              ? "Local session storage is unavailable."
+              : dataStorageUnavailable
+                ? "Telemetry storage is unavailable."
+                : "Local engine failed to start."}
+          </h1>
+          <p className="muted">
+            {databaseUnavailable
+              ? "RacerZLab could not safely open its session database. Restart the app. If this returns, restore local app data from backup or contact support before importing again."
+              : dataStorageUnavailable
+                ? "RacerZLab could not safely write telemetry files. Restart the app and check that this device has free storage. If this returns, contact support."
+                : "Close and reopen RacerZLab, then retry. Restarting does not delete your local sessions or telemetry files."}
+          </p>
+          {engineReadinessFailure && (
+            <p className="muted">
+              Recovery reference: <code>{engineReadinessFailure.recoveryCode}</code>
+            </p>
+          )}
           {!desktop && (
             <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>
               Development mode: start the backend with <code style={{ color: "#38bdf8", fontSize: 11 }}>python -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8010</code>
@@ -2300,6 +2351,7 @@ function CockpitShell() {
             onClick={closePriorityRail}
             tabIndex={-1}
             aria-label="Close Priority evidence"
+            data-priority-modal-layer="true"
           />
         )}
 

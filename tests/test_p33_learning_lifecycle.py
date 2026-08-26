@@ -112,7 +112,8 @@ def _workspace_identity(
     return CrewChiefWorkspaceIdentity(
         run_id=run_id,
         session_id=session_id,
-        selected_scope_hash="1" * 64,
+        selected_scope_hash=canonical_json_sha256((run_id,)),
+        selected_run_ids=(run_id,),
         reasoning_snapshot_sha256="2" * 64,
         p20_state_revision="3" * 64,
         p20_profile_hash="4" * 64,
@@ -1320,6 +1321,18 @@ def test_cold_get_matches_execution_and_active_pair_honors_durable_rollback(
         def append_events(self, events) -> None:
             captured_events.append(tuple(events))
 
+        def mutation_receipt(self, *_args, **_kwargs):
+            return None
+
+        def record_continue_action_in_transaction(self, *_args) -> None:
+            return None
+
+        def validate_inspection_trace(self, _events) -> None:
+            return None
+
+        def append_events_in_transaction(self, _connection, events) -> None:
+            captured_events.append(tuple(events))
+
     monkeypatch.setattr(
         "racelab_engine.services.crew_chief_service.build_crew_chief_workspace",
         lambda *_args, **_kwargs: workspace,
@@ -1331,6 +1344,10 @@ def test_cold_get_matches_execution_and_active_pair_honors_durable_rollback(
     monkeypatch.setattr(
         "racelab_engine.services.crew_chief_service._select_tool_entries",
         lambda *_args, **_kwargs: (),
+    )
+    monkeypatch.setattr(
+        "racelab_engine.services.crew_chief_service._commit_crew_case_mutation",
+        lambda **values: (values["apply"](object()), workspace)[1],
     )
 
     # A caller-authored empty-ledger artifact is deliberately not production
@@ -1389,7 +1406,7 @@ def test_cold_get_matches_execution_and_active_pair_honors_durable_rollback(
         expected_workspace_revision=identity.workspace_revision,
         db_path=db_path,
     )
-    cold_invocation, cold_result = captured_events[0]
+    cold_invocation, cold_result = captured_events[0][:2]
     assert cold_invocation.payload.tool_id == displayed_next_action
     assert cold_result.payload.tool_id == baseline.action_id
     assert cold_invocation.payload.adaptation_prediction_pair_id is None
@@ -1401,7 +1418,7 @@ def test_cold_get_matches_execution_and_active_pair_honors_durable_rollback(
         expected_workspace_revision=identity.workspace_revision,
         db_path=db_path,
     )
-    active_invocation, active_result = captured_events[1]
+    active_invocation, active_result = captured_events[1][:2]
     assert active_invocation.payload.tool_id == memory.action_id
     assert active_result.payload.tool_id == memory.action_id
     assert active_invocation.payload.adaptation_prediction_pair_id == active_pair.pair_id
@@ -1424,7 +1441,7 @@ def test_cold_get_matches_execution_and_active_pair_honors_durable_rollback(
         db_path=db_path,
     )
 
-    invocation, result = captured_events[2]
+    invocation, result = captured_events[2][:2]
     assert invocation.payload.tool_id == baseline.action_id
     assert result.payload.tool_id == baseline.action_id
     assert invocation.payload.adaptation_prediction_pair_id is None

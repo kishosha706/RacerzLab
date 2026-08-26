@@ -2609,6 +2609,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 name = "racelab-garage"
 version = "0.1.0"
 dependencies = [
+ "getrandom 0.3.4",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

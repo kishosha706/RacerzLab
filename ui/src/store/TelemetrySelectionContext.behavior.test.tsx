@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   TelemetrySelectionProvider,
@@ -7,7 +7,14 @@ import {
 } from "./TelemetrySelectionContext";
 
 function FocusHarness() {
-  const { selection, focusTelemetryEvent, focusEvidence } = useTelemetrySelection();
+  const {
+    selection,
+    focusTelemetryEvent,
+    focusEvidence,
+    selectLap,
+    selectRun,
+    setWorkspace,
+  } = useTelemetrySelection();
   return (
     <>
       <button
@@ -26,7 +33,21 @@ function FocusHarness() {
           lapPct: 61,
           producerId: "p20.engineering-awareness",
           artifactId: "episode-b",
+          caseId: "case-b",
+          caseRevision: "revision-b",
+          caseSha256: "case-sha-b",
+          mechanismIds: ["mechanism-b"],
+          responseRelationId: "relation-b",
+          componentIds: ["component-b"],
+          effectIds: ["effect-b"],
+          controlKeys: ["control-b"],
+          p19CauseIds: ["cause-b"],
+          quantityIds: ["quantity-b"],
+          discriminatorId: "discriminator-b",
           system: "platform_response",
+          compareRole: "test",
+          sourceRunId: "run-b",
+          sourceSetupId: "setup-b",
           zoneId: "awareness:episode-b",
           zoneStartPct: 60,
           zoneEndPct: 62,
@@ -34,12 +55,17 @@ function FocusHarness() {
       >
         Focus P20 episode
       </button>
+      <button type="button" onClick={() => selectRun("run-c")}>Select run</button>
+      <button type="button" onClick={() => selectLap(9)}>Select lap</button>
+      <button type="button" onClick={() => setWorkspace("laps", "manual")}>Open Laps manually</button>
       <output data-testid="selection">{JSON.stringify(selection)}</output>
     </>
   );
 }
 
 describe("TelemetrySelectionProvider evidence behavior", () => {
+  afterEach(() => cleanup());
+
   it("renders one coherent physical reality after an event-to-episode transition", () => {
     render(
       <TelemetrySelectionProvider>
@@ -64,6 +90,42 @@ describe("TelemetrySelectionProvider evidence behavior", () => {
       selectedZoneStartPct: 60,
       selectedZoneEndPct: 62,
       selectedWorkspace: "platform_trace",
+    });
+  });
+
+  it.each([
+    ["Select run"],
+    ["Select lap"],
+    ["Open Laps manually"],
+  ])("renders no stale exact-case identity after %s", (actionName) => {
+    render(
+      <TelemetrySelectionProvider>
+        <FocusHarness />
+      </TelemetrySelectionProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Focus P20 episode" }));
+    expect(screen.getByTestId("selection").textContent).toContain('"selectedCaseId":"case-b"');
+
+    fireEvent.click(screen.getByRole("button", { name: actionName }));
+    const selection = JSON.parse(screen.getByTestId("selection").textContent ?? "{}");
+    expect(selection).toMatchObject({
+      selectedProducerId: null,
+      selectedArtifactId: null,
+      selectedCaseId: null,
+      selectedCaseRevision: null,
+      selectedCaseSha256: null,
+      selectedMechanismIds: [],
+      selectedResponseRelationId: null,
+      selectedComponentIds: [],
+      selectedEffectIds: [],
+      selectedControlKeys: [],
+      selectedP19CauseIds: [],
+      selectedQuantityIds: [],
+      selectedDiscriminatorId: null,
+      selectedSystem: null,
+      selectedCompareRole: null,
+      selectedSourceRunId: null,
+      selectedSourceSetupId: null,
     });
   });
 });

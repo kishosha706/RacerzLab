@@ -133,11 +133,19 @@ def test_tauri_shell_starts_hidden_backend_sidecar_and_cleans_up() -> None:
     assert "tauri_plugin_single_instance::init" in shell
     assert "ensure_backend_running" in shell
     assert "RACERZLAB_BACKEND_INSTANCE_TOKEN" in shell
+    assert "backend_capability_token" in shell
+    assert "RACERZLAB_BACKEND_CAPABILITY_TOKEN" in shell
+    assert "getrandom::fill" in shell
     assert 'get_webview_window("main")' in shell
 
 
-def test_health_binds_to_owned_desktop_instance(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_health_binds_to_owned_desktop_instance(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     monkeypatch.setenv("RACERZLAB_BACKEND_INSTANCE_TOKEN", "owned-instance")
+    monkeypatch.setenv("RACELAB_DB_PATH", str(tmp_path / "racelab.sqlite"))
+    monkeypatch.setenv("RACELAB_DATA_DIR", str(tmp_path / "data"))
     payload = TestClient(app).get("/api/health").json()
     assert payload == {
         "status": "ok",

@@ -17,7 +17,9 @@ def test_setup_page_hides_noisy_corner_fields_from_default_view() -> None:
     assert "shock_collar_offset_mm" not in setup
     assert "Rear Caster" not in setup
     assert 'const frontCorner = corner === "lf" || corner === "rf";' in setup
-    assert '{frontCorner && <Field l="Caster" v={caster} u="deg" relevant={relevant("caster_deg", "caster")} />}' in setup
+    assert '{frontCorner && <Field l="Caster" v={caster} u="deg"' in setup
+    assert 'semanticKey={`${corner}_caster_deg`}' in setup
+    assert 'controlKey={`${corner}_caster_deg`}' in setup
 
 
 def test_setup_page_hides_low_value_diff_side_fields_from_default_view() -> None:
@@ -89,7 +91,9 @@ def test_setup_values_use_dash_for_unavailable_and_muted_units() -> None:
     styles = _read("ui/src/styles.css")
 
     assert 'missing ? "—"' in setup
-    assert '<span className="gr-value" role="cell">{missing ? "—" : v}</span>' in setup
+    assert '<span className="gr-value" role={tableSemantics ? "cell" : undefined}>{missing ? "—" : v}</span>' in setup
+    assert "{content(false)}</button>" in setup
+    assert "{content(true)}</div>" in setup
     assert 'className="gr-value-unit"' in setup
     assert ".gr-value-unit" in styles
     assert ".gr-row.missing .gr-value" in styles

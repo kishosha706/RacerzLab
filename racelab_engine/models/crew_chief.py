@@ -370,6 +370,9 @@ class CrewChiefWorkspaceIdentity(CrewChiefModel):
     run_id: str = Field(min_length=1)
     session_id: str = Field(min_length=1)
     selected_scope_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    # Empty only keeps pre-P35.4.4 persisted investigation identities readable.
+    # Every newly published workspace requires the exact selected run scope.
+    selected_run_ids: tuple[str, ...] = ()
     reasoning_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     p20_state_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
     p20_profile_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
@@ -404,6 +407,15 @@ class CrewChiefWorkspaceIdentity(CrewChiefModel):
 
     @model_validator(mode="after")
     def workflow_identity_is_complete(self) -> CrewChiefWorkspaceIdentity:
+        if self.selected_run_ids and (
+            len(self.selected_run_ids) != len(set(self.selected_run_ids))
+            or self.run_id not in self.selected_run_ids
+            or canonical_json_sha256(self.selected_run_ids)
+            != self.selected_scope_hash
+        ):
+            raise ValueError(
+                "selected Crew run scope must be unique, contain the active run, and match its hash"
+            )
         if (self.active_workflow_id is None) != (self.active_workflow_revision is None):
             raise ValueError("workflow identity and revision must be present together")
         if (
@@ -1744,6 +1756,42 @@ class AdaptiveResearchBoundary(CrewChiefModel):
     activation_gate: str = "P21/P22 held-out and prospective evidence gates must pass before any activation."
 
 
+class CrewChiefMutationPublicationReceipt(CrewChiefModel):
+    schema_version: Literal["p3544.crew-mutation-publication.v1"] = (
+        "p3544.crew-mutation-publication.v1"
+    )
+    mutation_id: str = Field(pattern=r"^ccm_[0-9a-f]{24}$")
+    request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    action: str = Field(min_length=1, max_length=64)
+    case_id: str = Field(pattern=r"^p3543case_[0-9a-f]{24}$")
+    case_revision: int = Field(ge=1)
+    case_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    previous_case_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    published_at: datetime
+    receipt_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    authority: Literal["durability_receipt_only"] = "durability_receipt_only"
+    setup_authorized: Literal[False] = False
+
+    @classmethod
+    def build(cls, **values: object) -> CrewChiefMutationPublicationReceipt:
+        body = dict(values)
+        body.pop("receipt_sha256", None)
+        draft = cls.model_construct(**body, receipt_sha256="0" * 64)
+        normalized = draft.model_dump(mode="json", exclude={"receipt_sha256"})
+        return cls.model_validate(
+            {**normalized, "receipt_sha256": canonical_json_sha256(normalized)}
+        )
+
+    @model_validator(mode="after")
+    def receipt_is_content_addressed(self) -> CrewChiefMutationPublicationReceipt:
+        body = self.model_dump(mode="json", exclude={"receipt_sha256"})
+        if canonical_json_sha256(body) != self.receipt_sha256:
+            raise ValueError("Crew mutation publication receipt identity is corrupt")
+        return self
+
+
 class CrewChiefWorkspace(CrewChiefModel):
     schema_version: Literal["p352.crew-chief-workspace.v1"] = (
         "p352.crew-chief-workspace.v1"
@@ -1755,6 +1803,7 @@ class CrewChiefWorkspace(CrewChiefModel):
     folded_state: FoldedInvestigationState | None = None
     evidence_index: EngineeringEvidenceIndex
     engineering_case: CanonicalEngineeringCase
+    mutation_receipt: CrewChiefMutationPublicationReceipt | None = None
     available_tools: tuple[CrewChiefToolDefinition, ...]
     tool_eligibility: tuple[CrewChiefToolEligibility, ...] = ()
     inspection_evidence_qualifications: tuple[
@@ -1792,9 +1841,19 @@ class CrewChiefWorkspace(CrewChiefModel):
 
     @model_validator(mode="after")
     def projection_scope_is_atomic(self) -> CrewChiefWorkspace:
+        if not self.identity.selected_run_ids:
+            raise ValueError("current Crew workspace requires its exact selected run scope")
         if self.evidence_index.workspace_revision != self.identity.workspace_revision:
             raise ValueError("evidence index must match the workspace revision")
         case = self.engineering_case
+        receipt = self.mutation_receipt
+        if receipt is not None and (
+            receipt.case_id != case.case_id
+            or receipt.case_sha256 != case.case_sha256
+        ):
+            raise ValueError(
+                "Crew mutation receipt must publish this exact Engineering Case"
+            )
         qualification_tool_ids = tuple(
             item.tool_id for item in self.inspection_evidence_qualifications
         )
@@ -1811,10 +1870,25 @@ class CrewChiefWorkspace(CrewChiefModel):
                 "inspection evidence qualification must cover each current-case Crew tool"
             )
         if (
-            case.case_revision_sha256 != self.identity.workspace_revision
-            or case.workspace_revision != self.identity.workspace_revision
+            case.workspace_revision != self.identity.workspace_revision
             or case.run_id != self.identity.run_id
             or case.session_id != self.identity.session_id
+            or case.selected_run_ids != self.identity.selected_run_ids
+            or case.vehicle_runtime_identity_sha256
+            != self.identity.vehicle_runtime_identity_hash
+            or (
+                self.identity.vehicle_runtime_identity is not None
+                and (
+                    case.car_identity
+                    != self.identity.vehicle_runtime_identity.car_path
+                    or case.car_version
+                    != self.identity.vehicle_runtime_identity.car_version
+                    or case.iracing_build_version
+                    != self.identity.vehicle_runtime_identity.iracing_build_version
+                    or case.track_configuration
+                    != self.identity.vehicle_runtime_identity.track_configuration_name
+                )
+            )
             or case.setup_id != self.identity.setup_id
             or case.setup_snapshot_sha256 != self.identity.setup_snapshot_sha256
             or case.objective_id != self.identity.objective_id.value

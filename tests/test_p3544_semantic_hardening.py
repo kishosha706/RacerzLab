@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
+
+import pytest
 
 from racelab_engine.models.engineering_case import (
     ResponseCountereffectContract,
@@ -9,7 +12,12 @@ from racelab_engine.models.engineering_case import (
 from racelab_engine.services.controlled_workflow_service import (
     _expected_response_relations,
 )
-from racelab_engine.services.crew_chief_service import _usable_response_relations
+from racelab_engine.services.crew_chief_service import (
+    _active_workflow_identity,
+    _assert_crew_mutation_identity,
+    _inspection_evidence_qualifications,
+    _usable_response_relations,
+)
 from racelab_engine.services.engineering_case_service import (
     build_evidence_deficits,
     build_setup_effect_readiness,
@@ -114,6 +122,105 @@ def test_blocked_artifact_cannot_satisfy_crew_inspection() -> None:
         ),
     )
     assert _usable_response_relations(blocked_case) == frozenset()
+
+
+def test_one_admitted_relation_does_not_admit_blocked_sibling_artifact() -> None:
+    artifact = _response_artifacts()[0]
+    blocked_id = artifact.artifact_id[:-1] + "0"
+    if blocked_id == artifact.artifact_id:
+        blocked_id = artifact.artifact_id[:-1] + "1"
+    case = SimpleNamespace(
+        case_sha256="a" * 64,
+        response_artifacts=(
+            SimpleNamespace(
+                artifact_id=artifact.artifact_id, relation=artifact.relation
+            ),
+            SimpleNamespace(artifact_id=blocked_id, relation=artifact.relation),
+        ),
+        p19_response_admissions=(
+            SimpleNamespace(response_artifact_id=artifact.artifact_id, state="admitted"),
+            SimpleNamespace(
+                response_artifact_id=blocked_id,
+                state="blocked",
+                blocker_reasons=("Context is blocked.",),
+            ),
+        ),
+        response_expectation_evaluations=(
+            SimpleNamespace(
+                response_artifact_id=artifact.artifact_id,
+                result="matched",
+                blocker_reasons=(),
+            ),
+            SimpleNamespace(
+                response_artifact_id=blocked_id,
+                result="matched",
+                blocker_reasons=(),
+            ),
+        ),
+    )
+    qualifications = _inspection_evidence_qualifications(case)
+    relevant = tuple(
+        item for item in qualifications if artifact.artifact_id in item.accepted_artifact_ids
+    )
+    assert relevant
+    assert all(blocked_id not in item.accepted_artifact_ids for item in relevant)
+    assert all(blocked_id in item.rejected_artifact_ids for item in relevant)
+
+
+def test_active_workflow_revision_is_a_stable_content_hash() -> None:
+    updated_at = datetime(2026, 8, 20, 12, tzinfo=UTC)
+    move = SimpleNamespace(
+        workflow_id="aba-current",
+        workflow_updated_at=updated_at,
+    )
+    bundle = SimpleNamespace(
+        report=SimpleNamespace(
+            smart_guidance=SimpleNamespace(next_trustworthy_move=move)
+        )
+    )
+    payload = {
+        "workflow_id": "aba-current",
+        "updated_at": updated_at.isoformat(),
+        "status": "planned",
+        "packet": {"decision": "test"},
+    }
+    workflow = SimpleNamespace(
+        workflow_id="aba-current",
+        updated_at=updated_at,
+        model_dump=lambda *, mode: payload,
+    )
+    workflow_id, revision = _active_workflow_identity(bundle, workflow)
+    assert workflow_id == "aba-current"
+    assert revision is not None and len(revision) == 64
+    assert revision == _active_workflow_identity(bundle, workflow)[1]
+
+    changed = SimpleNamespace(
+        workflow_id="aba-current",
+        updated_at=updated_at,
+        model_dump=lambda *, mode: {**payload, "status": "a_recorded"},
+    )
+    assert _active_workflow_identity(bundle, changed)[1] != revision
+
+    stale = SimpleNamespace(
+        workflow_id="aba-current",
+        updated_at=datetime(2026, 8, 20, 13, tzinfo=UTC),
+        model_dump=lambda *, mode: payload,
+    )
+    with pytest.raises(ValueError, match="catalog and public guidance disagree"):
+        _active_workflow_identity(bundle, stale)
+
+
+def test_crew_mutation_rejects_a_stale_case_even_when_workspace_is_unchanged() -> None:
+    current = SimpleNamespace(
+        identity=SimpleNamespace(workspace_revision="a" * 64),
+        engineering_case=SimpleNamespace(case_sha256="b" * 64),
+    )
+    with pytest.raises(ValueError, match="Engineering Case revision"):
+        _assert_crew_mutation_identity(
+            current,
+            expected_workspace_revision="a" * 64,
+            expected_case_sha256="c" * 64,
+        )
 
 
 def test_typed_deficit_routing_is_independent_of_missing_evidence_prose() -> None:

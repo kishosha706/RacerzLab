@@ -54,17 +54,21 @@ def test_intelligence_discards_stale_report_and_question_responses() -> None:
     assert "const querySequence = useRef(0)" in engineer
     assert "const sequence = ++reportSequence.current" in engineer
     assert "sequence !== reportSequence.current" in engineer
-    assert "scopeMatches(report, runId, sessionId)" in engineer
+    assert "scopeMatches(report, requestedRunId, requestedSessionId)" in engineer
+    assert "report.reasoning_snapshot_sha256 !== requestedReasoningSnapshotSha256" in engineer
+    assert "requestedScopeKey !== activeReportScopeKeyRef.current" in engineer
+    assert "requestedCaseBindingKey !== activeCaseBindingKeyRef.current" in engineer
     assert "Nothing from that response was shown." in engineer
-    assert 'setReportState({ requestKey: scopeKey, status: "loading", report: null' in engineer
+    assert 'setReportState({ requestKey: requestedScopeKey, status: "loading", report: null' in engineer
     assert "const sequence = ++querySequence.current" in engineer
     assert "sequence !== querySequence.current" in engineer
-    assert "scopeMatches(response, runId, sessionId)" in engineer
+    assert "requestedQueryBindingKey !== activeQueryBindingKeyRef.current" in engineer
+    assert "scopeMatches(response, requestedRunId, requestedSessionId)" in engineer
+    assert "response.reasoning_snapshot_sha256 !== requestedReasoningSnapshotSha256" in engineer
     assert "response.question.trim() !== nextQuestion" in engineer
     assert "It was discarded." in engineer
-    assert 'setQueryState({ requestKey: null, status: "idle", response: null' in engineer
-    assert "}, [learning, questionScopeKey, scopeKey]);" in engineer
-    assert "cancelled || sequence !== reportSequence.current" in engineer
+    assert 'setQueryState({ requestKey: null, bindingKey: null, status: "idle", response: null' in engineer
+    assert "}, [queryBindingKey]);" in engineer
 
 
 def test_intelligence_citation_handoff_clears_stale_zone_channel_and_setup_scope() -> None:
@@ -115,7 +119,7 @@ def test_smart_engineer_setup_action_fails_closed_and_stays_one_change_only() ->
     assert "asArray(queryResponse.action_source_event_ids),\n      actionSourceEventIds" in engineer
 
     assert "actionAuthorized ? (" in engineer
-    assert "Open controlled test" in engineer
+    assert "Review workflow evidence" in engineer
     assert 'setWorkspace("dial_in", "engineer")' in engineer
     assert "No setup-change control is available from this evidence." in engineer
     assert 'actionAuthorized ? action.title : "Evidence task only"' in engineer
@@ -123,7 +127,7 @@ def test_smart_engineer_setup_action_fails_closed_and_stays_one_change_only() ->
     assert "Keep the current setup and collect the requested evidence." not in engineer
     assert 'label="Controlled-test evidence"' in engineer
     assert "best_measurement" in engineer
-    assert "Best next measurement" in engineer
+    assert "Measurement evidence priority" in engineer
 
 
 def test_learning_mode_exposes_explanations_without_weakening_evidence() -> None:
@@ -131,14 +135,14 @@ def test_learning_mode_exposes_explanations_without_weakening_evidence() -> None
     types = _read("ui/src/types/intelligence.ts")
 
     assert 'selection.selectedMode === "learning"' in engineer
-    assert "Why this call?" in engineer
+    assert "Evidence rationale" in engineer
     assert "Evidence graph" in engineer
     assert "Full graph · {graphNodes.length} nodes · {graphEdges.length} relationships" in engineer
     assert ".slice(0, 10)" in engineer
     assert "Cause board" in engineer
     assert "Supports" in engineer
     assert "Contradicts" in engineer
-    assert "Best next measurement" in engineer
+    assert "Measurement evidence priority" in engineer
     assert "Worked here before" not in engineer
     assert "CrewChiefCommandDeck" in engineer
     assert "Calibration record" in engineer
@@ -207,9 +211,9 @@ def test_grounded_questions_are_not_a_generic_chat_surface() -> None:
     assert "(response.selected_lap ?? null) !== selectedQueryLap" in engineer
     assert "response.interpreted_window_representative_lap === selectedQueryLap" in engineer
     assert "response.scope_run_ids" in engineer
-    assert "responseRunScope.length === queryNavigationRunIds.size" in engineer
-    assert "current run, session, question scope, and question" in engineer
-    assert "Tracing the answer to this run" in engineer
+    assert "responseRunScope.length === requestedQueryNavigationRunIds.size" in engineer
+    assert "current case revision, P19 snapshot, run, session, question scope, and question" in engineer
+    assert "Tracing the answer to this case revision" in engineer
     assert "Grounded answer" in engineer
     assert "Evidence limit" in engineer
     assert "queryActionTrusted" in engineer

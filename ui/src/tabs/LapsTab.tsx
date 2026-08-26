@@ -1379,28 +1379,6 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
     : paceDecisionWindow
       ? "No qualified trend"
       : "Need a lap block";
-  const firstWindowLapsNeeded = Math.max(0, 3 - currentValidLapCount);
-  const sustainedBlockLapsNeeded = paceDecisionWindow
-    ? Math.max(0, 10 - paceDecisionWindow.window_size)
-    : Math.max(0, 10 - currentValidLapCount);
-  const paceDecisionNext = blockingRunBlocker
-    ? blockingRunBlocker.recovery
-    : paceEvidenceLoading
-      ? "Keep the settled clean-lap reference while the exact stint scope finishes loading."
-      : paceEvidenceRequestFailed
-        ? "Retry the missing timing evidence; do not fill the gap with a degradation or setup story."
-        : !paceDecisionLap
-          ? "Bank one complete timed lap without pit-road, cooldown, wreck, invalid-speed, or partial-lap flags."
-          : !paceDecisionWindow
-            ? firstWindowLapsNeeded > 0
-              ? `Bank ${firstWindowLapsNeeded} more clean lap${firstWindowLapsNeeded === 1 ? "" : "s"} for the first comparable stint block.`
-              : "Review the exclusions: the available clean laps did not form one qualified continuous stint block."
-            : !longRunPaceReady
-              ? sustainedBlockLapsNeeded > 0
-                ? `Extend this continuous block by ${sustainedBlockLapsNeeded} clean lap${sustainedBlockLapsNeeded === 1 ? "" : "s"} before treating it as sustained pace.`
-                : "Recover the backend stint qualification before treating this block as sustained pace."
-              : "Use this block as the pace reference, then compare the next qualified run at matched track positions.";
-
   const currentRunSummary = currentStintData?.run_summary ?? null;
   const shortRunPace = !blockingRunBlocker && !stintRequestFailed
     ? firstAvailableRunAverage(currentRunSummary, shortRunAveragePriority)
@@ -2321,7 +2299,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
         className="tab-decision-broadcast"
         data-state={paceDecisionDataState}
         data-run-id={overview.run_id}
-        aria-label="Laps pace briefing"
+        aria-label="Laps pace evidence status"
         aria-live="polite"
       >
         <div>
@@ -2335,7 +2313,6 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
           </span>
           <h2>{paceDecisionHeadline}</h2>
           <p><strong>Why:</strong> {paceDecisionDetail}</p>
-          <p><strong>What next:</strong> {paceDecisionNext}</p>
           <p title={`Exact run ${overview.run_id}`}>Exact scope: {paceDecisionScope}</p>
           {selection.selectedMode === "learning" && (
             <div className="tab-decision-learning">
@@ -2372,7 +2349,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
             <Layers size={13} /> Inspect pace
           </button>
           <button type="button" onClick={() => openPaceEvidence("engineer")}>
-            <BrainCircuit size={13} /> Engineer briefing
+            <BrainCircuit size={13} /> Open Engineer evidence
           </button>
           {onToggleMapOverlay && (
             <button
@@ -2395,7 +2372,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
         <div className="section-heading-row">
           <div>
             <span className="eyebrow">Run Brief</span>
-            <h2 id="oval-run-brief-title"><Gauge size={16} /> What the next run needs</h2>
+            <h2 id="oval-run-brief-title"><Gauge size={16} /> Run evidence readiness</h2>
             <p className="section-note">Short-run speed, race-run hold, loaded-side tire readiness, and the laps the app refused to use.</p>
           </div>
           <span className="lap-flag-badge">Observation only</span>

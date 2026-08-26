@@ -163,7 +163,7 @@ export function EngineeringKnowledgeSpine({
       </div>
 
       <footer>
-        <span>NEXT · P19</span>
+        <span>P19 MISSION EVIDENCE · READ-ONLY MIRROR</span>
         <strong>{p19Next.title}</strong>
         <p>{p19Next.instruction}</p>
       </footer>

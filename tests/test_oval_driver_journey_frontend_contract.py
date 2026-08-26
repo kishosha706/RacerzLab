@@ -93,8 +93,9 @@ def test_overview_prioritizes_corner_area_and_long_run_without_new_authority() -
     assert 'data-oval-priority={topEvent ? priorityPhase?.toLowerCase() ?? "located" : "clear"}' in source
     assert 'data-driver-signal="long-run"><strong>Long run</strong> {longRunReadinessLabel}' in source
     assert 'data-driver-signal="corner-priority"><strong>Corner / area</strong> {cornerPriorityLabel}' in source
-    assert "For long-run inspection, extend this same-setup clean block" in source
-    assert "This overview does not issue setup-change or Keep/Undo policy." in source
+    assert 'aria-label="Overview evidence status"' in source
+    assert "<strong>What next:</strong>" not in source
+    assert "Import observations cannot authorize a setup change." in source
     assert "Hold the setup. If long-run pace matters" not in source
     assert "Invalid, pit, cooldown, wreck, reset, and partial laps break the chain." in source
     assert "they do not prove tire degradation or a setup cause" in source

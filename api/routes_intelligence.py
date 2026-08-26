@@ -744,6 +744,33 @@ _QUERY_HEADLINES = {
 }
 
 
+def _assert_smart_engineer_case_still_current(
+    *,
+    run_id: str,
+    session_id: str,
+    case_id: str,
+    case_sha256: str,
+) -> None:
+    """Close the race between query assembly and response publication."""
+
+    try:
+        current = EngineeringCaseRepository().current_for_scope(run_id, session_id)
+    except EngineeringCaseIntegrityError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if (
+        current is None
+        or current.case_id != case_id
+        or current.case_sha256 != case_sha256
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Engineering Case changed while Smart Engineer was answering. "
+                "Refresh the case and ask again."
+            ),
+        )
+
+
 @router.post(
     "/{run_id}/intelligence/query",
     response_model=IntelligenceQueryResponse,
@@ -784,17 +811,60 @@ def query_run_intelligence(
     except (EngineeringCaseIntegrityError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    case_answer = answer_engineering_case_question(request.question, workspace)
+    case_answer = answer_engineering_case_question(
+        request.question,
+        workspace,
+        available_citations=tuple(
+            node.citation
+            for node in bundle.report.evidence_graph.nodes
+            if node.qualified
+            and not node.blocker_reasons
+            and node.citation is not None
+        ),
+    )
     if case_answer is not None:
         snapshot_identity = intelligence_snapshot_identity(
             bundle.report.reasoning_snapshot,
             run_id=run_id,
             setup_snapshot=(overview.setup_snapshot if overview is not None else None),
         )
+        if (
+            request.selected_window_start_lap is not None
+            and request.selected_window_end_lap is not None
+        ):
+            citations_match_requested_scope = all(
+                citation.lap_number is not None
+                and request.selected_window_start_lap
+                <= citation.lap_number
+                <= request.selected_window_end_lap
+                for citation in case_answer.citations
+            )
+        elif request.selected_lap is not None:
+            citations_match_requested_scope = all(
+                citation.lap_number == request.selected_lap
+                for citation in case_answer.citations
+            )
+        else:
+            citations_match_requested_scope = True
         action_authorized = (
             case_answer.action_authorized
             and workspace.engineering_case.mission.setup_authorized
             and workspace.terminal_decision.authority == "p19_projection_only"
+            and snapshot_identity.setup_id is not None
+            and citations_match_requested_scope
+            and tuple(case_answer.action_source_event_ids)
+            == tuple(workspace.terminal_decision.source_event_ids)
+            and tuple(
+                citation.event_id for citation in case_answer.citations
+            )
+            == tuple(case_answer.action_source_event_ids)
+        )
+        action_binding_withheld = case_answer.action_authorized and not action_authorized
+        _assert_smart_engineer_case_still_current(
+            run_id=run_id,
+            session_id=request.session_id,
+            case_id=request.case_id,
+            case_sha256=request.case_sha256,
         )
         return IntelligenceQueryResponse(
             schema_version="p3544.engineering-case-query.v1",
@@ -810,7 +880,13 @@ def query_run_intelligence(
             status="ready",
             question=request.question,
             headline=case_answer.headline,
-            answer=case_answer.answer,
+            answer=(
+                "The current P19 move was withheld because its exact citation binding "
+                "changed before Smart Engineer could publish it. Reopen the current "
+                "Engineering Case."
+                if action_binding_withheld
+                else case_answer.answer
+            ),
             interpreted_lap_number=request.selected_lap,
             interpreted_window_start_lap=request.selected_window_start_lap,
             interpreted_window_end_lap=request.selected_window_end_lap,
@@ -819,7 +895,7 @@ def query_run_intelligence(
             ),
             action_authorized=action_authorized,
             action_source_event_ids=(
-                list(workspace.terminal_decision.source_event_ids)
+                list(case_answer.action_source_event_ids)
                 if action_authorized
                 else []
             ),
@@ -832,7 +908,25 @@ def query_run_intelligence(
                 if case_answer.source_artifact_ids
                 else EvidenceState.NEEDS_CONFIRMATION
             ),
-            blocker_reasons=list(case_answer.blocker_reasons),
+            citations=(
+                [
+                    to_public_intelligence_citation(citation)
+                    for citation in case_answer.citations
+                ]
+                if action_authorized
+                else []
+            ),
+            blocker_reasons=[
+                *case_answer.blocker_reasons,
+                *(
+                    (
+                        "Smart Engineer action binding changed before publication; "
+                        "the action was withheld.",
+                    )
+                    if action_binding_withheld
+                    else ()
+                ),
+            ],
             follow_up_questions=list(bundle.report.suggested_questions),
         )
     selected_scope_laps = tuple(
@@ -969,6 +1063,12 @@ def query_run_intelligence(
         bundle.report.reasoning_snapshot,
         run_id=run_id,
         setup_snapshot=(overview.setup_snapshot if overview is not None else None),
+    )
+    _assert_smart_engineer_case_still_current(
+        run_id=run_id,
+        session_id=request.session_id,
+        case_id=request.case_id,
+        case_sha256=request.case_sha256,
     )
     return IntelligenceQueryResponse(
         schema_version="p3544.engineering-case-query.v1",

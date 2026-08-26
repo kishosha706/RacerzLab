@@ -342,6 +342,10 @@ def test_frontend_awareness_is_stale_safe_and_uses_existing_surfaces() -> None:
     assert "response.request_identity.run_id !== requestedRunId" in panel
     assert "response.session_id !== requestedSessionId" in panel
     assert "response.request_identity.session_id !== requestedSessionId" in panel
+    assert "response.reasoning_snapshot_id !== requestedReasoningSnapshotId" in panel
+    assert "response.request_identity.reasoning_snapshot_id !== requestedReasoningSnapshotId" in panel
+    assert "response.state_revision !== requestedStateRevision" in panel
+    assert "response.request_identity.state_revision !== requestedStateRevision" in panel
     assert "focusEvidence({" in panel
     assert 'learning ? <>' in panel
     assert 'className="engineering-awareness__systems"' in panel

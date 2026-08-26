@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { PriorityRail } from "./PriorityRail";
@@ -12,7 +12,7 @@ vi.mock("../store/TelemetrySelectionContext", () => ({
 }));
 
 describe("PriorityRail narrow modal contract", () => {
-  it("exposes a real modal dialog with an explicit close control", () => {
+  it("exposes a real modal dialog, marks its isolation layer, and takes focus", async () => {
     render(
       <PriorityRail
         runId="run-1"
@@ -26,6 +26,8 @@ describe("PriorityRail narrow modal contract", () => {
     );
     const dialog = screen.getByRole("dialog", { name: "Priority evidence" });
     expect(dialog.getAttribute("aria-modal")).toBe("true");
-    expect(screen.getByRole("button", { name: "Collapse Priority Rail" })).toBeTruthy();
+    expect(dialog.getAttribute("data-priority-modal-layer")).toBe("true");
+    const close = screen.getByRole("button", { name: "Collapse Priority Rail" });
+    await waitFor(() => expect(document.activeElement).toBe(close));
   });
 });

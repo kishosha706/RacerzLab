@@ -79,6 +79,8 @@ export interface EvidenceContext {
   p19CauseIds?: string[];
   quantityIds?: string[];
   discriminatorId?: string | null;
+  workflowId?: string | null;
+  workflowRevision?: string | null;
   sampleIndex: number | null;
   lapDistFt: number | null;
   lapPct: number | null;
@@ -134,6 +136,8 @@ export type TelemetrySelection = {
   selectedP19CauseIds?: string[];
   selectedQuantityIds?: string[];
   selectedDiscriminatorId?: string | null;
+  selectedWorkflowId?: string | null;
+  selectedWorkflowRevision?: string | null;
   selectedSystem?: string | null;
   selectedCompareRole?: CompareRole;
   selectedSourceRunId?: string | null;

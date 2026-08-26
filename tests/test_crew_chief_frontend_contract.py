@@ -199,15 +199,14 @@ def test_engineer_uses_one_atomic_command_deck_without_a_new_top_level_tab() -> 
     app = (ROOT / "ui/src/App.tsx").read_text(encoding="utf-8")
     assert "<CrewChiefCommandDeck" in engineer
     for label in (
-        "NEXT · P19",
         "OBSERVED",
         "ATTRIBUTION",
         "STRONGEST CONTRADICTION",
     ):
         assert label in deck
-    assert deck.index("NEXT · P19") < deck.index("OBSERVED")
+    assert "NEXT · P19" not in deck
     assert 'aria-label="Measured Speed Story"' in deck
-    assert "Mission ribbon" in deck and "Run sentinel" in deck
+    assert "Mission evidence status" in deck and "Run sentinel" in deck
     assert "ENGINEERING MEMORY" in deck and "Learning ledger" in deck
     assert "Performance history" not in deck and "Response atlas" not in deck
     assert '"crew_chief"' not in app

@@ -46,6 +46,8 @@ import {
 } from "../utils/intelligenceResponseTrust";
 import { isDialInHypothesisResponse } from "../utils/dialInResponseTrust";
 import { isControlledWorkflowResponse } from "../utils/controlledWorkflowTrust";
+import { canonicalJsonSha256 } from "../utils/canonicalJsonSha256";
+import { getLocalApiCapabilityToken } from "./localApiCapability";
 
 const API_BASE =
   import.meta.env.VITE_RACELAB_API_BASE_URL ??
@@ -126,7 +128,12 @@ async function fetchWithTimeout(url: string, init: RequestInit, ms: number = REQ
   else externalSignal?.addEventListener("abort", abortFromCaller, { once: true });
   const timer = setTimeout(() => controller.abort(), ms);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    const headers = new Headers(init.headers);
+    const capabilityToken = await getLocalApiCapabilityToken();
+    if (capabilityToken) {
+      headers.set("X-RacerZLab-Capability", capabilityToken);
+    }
+    return await fetch(url, { ...init, headers, signal: controller.signal });
   } finally {
     clearTimeout(timer);
     externalSignal?.removeEventListener("abort", abortFromCaller);
@@ -175,7 +182,7 @@ function errorMessageFromResponseText(text: string, fallback: string): string {
   return text || fallback;
 }
 
-async function requestJson<T>(path: string, init?: RequestInit, timeoutMs: number = REQUEST_TIMEOUT_MS, timeoutLabel: string = "Request"): Promise<T> {
+export async function requestJson<T>(path: string, init?: RequestInit, timeoutMs: number = REQUEST_TIMEOUT_MS, timeoutLabel: string = "Request"): Promise<T> {
   const method = requestMethod(init);
   const key = requestKey(path, timeoutMs);
   const requestCacheGeneration = apiCacheGeneration;
@@ -329,6 +336,7 @@ export function fetchRunIntelligence(
 ): Promise<RunIntelligenceReport> {
   const params = new URLSearchParams();
   if (options?.sessionId) params.set("session_id", options.sessionId);
+  if (options?.refreshKey != null) params.set("refresh", String(options.refreshKey));
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return requestJson<unknown>(
     `/api/runs/${encodeURIComponent(runId)}/intelligence${suffix}`,
@@ -351,7 +359,7 @@ export function fetchRunIntelligence(
 export function fetchEngineeringCase(
   runId: string,
   sessionId: string,
-  options?: { objective?: string; expectedCaseSha256?: string | null },
+  options?: { objective?: string | null; expectedCaseSha256?: string | null },
 ): Promise<EngineeringCaseRevision> {
   const params = new URLSearchParams({ session_id: sessionId });
   if (options?.objective) params.set("objective", options.objective);
@@ -362,7 +370,11 @@ export function fetchEngineeringCase(
     INTELLIGENCE_TIMEOUT_MS,
     "Engineering Case",
   ).then(async (payload) => {
-    if (!await isEngineeringCaseRevision(payload, { runId, sessionId })) {
+    if (!await isEngineeringCaseRevision(payload, { runId, sessionId })
+      || (options?.expectedCaseSha256 != null
+        && (payload as EngineeringCaseRevision).case_sha256
+          !== options.expectedCaseSha256)) {
+      invalidateApiCache("/engineering-case");
       throw new Error("Engineering Case failed its exact revision, scope, hash, or authority check.");
     }
     return payload as EngineeringCaseRevision;
@@ -401,6 +413,8 @@ async function trustedCrewChiefResponse(
   report: RunIntelligenceReport,
   objectiveId: EngineeringObjective,
   scopeRunIds?: readonly string[],
+  expectMutationReceipt = false,
+  expectedPreviousCaseSha256?: string,
 ): Promise<CrewChiefWorkspace> {
   const [
     crewTrust,
@@ -437,6 +451,16 @@ async function trustedCrewChiefResponse(
   }
   if (!await crewTrust.hasCanonicalEngineeringCaseDigest(payload)) {
     throw new Error("Crew Chief failed its canonical P35.4.3 engineering-case identity check.");
+  }
+  if (!await crewTrust.hasCanonicalSelectedRunScopeDigest(payload)) {
+    throw new Error("Crew Chief failed its canonical selected-run scope identity check.");
+  }
+  if (!await crewTrust.hasCanonicalCrewMutationReceiptDigest(
+    payload,
+    expectMutationReceipt,
+    expectedPreviousCaseSha256,
+  )) {
+    throw new Error("Crew Chief failed its exact durable mutation-publication receipt check.");
   }
   if (!await learningTrust.hasCanonicalEngineeringLearningDigests(payload.learning_prior)) {
     throw new Error("Crew Chief failed its canonical P33 learning identity check.");
@@ -488,14 +512,22 @@ export function openCrewChiefInvestigation(
   sessionId: string,
   report: RunIntelligenceReport,
   scopeRunIds: readonly string[],
-  body: { driver_report: string; expected_workspace_revision: string; objective: EngineeringObjective },
+  body: {
+    driver_report: string;
+    expected_workspace_revision: string;
+    expected_case_sha256: string;
+    objective: EngineeringObjective;
+  },
 ): Promise<CrewChiefWorkspace> {
   return requestJson<unknown>(
     `/api/runs/${encodeURIComponent(runId)}/crew-chief-investigations`,
     { method: "POST", body: JSON.stringify({ session_id: sessionId, ...body }) },
     INTELLIGENCE_TIMEOUT_MS,
     "Open Crew Chief investigation",
-  ).then((payload) => trustedCrewChiefResponse(payload, runId, sessionId, report, body.objective, scopeRunIds));
+  ).then((payload) => trustedCrewChiefResponse(
+    payload, runId, sessionId, report, body.objective, scopeRunIds, true,
+    body.expected_case_sha256,
+  ));
 }
 
 export function continueCrewChiefInvestigation(
@@ -503,16 +535,24 @@ export function continueCrewChiefInvestigation(
   sessionId: string,
   investigationId: string,
   expectedWorkspaceRevision: string,
+  expectedCaseSha256: string,
   report: RunIntelligenceReport,
   scopeRunIds: readonly string[],
   objective: EngineeringObjective,
 ): Promise<CrewChiefWorkspace> {
   return requestJson<unknown>(
     `/api/runs/${encodeURIComponent(runId)}/crew-chief-investigations/${encodeURIComponent(investigationId)}/continue`,
-    { method: "POST", body: JSON.stringify({ session_id: sessionId, expected_workspace_revision: expectedWorkspaceRevision }) },
+    { method: "POST", body: JSON.stringify({
+      session_id: sessionId,
+      expected_workspace_revision: expectedWorkspaceRevision,
+      expected_case_sha256: expectedCaseSha256,
+    }) },
     INTELLIGENCE_TIMEOUT_MS,
     "Continue Crew Chief investigation",
-  ).then((payload) => trustedCrewChiefResponse(payload, runId, sessionId, report, objective, scopeRunIds));
+  ).then((payload) => trustedCrewChiefResponse(
+    payload, runId, sessionId, report, objective, scopeRunIds, true,
+    expectedCaseSha256,
+  ));
 }
 
 export function advanceCrewChiefInvestigation(
@@ -520,16 +560,25 @@ export function advanceCrewChiefInvestigation(
   sessionId: string,
   investigationId: string,
   expectedWorkspaceRevision: string,
+  expectedCaseSha256: string,
   report: RunIntelligenceReport,
   scopeRunIds: readonly string[],
   objective: EngineeringObjective,
 ): Promise<CrewChiefWorkspace> {
   return requestJson<unknown>(
     `/api/runs/${encodeURIComponent(runId)}/crew-chief-investigations/${encodeURIComponent(investigationId)}/advance-until-boundary`,
-    { method: "POST", body: JSON.stringify({ session_id: sessionId, expected_workspace_revision: expectedWorkspaceRevision, max_read_only_steps: 4 }) },
+    { method: "POST", body: JSON.stringify({
+      session_id: sessionId,
+      expected_workspace_revision: expectedWorkspaceRevision,
+      expected_case_sha256: expectedCaseSha256,
+      max_read_only_steps: 4,
+    }) },
     INTELLIGENCE_TIMEOUT_MS,
     "Advance Crew Chief to the next boundary",
-  ).then((payload) => trustedCrewChiefResponse(payload, runId, sessionId, report, objective, scopeRunIds));
+  ).then((payload) => trustedCrewChiefResponse(
+    payload, runId, sessionId, report, objective, scopeRunIds, true,
+    expectedCaseSha256,
+  ));
 }
 
 export function answerCrewChiefQuestion(
@@ -537,6 +586,7 @@ export function answerCrewChiefQuestion(
   sessionId: string,
   investigationId: string,
   expectedWorkspaceRevision: string,
+  expectedCaseSha256: string,
   answer: string,
   report: RunIntelligenceReport,
   scopeRunIds: readonly string[],
@@ -544,10 +594,18 @@ export function answerCrewChiefQuestion(
 ): Promise<CrewChiefWorkspace> {
   return requestJson<unknown>(
     `/api/runs/${encodeURIComponent(runId)}/crew-chief-investigations/${encodeURIComponent(investigationId)}/driver-answer`,
-    { method: "POST", body: JSON.stringify({ session_id: sessionId, expected_workspace_revision: expectedWorkspaceRevision, answer }) },
+    { method: "POST", body: JSON.stringify({
+      session_id: sessionId,
+      expected_workspace_revision: expectedWorkspaceRevision,
+      expected_case_sha256: expectedCaseSha256,
+      answer,
+    }) },
     INTELLIGENCE_TIMEOUT_MS,
     "Crew Chief driver answer",
-  ).then((payload) => trustedCrewChiefResponse(payload, runId, sessionId, report, objective, scopeRunIds));
+  ).then((payload) => trustedCrewChiefResponse(
+    payload, runId, sessionId, report, objective, scopeRunIds, true,
+    expectedCaseSha256,
+  ));
 }
 
 function mutateCrewChiefInvestigation(
@@ -559,45 +617,56 @@ function mutateCrewChiefInvestigation(
   report: RunIntelligenceReport,
   scopeRunIds: readonly string[],
   objective: EngineeringObjective,
+  expectedCaseSha256: string,
 ): Promise<CrewChiefWorkspace> {
   return requestJson<unknown>(
     `/api/runs/${encodeURIComponent(runId)}/crew-chief-investigations/${encodeURIComponent(investigationId)}/${action}`,
     { method: "POST", body: JSON.stringify({ session_id: sessionId, ...body }) },
     INTELLIGENCE_TIMEOUT_MS,
     `Crew Chief ${action}`,
-  ).then((payload) => trustedCrewChiefResponse(payload, runId, sessionId, report, objective, scopeRunIds));
+  ).then((payload) => trustedCrewChiefResponse(
+    payload, runId, sessionId, report, objective, scopeRunIds, true,
+    expectedCaseSha256,
+  ));
 }
 
 export function updateCrewChiefObjective(
   runId: string, sessionId: string, investigationId: string,
-  expectedWorkspaceRevision: string, objective: EngineeringObjective,
+  expectedWorkspaceRevision: string, expectedCaseSha256: string,
+  objective: EngineeringObjective,
   report: RunIntelligenceReport, scopeRunIds: readonly string[],
 ): Promise<CrewChiefWorkspace> {
   return mutateCrewChiefInvestigation(runId, sessionId, investigationId, "objective", {
-    expected_workspace_revision: expectedWorkspaceRevision, objective,
-  }, report, scopeRunIds, objective);
+    expected_workspace_revision: expectedWorkspaceRevision,
+    expected_case_sha256: expectedCaseSha256,
+    objective,
+  }, report, scopeRunIds, objective, expectedCaseSha256);
 }
 
 export function abandonCrewChiefInvestigation(
   runId: string, sessionId: string, investigationId: string,
-  expectedWorkspaceRevision: string, reason: string,
+  expectedWorkspaceRevision: string, expectedCaseSha256: string, reason: string,
   report: RunIntelligenceReport, scopeRunIds: readonly string[],
   objective: EngineeringObjective,
 ): Promise<CrewChiefWorkspace> {
   return mutateCrewChiefInvestigation(runId, sessionId, investigationId, "abandon", {
-    expected_workspace_revision: expectedWorkspaceRevision, reason,
-  }, report, scopeRunIds, objective);
+    expected_workspace_revision: expectedWorkspaceRevision,
+    expected_case_sha256: expectedCaseSha256,
+    reason,
+  }, report, scopeRunIds, objective, expectedCaseSha256);
 }
 
 export function rebaseCrewChiefInvestigation(
   runId: string, sessionId: string, investigationId: string,
-  staleWorkspaceRevision: string, report: RunIntelligenceReport,
+  staleWorkspaceRevision: string, expectedCaseSha256: string,
+  report: RunIntelligenceReport,
   scopeRunIds: readonly string[],
   objective: EngineeringObjective,
 ): Promise<CrewChiefWorkspace> {
   return mutateCrewChiefInvestigation(runId, sessionId, investigationId, "rebase", {
     stale_workspace_revision: staleWorkspaceRevision,
-  }, report, scopeRunIds, objective);
+    expected_case_sha256: expectedCaseSha256,
+  }, report, scopeRunIds, objective, expectedCaseSha256);
 }
 
 export function fetchVehicleSystems(
@@ -771,28 +840,17 @@ export function analyzeRunDialIn(runId: string, payload: DialInRequest): Promise
   });
 }
 
-export function startControlledWorkflow(payload: {
-  run_id: string;
-  session_id: string;
-  complaint: string;
-  selected_lap?: number | null;
-  lap_scope?: "run" | "single_lap" | "lap_window" | "track_zone" | null;
-  window_start_lap?: number | null;
-  window_end_lap?: number | null;
-  representative_lap?: number | null;
-} & DialInDecisionContext): Promise<ControlledWorkflow> {
-  return requestJson<unknown>("/api/engineering/workflows", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  }).then((response) => trustedControlledWorkflow(response));
-}
-
 export type AtomicDriverIntentWorkflowResponse = {
+  schema_version: "p3544.atomic-driver-intent-workflow.v2";
+  mutation_id: string;
+  request_sha256: string;
+  expected_case_sha256: string;
   state: "workflow_created" | "measurement_required" | "blocked" | "no_current_problem" | "insufficient_evidence" | "unsupported_context";
   case_revision: EngineeringCaseRevision;
   driver_intent: DriverIntent;
   advisory: DialInResponse;
   workflow: ControlledWorkflow | null;
+  workflow_revision_sha256: string | null;
   withholding_reason: string | null;
 };
 
@@ -816,17 +874,29 @@ export function submitAtomicDriverIntentWorkflow(payload: {
   ).then(async (value) => {
     if (typeof value !== "object" || value === null) throw new Error("Atomic DriverIntent response is malformed.");
     const response = value as AtomicDriverIntentWorkflowResponse;
-    if (!await isEngineeringCaseRevision(response.case_revision, {
+    const hash = /^[0-9a-f]{64}$/;
+    if (response.schema_version !== "p3544.atomic-driver-intent-workflow.v2"
+      || typeof response.request_sha256 !== "string" || !hash.test(response.request_sha256)
+      || response.mutation_id !== `cwm_${response.request_sha256.slice(0, 24)}`
+      || response.expected_case_sha256 !== payload.expected_case_sha256
+      || !await isEngineeringCaseRevision(response.case_revision, {
       runId: payload.run_id,
       sessionId: payload.session_id,
-    }) || response.driver_intent.case_id !== response.case_revision.case_id
+    }) || response.case_revision.previous_case_sha256 !== payload.expected_case_sha256
+      || response.driver_intent.case_id !== response.case_revision.case_id
       || response.driver_intent.raw_driver_wording.trim() !== payload.complaint.trim()
       || !isDialInHypothesisResponse(response.advisory, {
         runId: payload.run_id,
         complaint: payload.complaint,
         sessionId: payload.session_id,
       })
-      || (response.workflow !== null && !isControlledWorkflowResponse(response.workflow))) {
+      || (response.workflow !== null && (!isControlledWorkflowResponse(response.workflow)
+        || response.workflow.source_run_id !== payload.run_id
+        || typeof response.workflow_revision_sha256 !== "string"
+        || !hash.test(response.workflow_revision_sha256)
+        || response.case_revision.case.active_workflow_id !== response.workflow.workflow_id
+        || response.case_revision.case.active_workflow_revision !== response.workflow_revision_sha256))
+      || (response.workflow === null && response.workflow_revision_sha256 !== null)) {
       throw new Error("Atomic DriverIntent/workflow response failed exact case and authority validation.");
     }
     return response;
@@ -840,29 +910,104 @@ function trustedControlledWorkflow(payload: unknown): ControlledWorkflow {
   return payload;
 }
 
+export type WorkflowCaseMutationBinding = {
+  case_run_id: string;
+  session_id: string;
+  expected_case_sha256: string;
+};
+
+export type ControlledWorkflowCaseMutationResponse = {
+  schema_version: "p3544.controlled-workflow-case-mutation.v1";
+  mutation_id: string;
+  request_sha256: string;
+  action: "cancel" | "stage" | "score";
+  expected_case_sha256: string;
+  workflow_revision_sha256: string;
+  workflow: ControlledWorkflow;
+  case_revision: EngineeringCaseRevision;
+};
+
+async function trustedControlledWorkflowMutation(
+  payload: unknown,
+  expected: WorkflowCaseMutationBinding & {
+    workflowId: string;
+    action: ControlledWorkflowCaseMutationResponse["action"];
+  },
+): Promise<ControlledWorkflowCaseMutationResponse> {
+  if (typeof payload !== "object" || payload === null) {
+    throw new Error("Controlled-workflow mutation response is malformed.");
+  }
+  const response = payload as ControlledWorkflowCaseMutationResponse;
+  const hash = /^[0-9a-f]{64}$/;
+  const terminal = expected.action === "cancel" || expected.action === "score";
+  const trustedWorkflow = isControlledWorkflowResponse(response.workflow);
+  const exactWorkflowRevision = trustedWorkflow
+    ? await canonicalJsonSha256({
+      schema: "controlled-workflow-revision.v2",
+      workflow: response.workflow,
+    })
+    : null;
+  if (response.schema_version !== "p3544.controlled-workflow-case-mutation.v1"
+    || response.action !== expected.action
+    || response.expected_case_sha256 !== expected.expected_case_sha256
+    || typeof response.request_sha256 !== "string" || !hash.test(response.request_sha256)
+    || response.mutation_id !== `cwm_${response.request_sha256.slice(0, 24)}`
+    || typeof response.workflow_revision_sha256 !== "string" || !hash.test(response.workflow_revision_sha256)
+    || !trustedWorkflow
+    || response.workflow_revision_sha256 !== exactWorkflowRevision
+    || response.workflow.workflow_id !== expected.workflowId
+    || response.workflow.source_run_id !== expected.case_run_id
+    || !await isEngineeringCaseRevision(response.case_revision, {
+      runId: expected.case_run_id,
+      sessionId: expected.session_id,
+    })
+    || response.case_revision.previous_case_sha256 !== expected.expected_case_sha256
+    || (terminal && (response.case_revision.case.active_workflow_id !== null
+      || response.case_revision.case.active_workflow_revision !== null))
+    || (!terminal && (response.case_revision.case.active_workflow_id !== expected.workflowId
+      || response.case_revision.case.active_workflow_revision !== response.workflow_revision_sha256))) {
+    throw new Error("Controlled-workflow mutation failed exact workflow and case-revision validation.");
+  }
+  return response;
+}
+
 export function attachControlledWorkflowStage(
   workflowId: string,
   stage: "A" | "B" | "A2",
   runId: string,
-): Promise<ControlledWorkflow> {
+  binding: WorkflowCaseMutationBinding,
+): Promise<ControlledWorkflowCaseMutationResponse> {
   return requestJson<unknown>(
     `/api/engineering/workflows/${encodeURIComponent(workflowId)}/stages/${stage}`,
-    { method: "POST", body: JSON.stringify({ run_id: runId }) },
-  ).then((response) => trustedControlledWorkflow(response));
+    { method: "POST", body: JSON.stringify({ run_id: runId, ...binding }) },
+  ).then((response) => trustedControlledWorkflowMutation(response, {
+    ...binding, workflowId, action: "stage",
+  }));
 }
 
-export function scoreControlledWorkflow(workflowId: string): Promise<ControlledWorkflow> {
+export function scoreControlledWorkflow(
+  workflowId: string,
+  binding: WorkflowCaseMutationBinding,
+): Promise<ControlledWorkflowCaseMutationResponse> {
   return requestJson<unknown>(
     `/api/engineering/workflows/${encodeURIComponent(workflowId)}/score`, {
     method: "POST",
-  }).then((response) => trustedControlledWorkflow(response));
+    body: JSON.stringify(binding),
+  }).then((response) => trustedControlledWorkflowMutation(response, {
+    ...binding, workflowId, action: "score",
+  }));
 }
 
-export function cancelControlledWorkflow(workflowId: string): Promise<ControlledWorkflow> {
+export function cancelControlledWorkflow(
+  workflowId: string,
+  binding: WorkflowCaseMutationBinding,
+): Promise<ControlledWorkflowCaseMutationResponse> {
   return requestJson<unknown>(
     `/api/engineering/workflows/${encodeURIComponent(workflowId)}/cancel`,
-    { method: "POST" },
-  ).then((response) => trustedControlledWorkflow(response));
+    { method: "POST", body: JSON.stringify(binding) },
+  ).then((response) => trustedControlledWorkflowMutation(response, {
+    ...binding, workflowId, action: "cancel",
+  }));
 }
 
 export function fetchControlledWorkflows(

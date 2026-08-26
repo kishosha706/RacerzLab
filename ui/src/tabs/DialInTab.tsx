@@ -38,6 +38,7 @@ type DialInTabProps = {
   currentIntelligenceAuthority: CurrentIntelligenceAuthority | null;
   intelligenceAuthorityStatus: CurrentIntelligenceAuthorityStatus;
   intelligenceAuthorityRecovery: string;
+  onWorkflowMutation: (mutationIdentity: string) => void;
 };
 
 const DIAL_IN_INITIAL_LIMIT = 9;
@@ -651,8 +652,16 @@ export function DialInTab({
   currentIntelligenceAuthority,
   intelligenceAuthorityStatus,
   intelligenceAuthorityRecovery,
+  onWorkflowMutation,
 }: DialInTabProps) {
-  const { engineeringCase, replaceRevision, invalidate: invalidateEngineeringCase } = useEngineeringCase();
+  const {
+    engineeringCase,
+    status: engineeringCaseStatus,
+    error: engineeringCaseError,
+    retry: retryEngineeringCase,
+    replaceRevision,
+    invalidate: invalidateEngineeringCase,
+  } = useEngineeringCase();
   const { basket } = useCompareBasket();
   const { selection, setWorkspace } = useTelemetrySelection();
   const dialRequestSeqRef = useRef(0);
@@ -1091,7 +1100,7 @@ export function DialInTab({
     && exactSourceRunIntelligenceAuthority != null;
 
   const submitDialIn = useCallback(async () => {
-    if (!overview || !sessionId || !workflowCatalogReady || activeWorkflow || workflowAuthorityBlocked) return;
+    if (!overview || !sessionId || engineeringCaseStatus !== "ready" || !workflowCatalogReady || activeWorkflow || workflowAuthorityBlocked) return;
     const trimmed = complaint.trim();
     const requestedBinding = currentRequestBinding;
     if (!trimmed || !requestedBinding?.normalized_complaint || loading) return;
@@ -1146,10 +1155,16 @@ export function DialInTab({
       const dialResponse = result.advisory;
       setResponse(dialResponse);
       setResponseRequestBinding(requestedBinding);
-      replaceRevision(result.case_revision);
+      if (!replaceRevision(result.case_revision)) {
+        throw new Error(
+          "The Engineering Case advanced on another surface. Refresh before continuing.",
+        );
+      }
+      const mutationIdentity = `${result.mutation_id}:${result.case_revision.case_sha256}:${result.workflow_revision_sha256 ?? "none"}`;
       if (result.workflow == null) {
         setWorkflow(null);
         setWorkflowError(result.withholding_reason);
+        onWorkflowMutation(mutationIdentity);
         return;
       }
       const nextWorkflow = result.workflow;
@@ -1172,6 +1187,7 @@ export function DialInTab({
       }
       setWorkflow(nextWorkflow);
       setWorkflowError(null);
+      onWorkflowMutation(mutationIdentity);
     } catch (caught) {
       if (requestSeq !== dialRequestSeqRef.current || currentRunIdRef.current !== requestedRunId) return;
       setResponse(null);
@@ -1185,7 +1201,7 @@ export function DialInTab({
         setLoading(false);
       }
     }
-  }, [activeWorkflow, basket.baseline, complaint, currentRequestBinding, decisionContext, engineeringCase, loading, overview, replaceRevision, selectedLapForRequest, sessionId, workflowAuthorityBlocked, workflowCatalogReady, workflowLapContext]);
+  }, [activeWorkflow, basket.baseline, complaint, currentRequestBinding, decisionContext, engineeringCase, engineeringCaseStatus, loading, onWorkflowMutation, overview, replaceRevision, selectedLapForRequest, sessionId, workflowAuthorityBlocked, workflowCatalogReady, workflowLapContext]);
 
   const clearDialIn = useCallback(() => {
     if (workflowBusy || !workflowCatalogReady) return;
@@ -1204,7 +1220,7 @@ export function DialInTab({
   }, [activeWorkflow, workflow, workflowBusy, workflowCatalogReady]);
 
   const buildVerifiedWorkflow = useCallback(async () => {
-    if (!overview || !sessionId || !engineeringCase || !workflowCatalogReady || workflowBusy || activeWorkflow || workflowAuthorityBlocked) return;
+    if (!overview || !sessionId || engineeringCaseStatus !== "ready" || !engineeringCase || !workflowCatalogReady || workflowBusy || activeWorkflow || workflowAuthorityBlocked) return;
     const requestedRunId = overview.run_id;
     const requestedBinding = currentRequestBinding;
     if (!requestedBinding?.normalized_complaint) return;
@@ -1237,10 +1253,15 @@ export function DialInTab({
         setResponseRequestBinding(null);
         throw new Error(message);
       }
-      replaceRevision(result.case_revision);
+      if (!replaceRevision(result.case_revision)) {
+        throw new Error(
+          "The Engineering Case advanced on another surface. Refresh before continuing.",
+        );
+      }
       setResponse(result.advisory);
       setResponseRequestBinding(requestedBinding);
       setWorkflow(nextWorkflow);
+      onWorkflowMutation(`${result.mutation_id}:${result.case_revision.case_sha256}:${result.workflow_revision_sha256 ?? "none"}`);
     } catch (caught) {
       if (requestSeq !== workflowRequestSeqRef.current || currentRunIdRef.current !== requestedRunId) return;
       setWorkflowError(caught instanceof Error ? caught.message : "Verified test planning failed.");
@@ -1249,7 +1270,7 @@ export function DialInTab({
         setWorkflowBusy(false);
       }
     }
-  }, [activeWorkflow, complaint, currentRequestBinding, decisionContext, engineeringCase, overview, replaceRevision, selectedLapForRequest, sessionId, workflowAuthorityBlocked, workflowBusy, workflowCatalogReady, workflowLapContext]);
+  }, [activeWorkflow, complaint, currentRequestBinding, decisionContext, engineeringCase, engineeringCaseStatus, onWorkflowMutation, overview, replaceRevision, selectedLapForRequest, sessionId, workflowAuthorityBlocked, workflowBusy, workflowCatalogReady, workflowLapContext]);
 
   const nextWorkflowStage = activeControlledTest
     ? (["A", "B", "A2"] as const).find((stage) => !workflow.stage_run_ids[stage])
@@ -1260,7 +1281,7 @@ export function DialInTab({
     || exactSourceRunIntelligenceAuthority != null;
 
   const abandonActiveTest = useCallback(async () => {
-    if (!activeWorkflow || !workflow || workflowBusy) return;
+    if (!activeWorkflow || !workflow || workflowBusy || engineeringCaseStatus !== "ready" || !engineeringCase || !sessionId) return;
     const requestedRunId = overview?.run_id ?? null;
     const workflowId = workflow.workflow_id;
     const expectedSourceRunId = workflow.source_run_id;
@@ -1269,7 +1290,12 @@ export function DialInTab({
     setWorkflowError(null);
     setAbandonConfirmOpen(false);
     try {
-      const cancelledWorkflow = await cancelControlledWorkflow(workflowId);
+      const result = await cancelControlledWorkflow(workflowId, {
+        case_run_id: engineeringCase.run_id,
+        session_id: sessionId,
+        expected_case_sha256: engineeringCase.case_sha256,
+      });
+      const cancelledWorkflow = result.workflow;
       if (
         requestSeq !== workflowRequestSeqRef.current
         || currentRunIdRef.current !== requestedRunId
@@ -1285,6 +1311,9 @@ export function DialInTab({
         setResponse(null);
         setResponseRequestBinding(null);
         return;
+      }
+      if (!replaceRevision(result.case_revision)) {
+        throw new Error("The Engineering Case advanced on another surface. Refresh before continuing.");
       }
       const remainingActiveWorkflows = ambiguousActiveWorkflows.filter((item) => item.workflow_id !== workflowId);
       setAmbiguousActiveWorkflows(remainingActiveWorkflows.length > 1 ? remainingActiveWorkflows : []);
@@ -1306,16 +1335,17 @@ export function DialInTab({
       }
       setResponse(null);
       setResponseRequestBinding(null);
-      invalidateEngineeringCase();
+      onWorkflowMutation(`${result.mutation_id}:${result.case_revision.case_sha256}:${result.workflow_revision_sha256}`);
     } catch (caught) {
       if (requestSeq !== workflowRequestSeqRef.current || currentRunIdRef.current !== requestedRunId) return;
+      invalidateEngineeringCase();
       setWorkflowError(caught instanceof Error ? caught.message : "The workflow could not be abandoned.");
     } finally {
       if (requestSeq === workflowRequestSeqRef.current && currentRunIdRef.current === requestedRunId) {
         setWorkflowBusy(false);
       }
     }
-  }, [activeWorkflow, ambiguousActiveWorkflows, invalidateEngineeringCase, overview?.run_id, workflow, workflowBusy]);
+  }, [activeWorkflow, ambiguousActiveWorkflows, engineeringCase, engineeringCaseStatus, invalidateEngineeringCase, onWorkflowMutation, overview?.run_id, replaceRevision, sessionId, workflow, workflowBusy]);
 
   const recordCurrentRun = useCallback(async () => {
     if (
@@ -1323,6 +1353,9 @@ export function DialInTab({
       || !workflow
       || !nextWorkflowStage
       || workflowBusy
+      || !engineeringCase
+      || engineeringCaseStatus !== "ready"
+      || !sessionId
       || !workflowContextMatches
       || workflowAuthorityBlocked
       || (nextWorkflowStage === "B" && exactSourceRunIntelligenceAuthority == null)
@@ -1346,7 +1379,17 @@ export function DialInTab({
     setWorkflowBusy(true);
     setWorkflowError(null);
     try {
-      const nextWorkflow = await attachControlledWorkflowStage(workflowId, requestedStage, requestedRunId);
+      const result = await attachControlledWorkflowStage(
+        workflowId,
+        requestedStage,
+        requestedRunId,
+        {
+          case_run_id: engineeringCase.run_id,
+          session_id: sessionId,
+          expected_case_sha256: engineeringCase.case_sha256,
+        },
+      );
+      const nextWorkflow = result.workflow;
       if (
         requestSeq !== workflowRequestSeqRef.current
         || currentRunIdRef.current !== requestedRunId
@@ -1366,20 +1409,24 @@ export function DialInTab({
         setResponseRequestBinding(null);
         throw new Error(message);
       }
+      if (!replaceRevision(result.case_revision)) {
+        throw new Error("The Engineering Case advanced on another surface. Refresh before continuing.");
+      }
       setWorkflow(nextWorkflow);
-      invalidateEngineeringCase();
+      onWorkflowMutation(`${result.mutation_id}:${result.case_revision.case_sha256}:${result.workflow_revision_sha256}`);
     } catch (caught) {
       if (requestSeq !== workflowRequestSeqRef.current || currentRunIdRef.current !== requestedRunId) return;
+      invalidateEngineeringCase();
       setWorkflowError(caught instanceof Error ? caught.message : "The current run did not pass stage verification.");
     } finally {
       if (requestSeq === workflowRequestSeqRef.current && currentRunIdRef.current === requestedRunId) {
         setWorkflowBusy(false);
       }
     }
-  }, [exactSourceRunIntelligenceAuthority, invalidateEngineeringCase, nextWorkflowStage, overview, workflow, workflowAuthorityBlocked, workflowBusy, workflowContextMatches]);
+  }, [engineeringCase, engineeringCaseStatus, exactSourceRunIntelligenceAuthority, invalidateEngineeringCase, nextWorkflowStage, onWorkflowMutation, overview, replaceRevision, sessionId, workflow, workflowAuthorityBlocked, workflowBusy, workflowContextMatches]);
 
   const scoreVerifiedWorkflow = useCallback(async () => {
-    if (!workflow || workflow.status !== "a2_recorded" || workflowBusy || !workflowContextMatches || workflowAuthorityBlocked) return;
+    if (!workflow || engineeringCaseStatus !== "ready" || !engineeringCase || !sessionId || workflow.status !== "a2_recorded" || workflowBusy || !workflowContextMatches || workflowAuthorityBlocked) return;
     const requestedRunId = overview?.run_id ?? null;
     const workflowId = workflow.workflow_id;
     const expectedSourceRunId = workflow.source_run_id;
@@ -1397,7 +1444,12 @@ export function DialInTab({
     setWorkflowBusy(true);
     setWorkflowError(null);
     try {
-      const nextWorkflow = await scoreControlledWorkflow(workflowId);
+      const result = await scoreControlledWorkflow(workflowId, {
+        case_run_id: engineeringCase.run_id,
+        session_id: sessionId,
+        expected_case_sha256: engineeringCase.case_sha256,
+      });
+      const nextWorkflow = result.workflow;
       if (
         requestSeq !== workflowRequestSeqRef.current
         || currentRunIdRef.current !== requestedRunId
@@ -1416,17 +1468,21 @@ export function DialInTab({
         setResponseRequestBinding(null);
         throw new Error(message);
       }
+      if (!replaceRevision(result.case_revision)) {
+        throw new Error("The Engineering Case advanced on another surface. Refresh before continuing.");
+      }
       setWorkflow(nextWorkflow);
-      invalidateEngineeringCase();
+      onWorkflowMutation(`${result.mutation_id}:${result.case_revision.case_sha256}:${result.workflow_revision_sha256}`);
     } catch (caught) {
       if (requestSeq !== workflowRequestSeqRef.current || currentRunIdRef.current !== requestedRunId) return;
+      invalidateEngineeringCase();
       setWorkflowError(caught instanceof Error ? caught.message : "Controlled test scoring failed.");
     } finally {
       if (requestSeq === workflowRequestSeqRef.current && currentRunIdRef.current === requestedRunId) {
         setWorkflowBusy(false);
       }
     }
-  }, [invalidateEngineeringCase, overview?.run_id, workflow, workflowAuthorityBlocked, workflowBusy, workflowContextMatches]);
+  }, [engineeringCase, engineeringCaseStatus, invalidateEngineeringCase, onWorkflowMutation, overview?.run_id, replaceRevision, sessionId, workflow, workflowAuthorityBlocked, workflowBusy, workflowContextMatches]);
 
   const chooseClarification = useCallback((option: string) => {
     const base = response?.complaint_raw.trim() || complaint.trim();
@@ -1510,8 +1566,10 @@ export function DialInTab({
     [response],
   );
   const decisionPresentation = workflowDecisionPresentation(workflow);
+  const engineeringCaseReady = engineeringCaseStatus === "ready" && engineeringCase !== null;
   const canSubmit = Boolean(overview)
     && sessionId != null
+    && engineeringCaseReady
     && workflowCatalogReady
     && currentRequestBinding != null
     && complaint.trim().length > 0
@@ -1746,11 +1804,11 @@ export function DialInTab({
             abandonConfirmOpen ? (
               <div className="dialin-abandon-confirm" role="group" aria-label="Confirm abandoning selected workflow">
                 <span>Abandon workflow {workflow.workflow_id.slice(0, 8)} and retain its progress as cancelled audit history?</span>
-                <button className="secondary-button" type="button" disabled={workflowBusy} onClick={() => setAbandonConfirmOpen(false)}>Keep workflow</button>
-                <button className="secondary-button" type="button" disabled={workflowBusy} onClick={() => void abandonActiveTest()}>Confirm abandon</button>
+                <button className="secondary-button" type="button" disabled={workflowBusy || !engineeringCaseReady} onClick={() => setAbandonConfirmOpen(false)}>Keep workflow</button>
+                <button className="secondary-button" type="button" disabled={workflowBusy || !engineeringCaseReady} onClick={() => void abandonActiveTest()}>Confirm abandon</button>
               </div>
             ) : (
-              <button className="secondary-button" type="button" disabled={workflowBusy} onClick={() => setAbandonConfirmOpen(true)}>
+              <button className="secondary-button" type="button" disabled={workflowBusy || !engineeringCaseReady} onClick={() => setAbandonConfirmOpen(true)}>
                 Abandon selected workflow
               </button>
             )
@@ -1774,6 +1832,17 @@ export function DialInTab({
             <span>Setup snapshot unavailable. Garage-specific recommendations are limited until setup data is available, so Dial-In will stay conservative.</span>
           </div>
         )}
+        {!engineeringCaseReady && (
+          <div className="dialin-alert limited" role={engineeringCaseStatus === "error" ? "alert" : "status"}>
+            <AlertTriangle size={14} />
+            <span>{engineeringCaseStatus === "error"
+              ? `Current case unavailable. ${engineeringCaseError ?? "Retry before continuing."}`
+              : "Binding current case…"}</span>
+            {engineeringCaseStatus === "error" && (
+              <button className="secondary-button" type="button" onClick={retryEngineeringCase}>Retry current case</button>
+            )}
+          </div>
+        )}
 
         <form
           className="dialin-input-row dialin-command-bar"
@@ -1786,12 +1855,17 @@ export function DialInTab({
             className="dialin-input"
             value={complaint}
             onChange={(event) => setComplaint(event.target.value)}
-            disabled={activeWorkflow}
+            disabled={activeWorkflow || !engineeringCaseReady}
             placeholder="Example: loose off, tight center, RF is angry, nose is dragging, won't stay on bottom"
             aria-label="Driver complaint"
             aria-describedby={activeWorkflow ? "active-workflow-rule" : undefined}
           />
-          <button className="secondary-button" type="submit" disabled={!canSubmit} title="Check data and symptoms">
+          <button
+            className="secondary-button"
+            type="submit"
+            disabled={!canSubmit}
+            title={engineeringCaseReady ? "Check data and symptoms" : "Binding current Engineering Case"}
+          >
             <Search size={14} /> {workflowAuthorityBlocked ? "Resolve workflow blocker" : !workflowCatalogReady ? workflowError ? "Test status unavailable" : "Checking test status" : loading ? "Checking run data" : "Check Data & Symptoms"}
           </button>
           <button className="secondary-button" type="button" onClick={clearDialIn} disabled={workflowBusy || !workflowCatalogReady || (!complaint && !response && !error)} title={activeWorkflow ? "Clear this result; the active workflow stays open" : "Clear complaint"}>
@@ -1808,7 +1882,7 @@ export function DialInTab({
                 key={label}
                 type="button"
                 onClick={() => chooseSymptomPreset(preset)}
-                disabled={activeWorkflow}
+                disabled={activeWorkflow || !engineeringCaseReady}
                 aria-pressed={complaint.trim().toLowerCase() === preset}
               >
                 {label}
@@ -1838,7 +1912,7 @@ export function DialInTab({
                 className="dialin-input"
                 value={selectedPhase}
                 onChange={(event) => setSelectedPhase(event.target.value)}
-                disabled={activeWorkflow}
+                disabled={activeWorkflow || !engineeringCaseReady}
               >
                 {PHASE_OPTIONS.map(([value, label]) => <option value={value} key={value || "auto"}>{label}</option>)}
               </select>
@@ -1850,7 +1924,7 @@ export function DialInTab({
                 className="dialin-input"
                 value={objective}
                 onChange={(event) => setObjective(event.target.value as DialInObjective)}
-                disabled={activeWorkflow}
+                disabled={activeWorkflow || !engineeringCaseReady}
               >
                 {OBJECTIVE_OPTIONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
               </select>
@@ -1862,7 +1936,7 @@ export function DialInTab({
                 className="dialin-input"
                 value={priority}
                 onChange={(event) => setPriority(event.target.value as DialInPriority)}
-                disabled={activeWorkflow}
+                disabled={activeWorkflow || !engineeringCaseReady}
               >
                 {PRIORITY_OPTIONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
               </select>
@@ -1894,14 +1968,14 @@ export function DialInTab({
           {abandonConfirmOpen ? (
             <div className="dialin-abandon-confirm" role="group" aria-label="Confirm abandoning controlled test">
               <span>Abandon this workflow and keep its recorded progress as cancelled audit history?</span>
-              <button className="secondary-button" type="button" disabled={workflowBusy} onClick={() => setAbandonConfirmOpen(false)}>Keep workflow</button>
-              <button className="secondary-button" type="button" disabled={workflowBusy} onClick={() => void abandonActiveTest()}>Confirm abandon</button>
+              <button className="secondary-button" type="button" disabled={workflowBusy || !engineeringCaseReady} onClick={() => setAbandonConfirmOpen(false)}>Keep workflow</button>
+              <button className="secondary-button" type="button" disabled={workflowBusy || !engineeringCaseReady} onClick={() => void abandonActiveTest()}>Confirm abandon</button>
             </div>
           ) : (
             <button
               className="secondary-button"
               type="button"
-              disabled={workflowBusy}
+              disabled={workflowBusy || !engineeringCaseReady}
               aria-expanded="false"
               onClick={() => setAbandonConfirmOpen(true)}
             >
@@ -1987,8 +2061,8 @@ export function DialInTab({
                   <p><strong>Stop and reset:</strong> {workflow.packet.primary_test.stop_rule}</p>
                 </div>
               )}
-              {nextWorkflowStage && <button className="secondary-button dialin-workflow-action" type="button" disabled={workflowBusy || !workflowContextMatches || workflowAuthorityBlocked || !currentStageRecordingAllowed} onClick={() => void recordCurrentRun()}>Verify current run as {workflowStageName(nextWorkflowStage)}</button>}
-              {workflow.status === "a2_recorded" && <button className="primary-button dialin-workflow-action" type="button" disabled={workflowBusy || !workflowContextMatches || workflowAuthorityBlocked} onClick={() => void scoreVerifiedWorkflow()}>Score verified A/B/A2</button>}
+              {nextWorkflowStage && <button className="secondary-button dialin-workflow-action" type="button" disabled={workflowBusy || !engineeringCaseReady || !workflowContextMatches || workflowAuthorityBlocked || !currentStageRecordingAllowed} onClick={() => void recordCurrentRun()}>Verify current run as {workflowStageName(nextWorkflowStage)}</button>}
+              {workflow.status === "a2_recorded" && <button className="primary-button dialin-workflow-action" type="button" disabled={workflowBusy || !engineeringCaseReady || !workflowContextMatches || workflowAuthorityBlocked} onClick={() => void scoreVerifiedWorkflow()}>Score verified A/B/A2</button>}
             </>
           )}
           {workflowError && <div className="dialin-alert limited" role="alert"><AlertTriangle size={14} /><span>{workflowError}</span></div>}
@@ -2049,7 +2123,13 @@ export function DialInTab({
                 <h3>{workflowAuthorityBlocked ? "Controlled workflow requires recovery" : workflow ? controlledWorkflowHeadline(workflow, exactSourceRunIntelligenceAuthority) : "Build the evidence-gated plan"}</h3>
               </div>
               {(!workflow || !workflowContextMatches) && !activeWorkflow && (
-                <button className="primary-button" type="button" disabled={workflowBusy || workflowAuthorityBlocked} onClick={() => void buildVerifiedWorkflow()}>
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={workflowBusy || workflowAuthorityBlocked || !engineeringCaseReady}
+                  title={engineeringCaseReady ? undefined : "Binding current Engineering Case"}
+                  onClick={() => void buildVerifiedWorkflow()}
+                >
                   {workflowAuthorityBlocked ? "Resolve workflow blocker" : workflowBusy ? "Verifying evidence" : workflow ? "Build new verified plan" : "Build verified plan"}
                 </button>
               )}
@@ -2104,12 +2184,12 @@ export function DialInTab({
                 )}
                 <ControlledWorkflowProgress workflow={workflow} learning={selection.selectedMode === "learning"} authority={exactSourceRunIntelligenceAuthority} />
                 {nextWorkflowStage && (
-                  <button className="secondary-button dialin-workflow-action" type="button" disabled={workflowBusy || !workflowContextMatches || workflowAuthorityBlocked || !currentStageRecordingAllowed} onClick={() => void recordCurrentRun()}>
+                  <button className="secondary-button dialin-workflow-action" type="button" disabled={workflowBusy || !engineeringCaseReady || !workflowContextMatches || workflowAuthorityBlocked || !currentStageRecordingAllowed} onClick={() => void recordCurrentRun()}>
                     {workflowBusy ? "Checking run" : `Verify current run as ${workflowStageName(nextWorkflowStage)}`}
                   </button>
                 )}
                 {workflow.status === "a2_recorded" && (
-                  <button className="primary-button dialin-workflow-action" type="button" disabled={workflowBusy || !workflowContextMatches || workflowAuthorityBlocked} onClick={() => void scoreVerifiedWorkflow()}>
+                  <button className="primary-button dialin-workflow-action" type="button" disabled={workflowBusy || !engineeringCaseReady || !workflowContextMatches || workflowAuthorityBlocked} onClick={() => void scoreVerifiedWorkflow()}>
                     {workflowBusy ? "Scoring all eligible laps" : "Score verified A/B/A2"}
                   </button>
                 )}

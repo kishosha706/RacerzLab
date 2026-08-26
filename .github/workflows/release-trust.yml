@@ -85,6 +85,6 @@ jobs:
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: "racerzlab-[platform]-[arch]-[bundle]"
 
-      - name: Smoke packaged desktop ownership and shutdown
+      - name: Smoke packaged desktop storage, restart, ownership, and shutdown
         shell: powershell
-        run: scripts/smoke_packaged_desktop.ps1
+        run: scripts/smoke_packaged_desktop.ps1 -MissingArtifactAction Fail

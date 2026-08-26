@@ -232,8 +232,8 @@ describe("VehicleDynamicsBlackboard", () => {
       "Component families",
       "Strongest support",
       "Strongest contradiction",
-      "Next bounded inspection",
-      "NEXT · P19",
+      "Bounded inspection evidence",
+      "P19 MISSION EVIDENCE",
     ]) expect(within(board).getByRole("heading", { name: heading })).toBeTruthy();
     expect(within(board).getByText("Acquire one clean repeated center window.")).toBeTruthy();
     expect(within(board).getByText(/Static candidate map only; current P26 relevance remains unproven; zero component causal claims/)).toBeTruthy();

@@ -12,6 +12,7 @@ import {
   updateCrewChiefObjective,
 } from "../api/client";
 import type { CrewChiefEvidenceEntry, CrewChiefWorkspace, EngineeringObjective } from "../types/crewChief";
+import type { EngineeringCaseRevision } from "../types/engineeringCase";
 import type { LearningEvidenceReference } from "../types/engineeringLearning";
 import type {
   InvestigationDecision,
@@ -212,12 +213,12 @@ function InvestigationImprovementCard({
       {pair ? (
         <div className="investigation-improvement-decisions" aria-label="Frozen paired investigation decisions">
           <article>
-            <span>BASELINE NEXT</span>
+            <span>BASELINE PATH</span>
             <strong>{humanize(pair.baseline_decision.action_id)}</strong>
             <small>{humanize(pair.baseline_decision.priority_tier)}</small>
           </article>
           <article>
-            <span>MEMORY NEXT / {stateLabel}</span>
+            <span>MEMORY PATH / {stateLabel}</span>
             <strong>{humanize(pair.memory_decision.action_id)}</strong>
             <small>{projection.decisions_differ ? "Different executable action" : "Same executable action"}</small>
           </article>
@@ -294,9 +295,9 @@ function InvestigationImprovementCard({
       </div>
       {blockers[0] && <small className="investigation-improvement-blocker">Blocked: {blockers[0]}</small>}
       {projection.readiness.remaining_collection_missions.length > 0 && (
-        <ul className="investigation-improvement-list investigation-improvement-next" aria-label="Next collection missions">
+        <ul className="investigation-improvement-list investigation-improvement-next" aria-label="Collection evidence missions">
           {projection.readiness.remaining_collection_missions.slice(0, 3)
-            .map((mission) => <li key={mission}>Next evidence: {mission}</li>)}
+            .map((mission) => <li key={mission}>Collection evidence: {mission}</li>)}
         </ul>
       )}
       {(remainingDeficits.length > 0
@@ -334,7 +335,12 @@ function InvestigationImprovementCard({
 }
 
 export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, learning, onFocusEvidence }: Props) {
-  const { engineeringCase, retry: retryEngineeringCase, invalidate: invalidateEngineeringCase } = useEngineeringCase();
+  const {
+    engineeringCase,
+    retry: retryEngineeringCase,
+    invalidate: invalidateEngineeringCase,
+    replaceRevision,
+  } = useEngineeringCase();
   const [workspace, setWorkspace] = useState<CrewChiefWorkspace | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -343,12 +349,23 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
   const workspaceSequence = useRef(0);
 
   useEffect(() => {
-    if (engineeringCase == null) return undefined;
+    if (engineeringCase == null) {
+      workspaceSequence.current += 1;
+      setWorkspace(null);
+      setError(null);
+      setBusy(false);
+      return undefined;
+    }
+    const requestedObjective = engineeringCase.objective_id as EngineeringObjective;
+    setObjective(requestedObjective);
     const sequence = ++workspaceSequence.current;
     setWorkspace(null);
     setError(null);
     setBusy(true);
-    void fetchCrewChiefWorkspace(runId, sessionId, report, { objective, scopeRunIds })
+    void fetchCrewChiefWorkspace(runId, sessionId, report, {
+      objective: requestedObjective,
+      scopeRunIds,
+    })
       .then((value) => {
         if (sequence !== workspaceSequence.current) return;
         if (value.engineering_case.case_sha256 !== engineeringCase.case_sha256) {
@@ -367,7 +384,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
     return () => {
       if (sequence === workspaceSequence.current) workspaceSequence.current += 1;
     };
-  }, [engineeringCase, objective, report, runId, scopeRunIds, sessionId]);
+  }, [engineeringCase, report, runId, scopeRunIds, sessionId]);
 
   const runMutation = async (operation: () => Promise<CrewChiefWorkspace>) => {
     const sequence = ++workspaceSequence.current;
@@ -376,8 +393,30 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
     try {
       const value = await operation();
       if (sequence === workspaceSequence.current) {
+        const receipt = value.mutation_receipt;
+        if (receipt === null) {
+          setWorkspace(null);
+          invalidateEngineeringCase();
+          throw new Error("Crew Chief withheld a mutation without its durable case receipt.");
+        }
+        const revision: EngineeringCaseRevision = {
+          schema_version: "p3544.engineering-case-revision.v1",
+          case_id: receipt.case_id,
+          case_revision: receipt.case_revision,
+          case_sha256: receipt.case_sha256,
+          previous_case_sha256: receipt.previous_case_sha256,
+          created_at: receipt.published_at,
+          change_category: "investigation",
+          source_workspace_revision: value.engineering_case.workspace_revision,
+          case: value.engineering_case,
+          delivery_diagnostics: null,
+        };
+        if (!replaceRevision(revision)) {
+          setWorkspace(null);
+          invalidateEngineeringCase();
+          throw new Error("The Engineering Case head changed before Crew Chief publication could be adopted.");
+        }
         setWorkspace(value);
-        invalidateEngineeringCase();
       }
     } catch (caught) {
       if (sequence === workspaceSequence.current) {
@@ -402,6 +441,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
   const decision = workspace.terminal_decision;
   const investigationId = workspace.identity.investigation_id;
   const revision = workspace.identity.workspace_revision;
+  const caseSha256 = workspace.engineering_case.case_sha256;
   const status = workspace.folded_state?.status;
   const performance = workspace.performance_intelligence;
   const memory = workspace.learning_prior;
@@ -506,20 +546,26 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
     <section
       className="crew-chief-deck"
       data-mode={learning ? "learning" : "race"}
-      data-authority={decision.authority}
+      data-authority="read-only-p19-mirror"
+      data-source-authority={decision.authority}
       data-workspace-revision={revision}
       aria-labelledby="crew-chief-title"
     >
       <header>
         <div>
           <span className="eyebrow"><BrainCircuit size={13} aria-hidden="true" /> Autonomous Crew Chief</span>
-          <h2 id="crew-chief-title">{decision.title}</h2>
+          <h2 id="crew-chief-title">Crew investigation status</h2>
         </div>
-        <span className="crew-chief-authority"><ShieldCheck size={14} /> {decision.authority.replace(/_/g, " ")}</span>
+        <span className="crew-chief-authority"><ShieldCheck size={14} /> P19 evidence mirror</span>
       </header>
 
+      <div className="crew-chief-exact-test crew-chief-mission-evidence" aria-label="P19 mission evidence mirror">
+        <b>P19 mission evidence · read-only mirror</b>
+        <span>{decision.title}</span>
+        <small>Source authority {decision.authority.replace(/_/g, " ")} · {decision.instruction}</small>
+      </div>
+
       <div className="crew-chief-race-brief speed-story" aria-label="Measured Speed Story">
-        <p className="speed-story-next"><b>NEXT · P19</b> {story.next}</p>
         <p><b>OBSERVED · {story.observed_direction.toUpperCase()}</b> {story.what_costs_time}</p>
         <p><b>ATTRIBUTION</b> {story.attribution}</p>
         <p className="speed-story-contradiction"><b>STRONGEST CONTRADICTION</b> {story.strongest_contradiction}</p>
@@ -557,7 +603,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
 
       {decision.kind === "controlled_test" && (
         <div className="crew-chief-exact-test">
-          <b>Exact P19 controlled test</b>
+          <b>Exact P19 controlled-test evidence</b>
           <span>{decision.control_key}: {decision.current_value} → {decision.proposed_value}</span>
           <small>Workflow {decision.workflow_id} · revision {decision.workflow_revision}</small>
         </div>
@@ -566,7 +612,10 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
       {(!workspace.investigation || canStartFollowUp) ? (
         <div className="crew-chief-open">
           <label>Engineering objective
-            <select value={objective} onChange={(event) => setObjective(event.target.value as EngineeringObjective)}>
+            <select value={objective} onChange={(event) => {
+              const next = event.target.value as EngineeringObjective;
+              setObjective(next);
+            }}>
               {objectives.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
             </select>
           </label>
@@ -579,6 +628,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
             onClick={() => { void runMutation(() => openCrewChiefInvestigation(runId, sessionId, report, scopeRunIds, {
               driver_report: driverReport,
               expected_workspace_revision: revision,
+              expected_case_sha256: caseSha256,
               objective,
             })); }}
           ><Play size={14} /> {canStartFollowUp ? "Start follow-up investigation" : "Open investigation"}</button>
@@ -593,7 +643,8 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
               key={answer}
               disabled={busy}
               onClick={() => { void runMutation(() => answerCrewChiefQuestion(
-                runId, sessionId, investigationId!, revision, answer, report, scopeRunIds,
+                runId, sessionId, investigationId!, revision, caseSha256, answer,
+                report, scopeRunIds,
                 activeObjective,
               )); }}
             >{answer}</button>
@@ -602,7 +653,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
       ) : workspace.folded_state?.status === "open" ? (
         <div className="crew-chief-lifecycle">
           {workspace.current_subgoal && <p className="crew-chief-active-subgoal">
-            <b>NEXT INSPECTION</b> {workspace.current_subgoal.title.replace(/^Inspect /, "")}
+            <b>CURRENT INSPECTION</b> {workspace.current_subgoal.title.replace(/^Inspect /, "")}
             {activeEligibility?.required_by_mandatory_gate && <small>Mandatory integrity/context gate</small>}
           </p>}
           <label>Investigation objective
@@ -610,7 +661,8 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
               value={workspace.folded_state.objective}
               disabled={busy}
               onChange={(event) => { const next = event.target.value as EngineeringObjective; setObjective(next); void runMutation(() => updateCrewChiefObjective(
-                runId, sessionId, investigationId!, revision, next, report, scopeRunIds,
+                runId, sessionId, investigationId!, revision, caseSha256, next,
+                report, scopeRunIds,
               )); }}
             >{objectives.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
           </label>
@@ -618,12 +670,14 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
             type="button"
             disabled={busy}
             onClick={() => { void runMutation(() => advanceCrewChiefInvestigation(
-              runId, sessionId, investigationId!, revision, report, scopeRunIds,
+              runId, sessionId, investigationId!, revision, caseSha256,
+              report, scopeRunIds,
               activeObjective,
             )); }}
-          ><Play size={14} /> {busy ? "Working the problem…" : workspace.current_subgoal ? "Work to next boundary" : "Continue to boundary"}</button>
+          ><Play size={14} /> {busy ? "Working the problem…" : workspace.current_subgoal ? "Advance investigation" : "Continue investigation"}</button>
           <button type="button" disabled={busy} onClick={() => { void runMutation(() => abandonCrewChiefInvestigation(
-            runId, sessionId, investigationId!, revision, "Abandoned explicitly by driver.", report, scopeRunIds,
+            runId, sessionId, investigationId!, revision, caseSha256,
+            "Abandoned explicitly by driver.", report, scopeRunIds,
             activeObjective,
           )); }}><XCircle size={14} /> Abandon</button>
         </div>
@@ -631,13 +685,20 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
 
       {status === "stale" && investigationId && (
         <button type="button" disabled={busy} onClick={() => { void runMutation(() => rebaseCrewChiefInvestigation(
-          runId, sessionId, investigationId, workspace.folded_state!.accepted_workspace_revision, report, scopeRunIds,
+          runId, sessionId, investigationId,
+          workspace.folded_state!.accepted_workspace_revision, caseSha256,
+          report, scopeRunIds,
           activeObjective,
         )); }}><RefreshCw size={14} /> Rebase explicitly to current P19/P20/P26/P32 state</button>
       )}
       {error && workspace && (
         <button type="button" disabled={busy} onClick={() => { void runMutation(() => fetchCrewChiefWorkspace(
-          runId, sessionId, report, { objective, scopeRunIds, investigationId },
+          runId, sessionId, report, {
+            objective: (engineeringCase?.objective_id as EngineeringObjective | undefined)
+              ?? objective,
+            scopeRunIds,
+            investigationId,
+          },
         )); }}><RefreshCw size={14} /> Retry current investigation</button>
       )}
 
@@ -814,7 +875,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
                 {memory.post_run_brief.what_we_learned.map((item) => <p key={`learned:${item}`}><b>Learned</b> {item}</p>)}
                 {memory.post_run_brief.what_changed_our_mind.map((item) => <p key={`changed:${item}`}><b>Changed our mind</b> {item}</p>)}
                 {memory.post_run_brief.what_did_not_work.map((item) => <p key={`dead:${item}`}><b>Did not work</b> {item}</p>)}
-                {memory.post_run_brief.next_attention.map((item) => <p key={`next:${item}`}><b>Next attention</b> {item}</p>)}
+                {memory.post_run_brief.next_attention.map((item) => <p key={`next:${item}`}><b>Attention queue</b> {item}</p>)}
                 {memory.post_run_brief.blocker_reasons.map((item) => <small key={`brief-blocker:${item}`}>{item}</small>)}
               </article>
 
@@ -891,8 +952,8 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
             ))}</ul> : <p>No component relevance is attached to the measured time scope.</p>}
           </section>
           <section><h3>Objective envelope</h3><p>Primary: {performance.objective_envelope.primary_outcomes.join(", ")}</p><small>Protected: {performance.objective_envelope.protected_outcomes.join(", ")}. Objective changes policy, not measured physics.</small></section>
-          <section><h3>Strongest contradiction</h3><p>{performance.explanation_chain.strongest_contradiction}</p><small>Generic component relevance cannot authorize setup. P19 next: {performance.explanation_chain.p19_next_move}</small></section>
-          <section><h3>Mission ribbon</h3><p>{workspace.run_sentinel.mission}</p><small>State {missionState} · Stage {workspace.run_sentinel.stage} · {contextClearedLaps} · {missionAcceptance} · {measurementAttempts}</small></section>
+          <section><h3>Strongest contradiction</h3><p>{performance.explanation_chain.strongest_contradiction}</p><small>Generic component relevance cannot authorize setup. P19 mission evidence: {performance.explanation_chain.p19_next_move}</small></section>
+          <section><h3>Mission evidence status</h3><p>{workspace.run_sentinel.mission}</p><small>State {missionState} · Stage {workspace.run_sentinel.stage} · {contextClearedLaps} · {missionAcceptance} · {measurementAttempts}</small></section>
           {workspace.investigation && <section>
             <h3>Investigation path</h3>
             {workspace.current_subgoal ? <>

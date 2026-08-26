@@ -516,6 +516,123 @@ def build_capability_resolutions(
     return tuple(resolutions.values())
 
 
+def engineering_case_projection_revision_sha256(
+    *,
+    identity: Any,
+    recording_sha256: str,
+    evidence_index_sha256: str | None = None,
+    evidence_index: Any | None = None,
+    p351_projection: Any,
+    response_artifacts: Sequence[EngineeringResponseArtifact],
+    response_expectation_contracts: Sequence[ResponseExpectationContract],
+    response_expectation_evaluations: Sequence[ResponseExpectationEvaluation],
+    p19_admissions: Sequence[P19ResponseAdmission],
+    terminal_decision: Any,
+    effect_readiness: Sequence[SetupEffectReadiness],
+    evidence_deficits: Sequence[EngineeringEvidenceDeficit],
+    capability_resolutions: Sequence[CapabilityEvidenceResolution],
+    investigation_id: str | None,
+    mission: EngineeringMission,
+    driver_intent: DriverIntent | None,
+    crew_event_head_sha256: str | None,
+    crew_current_subgoal: str | None,
+    crew_critic_state: str,
+) -> str:
+    """Bind every late-built case projection without a wrapper-hash cycle.
+
+    The operational Crew workspace is identified before P35.1, the semantic
+    registry, the evidence index, and the readiness/capability projections are
+    assembled. Response envelopes then need the finalized case projection
+    revision. Hashing their semantic payloads while excluding only revision and
+    content-address wrapper fields gives the case one complete, stable identity
+    that those envelopes can safely carry.
+    """
+
+    artifact_payloads = [
+        item.model_dump(
+            mode="json",
+            exclude={"artifact_sha256", "case_revision_sha256"},
+        )
+        for item in response_artifacts
+    ]
+    admission_payloads = [
+        item.model_dump(
+            mode="json",
+            exclude={
+                "admission_id",
+                "admission_sha256",
+                "case_revision_sha256",
+            },
+        )
+        for item in p19_admissions
+    ]
+    if evidence_index is not None:
+        index_entries = []
+        for entry in evidence_index.entries:
+            payload = entry.model_dump(mode="json")
+            typed = payload.get("typed_artifact")
+            if isinstance(typed, dict) and typed.get("artifact_type") == (
+                "engineering_response"
+            ):
+                typed.pop("case_revision_sha256", None)
+                response = typed.get("response")
+                if isinstance(response, dict):
+                    response.pop("artifact_sha256", None)
+                    response.pop("case_revision_sha256", None)
+            index_entries.append(payload)
+        evidence_index_identity = canonical_json_sha256(
+            {
+                "workspace_revision": evidence_index.workspace_revision,
+                "entries": index_entries,
+            }
+        )
+    elif evidence_index_sha256 is not None:
+        # Compatibility seam for direct builders that predate the typed index.
+        evidence_index_identity = evidence_index_sha256
+    else:
+        raise ValueError("engineering case projection requires an evidence index")
+    return canonical_json_sha256(
+        {
+            "schema": "p3544.engineering-case-projection-revision.v1",
+            "workspace_revision": identity.workspace_revision,
+            "recording_sha256": recording_sha256,
+            "p351_projection_sha256": p351_projection.projection_sha256,
+            "semantic_registry_sha256": (
+                compile_engineering_semantic_registry().registry_sha256
+            ),
+            "evidence_index_semantic_sha256": evidence_index_identity,
+            "response_artifacts": artifact_payloads,
+            "response_expectation_contracts": [
+                item.model_dump(mode="json")
+                for item in response_expectation_contracts
+            ],
+            "response_expectation_evaluations": [
+                item.model_dump(mode="json")
+                for item in response_expectation_evaluations
+            ],
+            "p19_response_admissions": admission_payloads,
+            "terminal_decision": terminal_decision,
+            "effect_readiness": [
+                item.model_dump(mode="json") for item in effect_readiness
+            ],
+            "evidence_deficits": [
+                item.model_dump(mode="json") for item in evidence_deficits
+            ],
+            "capability_resolutions": [
+                item.model_dump(mode="json") for item in capability_resolutions
+            ],
+            "investigation_id": investigation_id,
+            "mission": mission,
+            "driver_intent_sha256": (
+                driver_intent.intent_sha256 if driver_intent is not None else None
+            ),
+            "crew_event_head_sha256": crew_event_head_sha256,
+            "crew_current_subgoal": crew_current_subgoal,
+            "crew_critic_state": crew_critic_state,
+        }
+    )
+
+
 def build_canonical_engineering_case(
     *,
     identity: Any,
@@ -538,11 +655,13 @@ def build_canonical_engineering_case(
     crew_event_head_sha256: str | None = None,
     crew_current_subgoal: str | None = None,
     crew_critic_state: str = "unavailable",
+    case_revision_sha256: str | None = None,
 ) -> CanonicalEngineeringCase:
     global _CASE_PROJECTION_BUILD_COUNT
     with _CASE_BUILD_LOCK:
         _CASE_PROJECTION_BUILD_COUNT += 1
     case_id = engineering_case_id(run_id=identity.run_id, session_id=identity.session_id)
+    projection_revision = case_revision_sha256 or identity.workspace_revision
     admitted_artifact_ids = {
         item.response_artifact_id
         for item in p19_admissions
@@ -573,7 +692,7 @@ def build_canonical_engineering_case(
     )
     focus = EngineeringSemanticFocusState(
         case_id=case_id,
-        case_revision_sha256=identity.workspace_revision,
+        case_revision_sha256=projection_revision,
         artifact_id=(first_artifact.artifact_id if first_artifact else None),
         lap_numbers=(first_artifact.source_lap_numbers if first_artifact else ()),
         lap_pct_start=(first_artifact.lap_pct_start if first_artifact else None),
@@ -649,10 +768,46 @@ def build_canonical_engineering_case(
             )
     return CanonicalEngineeringCase.build(
         case_id=case_id,
-        case_revision_sha256=identity.workspace_revision,
+        case_revision_sha256=projection_revision,
         run_id=identity.run_id,
         session_id=identity.session_id,
+        selected_run_ids=(
+            tuple(identity.selected_run_ids)
+            if getattr(identity, "selected_run_ids", ())
+            else (identity.run_id,)
+        ),
         recording_sha256=recording_sha256,
+        vehicle_runtime_identity_sha256=getattr(
+            identity,
+            "vehicle_runtime_identity_hash",
+            canonical_json_sha256(
+                {
+                    "state": "unavailable",
+                    "run_id": identity.run_id,
+                    "recording_sha256": recording_sha256,
+                }
+            ),
+        ),
+        car_identity=(
+            identity.vehicle_runtime_identity.car_path
+            if getattr(identity, "vehicle_runtime_identity", None) is not None
+            else str(getattr(p35, "car_path", "unavailable"))
+        ),
+        car_version=(
+            identity.vehicle_runtime_identity.car_version
+            if getattr(identity, "vehicle_runtime_identity", None) is not None
+            else str(getattr(p35, "car_version", "unavailable"))
+        ),
+        iracing_build_version=(
+            identity.vehicle_runtime_identity.iracing_build_version
+            if getattr(identity, "vehicle_runtime_identity", None) is not None
+            else str(getattr(p35, "iracing_build_version", "unavailable"))
+        ),
+        track_configuration=(
+            identity.vehicle_runtime_identity.track_configuration_name
+            if getattr(identity, "vehicle_runtime_identity", None) is not None
+            else str(getattr(p35, "track_package", "unavailable"))
+        ),
         setup_id=identity.setup_id,
         setup_snapshot_sha256=identity.setup_snapshot_sha256,
         objective_id=identity.objective_id.value,
@@ -714,5 +869,6 @@ __all__ = [
     "build_response_expectation_contracts",
     "build_setup_effect_readiness",
     "engineering_case_id",
+    "engineering_case_projection_revision_sha256",
     "engineering_case_projection_stats",
 ]

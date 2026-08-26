@@ -902,7 +902,13 @@ class CanonicalEngineeringCase(EngineeringCaseModel):
     case_revision_sha256: str = Field(pattern=_SHA)
     run_id: str = Field(min_length=1)
     session_id: str = Field(min_length=1)
+    selected_run_ids: tuple[str, ...] = Field(min_length=1)
     recording_sha256: str = Field(pattern=_SHA)
+    vehicle_runtime_identity_sha256: str = Field(pattern=_SHA)
+    car_identity: str = Field(min_length=1)
+    car_version: str = Field(min_length=1)
+    iracing_build_version: str = Field(min_length=1)
+    track_configuration: str = Field(min_length=1)
     setup_id: str = Field(min_length=1)
     setup_snapshot_sha256: str = Field(pattern=_SHA)
     objective_id: str = Field(min_length=1)
@@ -985,6 +991,13 @@ class CanonicalEngineeringCase(EngineeringCaseModel):
         )[:24]
         if self.case_id != expected_case_id:
             raise ValueError("engineering case ID must bind its stable run/session lifecycle")
+        if (
+            len(self.selected_run_ids) != len(set(self.selected_run_ids))
+            or self.run_id not in self.selected_run_ids
+        ):
+            raise ValueError(
+                "engineering case selected run scope must be unique and contain its active run"
+            )
         artifact_ids = tuple(item.artifact_id for item in self.response_artifacts)
         if len(artifact_ids) != len(set(artifact_ids)):
             raise ValueError("engineering case response artifacts must be unique")
@@ -1058,8 +1071,13 @@ class CanonicalEngineeringCase(EngineeringCaseModel):
             item.deficit_id not in deficit_ids for item in self.capability_resolutions
         ):
             raise ValueError("capability resolutions must resolve typed current-case deficits")
-        if self.driver_intent is not None and self.driver_intent.case_id != self.case_id:
-            raise ValueError("driver intent belongs to another engineering case")
+        if self.driver_intent is not None and (
+            self.driver_intent.case_id != self.case_id
+            or self.driver_intent.objective != self.objective_id
+        ):
+            raise ValueError(
+                "driver intent must belong to this case and its current objective"
+            )
         if (self.active_workflow_id is None) != (self.active_workflow_revision is None):
             raise ValueError("engineering case workflow identity must be complete")
         if self.mission.terminal_move_sha256 != self.terminal_move_sha256:

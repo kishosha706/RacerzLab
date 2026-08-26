@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { RunIntelligenceReport } from "../types/intelligence";
@@ -6,11 +6,16 @@ import { CrewChiefCommandDeck } from "./CrewChiefCommandDeck";
 
 const api = vi.hoisted(() => ({
   fetchCrewChiefWorkspace: vi.fn(),
+  openCrewChiefInvestigation: vi.fn(),
 }));
 const caseContext = vi.hoisted(() => ({
-  engineeringCase: { case_sha256: undefined },
+  engineeringCase: {
+    case_sha256: "1".repeat(64),
+    objective_id: "race_long_run",
+  },
   retry: vi.fn(),
   invalidate: vi.fn(),
+  replaceRevision: vi.fn(() => true),
 }));
 
 vi.mock("../api/client", () => ({
@@ -18,7 +23,7 @@ vi.mock("../api/client", () => ({
   answerCrewChiefQuestion: vi.fn(),
   abandonCrewChiefInvestigation: vi.fn(),
   advanceCrewChiefInvestigation: vi.fn(),
-  openCrewChiefInvestigation: vi.fn(),
+  openCrewChiefInvestigation: api.openCrewChiefInvestigation,
   rebaseCrewChiefInvestigation: vi.fn(),
   updateCrewChiefObjective: vi.fn(),
 }));
@@ -109,12 +114,16 @@ const workspace = () => ({
   engineering_case: {
     case_id: `p3543case_${"1".repeat(24)}`,
     case_revision_sha256: "1".repeat(64),
+    case_sha256: "1".repeat(64),
+    workspace_revision: "revision-1",
+    objective_id: "race_long_run",
     response_artifacts: [],
     p19_response_admissions: [],
     quantity_observability: [],
     effect_readiness: [{ state: "knowledge_only" }],
     capability_resolutions: [],
   },
+  mutation_receipt: null,
   performance_intelligence: {
     speed_story: {
       next: "Collect three clean laps.", observed_direction: "unavailable", what_costs_time: "No clean comparison yet.",
@@ -302,20 +311,114 @@ describe("CrewChiefCommandDeck boundary states", () => {
     expect(alert.textContent).toContain("Workspace identity mismatch.");
   });
 
+  it("rejects a workspace bound to a different canonical case head", async () => {
+    const foreign = workspace() as any;
+    foreign.engineering_case.case_sha256 = "2".repeat(64);
+    api.fetchCrewChiefWorkspace.mockResolvedValue(foreign);
+    render(<CrewChiefCommandDeck {...props} />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Crew Chief returned a different Engineering Case revision.");
+    expect(screen.queryByText("MEMORY · ATTENTION ONLY")).toBeNull();
+  });
+
+  it("keeps an objective choice local until the atomic investigation mutation publishes it", async () => {
+    const published = workspace() as any;
+    published.engineering_case.objective_id = "qualifying_peak";
+    published.engineering_case.case_sha256 = "2".repeat(64);
+    published.mutation_receipt = {
+      schema_version: "p3544.crew-mutation-publication.v1",
+      mutation_id: `ccm_${"3".repeat(24)}`,
+      request_sha256: "3".repeat(64),
+      action: "open",
+      case_id: published.engineering_case.case_id,
+      case_revision: 2,
+      case_sha256: published.engineering_case.case_sha256,
+      previous_case_sha256: "1".repeat(64),
+      published_at: "2026-08-26T12:00:00Z",
+      receipt_sha256: "4".repeat(64),
+      authority: "durability_receipt_only",
+      setup_authorized: false,
+    };
+    api.fetchCrewChiefWorkspace.mockResolvedValue(workspace());
+    api.openCrewChiefInvestigation.mockResolvedValue(published);
+    render(<CrewChiefCommandDeck {...props} />);
+
+    const objective = await screen.findByRole("combobox", { name: "Engineering objective" });
+    fireEvent.change(objective, { target: { value: "qualifying_peak" } });
+    expect(caseContext.invalidate).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByPlaceholderText("Where and how does the car misbehave?"), {
+      target: { value: "Loose on entry" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open investigation" }));
+
+    await waitFor(() => expect(api.openCrewChiefInvestigation).toHaveBeenCalledTimes(1));
+    expect(api.openCrewChiefInvestigation.mock.calls[0]?.[4]).toEqual(expect.objectContaining({
+      objective: "qualifying_peak",
+      expected_case_sha256: "1".repeat(64),
+    }));
+    await waitFor(() => expect(caseContext.replaceRevision).toHaveBeenCalledTimes(1));
+    expect(caseContext.replaceRevision).toHaveBeenCalledWith(expect.objectContaining({
+      case_revision: 2,
+      case_sha256: "2".repeat(64),
+      previous_case_sha256: "1".repeat(64),
+      case: published.engineering_case,
+    }));
+    expect(caseContext.invalidate).not.toHaveBeenCalled();
+  });
+
+  it("fails closed and refreshes when the provider rejects a Crew publication fork", async () => {
+    const published = workspace() as any;
+    published.engineering_case.case_sha256 = "2".repeat(64);
+    published.mutation_receipt = {
+      schema_version: "p3544.crew-mutation-publication.v1",
+      mutation_id: `ccm_${"3".repeat(24)}`,
+      request_sha256: "3".repeat(64),
+      action: "open",
+      case_id: published.engineering_case.case_id,
+      case_revision: 2,
+      case_sha256: published.engineering_case.case_sha256,
+      previous_case_sha256: "1".repeat(64),
+      published_at: "2026-08-26T12:00:00Z",
+      receipt_sha256: "4".repeat(64),
+      authority: "durability_receipt_only",
+      setup_authorized: false,
+    };
+    caseContext.replaceRevision.mockReturnValueOnce(false);
+    api.fetchCrewChiefWorkspace.mockResolvedValue(workspace());
+    api.openCrewChiefInvestigation.mockResolvedValue(published);
+    render(<CrewChiefCommandDeck {...props} />);
+
+    fireEvent.change(await screen.findByPlaceholderText("Where and how does the car misbehave?"), {
+      target: { value: "Loose on entry" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open investigation" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Case head changed");
+    expect(caseContext.invalidate).toHaveBeenCalledTimes(1);
+  });
+
   it("shows one concise engineering-memory line in Race Mode", async () => {
     api.fetchCrewChiefWorkspace.mockResolvedValue(workspace());
     const { container } = render(<CrewChiefCommandDeck {...props} />);
 
     expect(await screen.findByText("MEMORY · ATTENTION ONLY")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Crew investigation status" })).toBeTruthy();
+    const missionMirror = screen.getByLabelText("P19 mission evidence mirror");
+    expect(within(missionMirror).getByText("P19 mission evidence · read-only mirror")).toBeTruthy();
+    expect(missionMirror.textContent).toContain("Measure the next clean pass");
     expect(screen.getByText(/Brake release timing repeated in one qualified source window/)).toBeTruthy();
     expect(screen.queryByText(/ENGINEERING MEMORY/)).toBeNull();
     expect(screen.queryByText(/Legacy history must not render/)).toBeNull();
 
     const primaryStory = screen.getByLabelText("Measured Speed Story");
-    expect(primaryStory.querySelectorAll(":scope > p")).toHaveLength(4);
-    for (const label of ["NEXT · P19", "OBSERVED · UNAVAILABLE", "ATTRIBUTION", "STRONGEST CONTRADICTION"]) {
+    expect(primaryStory.querySelectorAll(":scope > p")).toHaveLength(3);
+    for (const label of ["OBSERVED · UNAVAILABLE", "ATTRIBUTION", "STRONGEST CONTRADICTION"]) {
       expect(within(primaryStory).getByText(label)).toBeTruthy();
     }
+    expect(within(primaryStory).queryByText("NEXT · P19")).toBeNull();
     expect(within(primaryStory).queryByText("WHERE IT STARTS")).toBeNull();
     expect(within(primaryStory).queryByText("WHAT CARRIES")).toBeNull();
 
@@ -352,7 +455,8 @@ describe("CrewChiefCommandDeck boundary states", () => {
       "What would separate the candidates",
       "What history says",
     ]) expect(within(spine).getByText(heading)).toBeTruthy();
-    expect(within(spine).getByText(/NEXT .* P19/)).toBeTruthy();
+    expect(within(spine).getByText("P19 MISSION EVIDENCE · READ-ONLY MIRROR")).toBeTruthy();
+    expect(within(spine).queryByText(/NEXT .* P19/)).toBeNull();
     expect(within(spine).getByText("P19 ONLY FOR ACTION")).toBeTruthy();
     expect(spine.textContent).toContain("Reviewed setup knowledge");
     expect(spine.textContent).toContain("Changes direction-neutral front roll support.");
@@ -525,7 +629,7 @@ describe("CrewChiefCommandDeck boundary states", () => {
     expect(handoff.textContent).toContain("The blackboard shows the blocker and the next discriminator.");
     expect(handoff.textContent).not.toContain("setup authority");
     expect(screen.getByLabelText("Vehicle Dynamics Blackboard, candidate mechanisms only")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "NEXT · P19" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "P19 MISSION EVIDENCE" })).toBeTruthy();
     expect(within(improvement).getByText("Paired evaluation unavailable")).toBeTruthy();
     expect(within(improvement).getByText(/No current frozen pair is available. No current investigation benefit is inferred/)).toBeTruthy();
     expect(within(improvement).getByText(/not evidence that it saves time, laps, or investigation steps/)).toBeTruthy();
@@ -712,8 +816,8 @@ describe("CrewChiefCommandDeck boundary states", () => {
     const improvement = await screen.findByLabelText("Investigation Improvement, read only");
     expect(within(improvement).getAllByText("limited attention").length).toBeGreaterThan(0);
     expect(within(improvement).getByText("Active production policy")).toBeTruthy();
-    expect(within(improvement).getByText("BASELINE NEXT")).toBeTruthy();
-    expect(within(improvement).getByText("MEMORY NEXT / limited attention")).toBeTruthy();
+    expect(within(improvement).getByText("BASELINE PATH")).toBeTruthy();
+    expect(within(improvement).getByText("MEMORY PATH / limited attention")).toBeTruthy();
     expect(within(improvement).queryByRole("button")).toBeNull();
   });
 

@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Gauge, Lightbulb, LoaderCircle, SearchX, Shield, ShieldOff, Siren, ToggleLeft, Waves } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchPlatformEvents } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import {
@@ -37,6 +37,7 @@ export function PriorityRail({
   eventVisibilityMode,
   modal = false,
 }: PriorityRailProps) {
+  const railRef = useRef<HTMLElement>(null);
   const { selection, setWorkspace, focusEvidence } = useTelemetrySelection();
   const internalRequestKey = `${runId}:${selectedLap ?? "all"}`;
   const [internalEvents, setInternalEvents] = useState<{
@@ -44,6 +45,15 @@ export function PriorityRail({
     events: PlatformEventItem[];
   }>({ requestKey: null, events: [] });
   const [showInvalid, setShowInvalid] = useState(false);
+
+  useEffect(() => {
+    if (!modal) return;
+    const rail = railRef.current;
+    if (!rail || rail.contains(document.activeElement)) return;
+    rail.querySelector<HTMLElement>(
+      'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )?.focus();
+  }, [modal]);
 
   useEffect(() => {
     if (externalEvents !== undefined) return;
@@ -191,10 +201,12 @@ export function PriorityRail({
 
   return (
     <aside
+      ref={railRef}
       className={`priority-rail${collapsed ? " collapsed" : ""}`}
       aria-label="Priority evidence"
       role={modal ? "dialog" : "complementary"}
       aria-modal={modal ? "true" : undefined}
+      data-priority-modal-layer={modal ? "true" : undefined}
     >
       <button
         type="button"

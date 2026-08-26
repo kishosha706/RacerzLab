@@ -7,6 +7,8 @@ import sqlite3
 from pathlib import Path
 from threading import RLock
 
+from racelab_engine.identity import canonical_json_sha256
+
 DEFAULT_DB_PATH = Path("data/racelab.sqlite")
 
 # Schema creation and the additive compatibility checks are intentionally run
@@ -15,10 +17,21 @@ DEFAULT_DB_PATH = Path("data/racelab.sqlite")
 # mode.  That added several milliseconds to even a single-row lookup.
 _INITIALIZED_DATABASES: dict[str, tuple[int, int]] = {}
 _INITIALIZE_LOCK = RLock()
-_LIGHTWEIGHT_MIGRATION_VERSION = 2
-_LIGHTWEIGHT_MIGRATION_CHECKSUM = hashlib.sha256(
-    b"racelab-additive-schema-through-p35.4.4-v2"
-).hexdigest()
+_LIGHTWEIGHT_MIGRATION_CHECKSUMS = {
+    1: hashlib.sha256(b"racelab-additive-schema-through-p35.4.1-v1").hexdigest(),
+    2: hashlib.sha256(b"racelab-additive-schema-through-p35.4.4-v2").hexdigest(),
+    3: hashlib.sha256(b"racelab-controlled-response-receipt-persistence-v3").hexdigest(),
+    4: hashlib.sha256(b"racelab-crew-case-mutation-receipts-v4").hexdigest(),
+    5: hashlib.sha256(b"racelab-controlled-workflow-case-mutation-receipts-v5").hexdigest(),
+    6: hashlib.sha256(b"racelab-crew-case-revision-lineage-receipts-v6").hexdigest(),
+    7: hashlib.sha256(
+        b"racelab-controlled-workflow-projection-identity-v7"
+    ).hexdigest(),
+}
+_LIGHTWEIGHT_MIGRATION_VERSION = max(_LIGHTWEIGHT_MIGRATION_CHECKSUMS)
+_LIGHTWEIGHT_MIGRATION_CHECKSUM = _LIGHTWEIGHT_MIGRATION_CHECKSUMS[
+    _LIGHTWEIGHT_MIGRATION_VERSION
+]
 
 
 def default_db_path() -> Path:
@@ -78,9 +91,369 @@ def _column_names(connection: sqlite3.Connection, table_name: str) -> set[str]:
     return {row["name"] for row in connection.execute(f"PRAGMA table_info({table_name})")}
 
 
+def validate_complete_migration_ledger(connection: sqlite3.Connection) -> None:
+    """Fail closed unless the read-only migration ledger is exact and complete."""
+
+    rows = connection.execute(
+        "SELECT version, checksum FROM schema_migrations ORDER BY version"
+    ).fetchall()
+    versions = [int(row["version"]) for row in rows]
+    if any(version > _LIGHTWEIGHT_MIGRATION_VERSION for version in versions):
+        raise RuntimeError(
+            "Database schema was created by a newer RacerZLab build; upgrade this app before opening it."
+        )
+    first_expected_version = 1 if versions and versions[0] == 1 else 2
+    expected_versions = list(
+        range(first_expected_version, _LIGHTWEIGHT_MIGRATION_VERSION + 1)
+    )
+    if versions != expected_versions:
+        raise RuntimeError(
+            "Database migration history is incomplete for this RacerZLab build."
+        )
+    if any(
+        row["checksum"] != _LIGHTWEIGHT_MIGRATION_CHECKSUMS.get(int(row["version"]))
+        for row in rows
+    ):
+        raise RuntimeError(
+            "Database migration history checksum does not match this RacerZLab build."
+        )
+
+
 def _add_column_if_missing(connection: sqlite3.Connection, table_name: str, column_name: str, ddl: str) -> None:
     if column_name not in _column_names(connection, table_name):
         connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {ddl}")
+
+
+def _apply_controlled_response_receipt_migration(
+    connection: sqlite3.Connection,
+) -> None:
+    """Add durable receipts without treating old scored rows as new evidence."""
+
+    _add_column_if_missing(
+        connection,
+        "controlled_test_workflows",
+        "controlled_response_receipt_json",
+        "controlled_response_receipt_json TEXT",
+    )
+    _add_column_if_missing(
+        connection,
+        "controlled_test_workflows",
+        "controlled_response_receipt_state",
+        (
+            "controlled_response_receipt_state TEXT NOT NULL "
+            "DEFAULT 'not_applicable' CHECK (controlled_response_receipt_state IN "
+            "('not_applicable', 'legacy_unavailable', 'persisted'))"
+        ),
+    )
+    connection.execute(
+        """
+        UPDATE controlled_test_workflows
+        SET controlled_response_receipt_state = CASE
+          WHEN controlled_response_receipt_json IS NOT NULL THEN 'persisted'
+          WHEN status = 'scored' THEN 'legacy_unavailable'
+          ELSE 'not_applicable'
+        END
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO schema_migrations(version, checksum, applied_at)
+        VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        """,
+        (3, _LIGHTWEIGHT_MIGRATION_CHECKSUMS[3]),
+    )
+
+
+def _apply_crew_case_mutation_receipt_migration(
+    connection: sqlite3.Connection,
+) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS crew_chief_mutation_receipts (
+          mutation_id TEXT PRIMARY KEY,
+          request_sha256 TEXT NOT NULL,
+          action TEXT NOT NULL,
+          run_id TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          investigation_id TEXT,
+          expected_workspace_revision TEXT NOT NULL,
+          expected_case_sha256 TEXT,
+          result_workspace_revision TEXT NOT NULL,
+          result_case_sha256 TEXT NOT NULL,
+          result_case_revision INTEGER NOT NULL CHECK(result_case_revision >= 1),
+          previous_case_sha256 TEXT,
+          completed_at TEXT NOT NULL,
+          workspace_json TEXT NOT NULL,
+          FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_crew_chief_mutation_scope
+          ON crew_chief_mutation_receipts(
+            run_id, session_id, completed_at, mutation_id
+          );
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO schema_migrations(version, checksum, applied_at)
+        VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        """,
+        (4, _LIGHTWEIGHT_MIGRATION_CHECKSUMS[4]),
+    )
+
+
+def _apply_controlled_workflow_case_mutation_receipt_migration(
+    connection: sqlite3.Connection,
+) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS controlled_workflow_mutation_receipts (
+          mutation_id TEXT PRIMARY KEY,
+          request_sha256 TEXT NOT NULL,
+          action TEXT NOT NULL,
+          run_id TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          request_workflow_id TEXT,
+          expected_case_sha256 TEXT NOT NULL,
+          result_case_sha256 TEXT NOT NULL,
+          result_workflow_id TEXT,
+          result_workflow_revision_sha256 TEXT,
+          response_sha256 TEXT NOT NULL,
+          completed_at TEXT NOT NULL,
+          response_json TEXT NOT NULL,
+          FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_controlled_workflow_mutation_scope
+          ON controlled_workflow_mutation_receipts(
+            run_id, session_id, completed_at, mutation_id
+          );
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO schema_migrations(version, checksum, applied_at)
+        VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        """,
+        (5, _LIGHTWEIGHT_MIGRATION_CHECKSUMS[5]),
+    )
+
+
+def _apply_crew_case_revision_lineage_receipt_migration(
+    connection: sqlite3.Connection,
+) -> None:
+    _add_column_if_missing(
+        connection,
+        "crew_chief_mutation_receipts",
+        "result_case_revision",
+        "result_case_revision INTEGER",
+    )
+    _add_column_if_missing(
+        connection,
+        "crew_chief_mutation_receipts",
+        "previous_case_sha256",
+        "previous_case_sha256 TEXT",
+    )
+    connection.execute(
+        """
+        UPDATE crew_chief_mutation_receipts
+        SET result_case_revision = (
+              SELECT revision.case_revision
+              FROM engineering_case_revisions AS revision
+              WHERE revision.case_sha256 = result_case_sha256
+            ),
+            previous_case_sha256 = (
+              SELECT revision.previous_case_sha256
+              FROM engineering_case_revisions AS revision
+              WHERE revision.case_sha256 = result_case_sha256
+            )
+        """
+    )
+    unresolved = connection.execute(
+        """
+        SELECT mutation_id FROM crew_chief_mutation_receipts
+        WHERE result_case_revision IS NULL
+        LIMIT 1
+        """
+    ).fetchone()
+    if unresolved is not None:
+        raise RuntimeError(
+            "Crew mutation receipt cannot be bound to durable case revision lineage."
+        )
+    legacy_rows = connection.execute(
+        """
+        SELECT receipt.*, revision.case_id
+        FROM crew_chief_mutation_receipts AS receipt
+        JOIN engineering_case_revisions AS revision
+          ON revision.case_sha256 = receipt.result_case_sha256
+        """
+    ).fetchall()
+    for row in legacy_rows:
+        try:
+            workspace = json.loads(row["workspace_json"])
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                "Legacy Crew mutation receipt workspace is unreadable."
+            ) from exc
+        if not isinstance(workspace, dict):
+            raise RuntimeError("Legacy Crew mutation receipt workspace is malformed.")
+        identity = workspace.get("identity")
+        if not isinstance(identity, dict):
+            raise RuntimeError(
+                "Legacy Crew mutation receipt workspace identity is malformed."
+            )
+        if not identity.get("selected_run_ids"):
+            session_table = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                "AND name = 'racelab_sessions'"
+            ).fetchone()
+            session_row = (
+                connection.execute(
+                    "SELECT run_ids_json FROM racelab_sessions WHERE session_id = ?",
+                    (row["session_id"],),
+                ).fetchone()
+                if session_table is not None
+                else None
+            )
+            try:
+                selected_run_ids = (
+                    json.loads(session_row["run_ids_json"])
+                    if session_row is not None
+                    else [row["run_id"]]
+                )
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    "Legacy Crew mutation receipt session scope is unreadable."
+                ) from exc
+            if (
+                not isinstance(selected_run_ids, list)
+                or len(selected_run_ids) != len(set(selected_run_ids))
+                or row["run_id"] not in selected_run_ids
+                or canonical_json_sha256(tuple(selected_run_ids))
+                != identity.get("selected_scope_hash")
+            ):
+                raise RuntimeError(
+                    "Legacy Crew mutation receipt session scope cannot be reconstructed."
+                )
+            identity["selected_run_ids"] = selected_run_ids
+        if workspace.get("mutation_receipt") is None:
+            published_at = str(row["completed_at"])
+            if published_at.endswith("+00:00"):
+                published_at = published_at[:-6] + "Z"
+            receipt_body = {
+                "schema_version": "p3544.crew-mutation-publication.v1",
+                "mutation_id": row["mutation_id"],
+                "request_sha256": row["request_sha256"],
+                "action": row["action"],
+                "case_id": row["case_id"],
+                "case_revision": row["result_case_revision"],
+                "case_sha256": row["result_case_sha256"],
+                "previous_case_sha256": row["previous_case_sha256"],
+                "published_at": published_at,
+                "authority": "durability_receipt_only",
+                "setup_authorized": False,
+            }
+            workspace["mutation_receipt"] = {
+                **receipt_body,
+                "receipt_sha256": canonical_json_sha256(receipt_body),
+            }
+            connection.execute(
+                "UPDATE crew_chief_mutation_receipts SET workspace_json = ? "
+                "WHERE mutation_id = ?",
+                (
+                    json.dumps(workspace, sort_keys=True, separators=(",", ":")),
+                    row["mutation_id"],
+                ),
+            )
+    connection.execute(
+        """
+        INSERT INTO schema_migrations(version, checksum, applied_at)
+        VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        """,
+        (6, _LIGHTWEIGHT_MIGRATION_CHECKSUMS[6]),
+    )
+
+
+def _apply_controlled_workflow_projection_identity_migration(
+    connection: sqlite3.Connection,
+) -> None:
+    """Restore the exact P32/P35.1 identity already captured by legacy receipts."""
+
+    identity_columns = (
+        "p32_opportunity_id",
+        "p32_projection_sha256",
+        "engineering_knowledge_projection_sha256",
+    )
+    for column in identity_columns:
+        _add_column_if_missing(
+            connection,
+            "controlled_test_workflows",
+            column,
+            f"{column} TEXT",
+        )
+    rows = connection.execute(
+        "SELECT workflow_id, reproduction_snapshot_json, "
+        "p32_opportunity_id, p32_projection_sha256, "
+        "engineering_knowledge_projection_sha256 "
+        "FROM controlled_test_workflows"
+    ).fetchall()
+    for row in rows:
+        try:
+            snapshot = json.loads(row["reproduction_snapshot_json"])
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                "Legacy controlled workflow reproduction snapshot is unreadable."
+            ) from exc
+        if not isinstance(snapshot, dict):
+            raise RuntimeError(
+                "Legacy controlled workflow reproduction snapshot is malformed."
+            )
+        binding = snapshot.get("p352_performance_opportunity_binding")
+        stored_identity = tuple(row[column] for column in identity_columns)
+        if binding is None:
+            if any(value is not None for value in stored_identity):
+                raise RuntimeError(
+                    "Controlled workflow projection identity has no canonical receipt."
+                )
+            continue
+        if not isinstance(binding, dict):
+            raise RuntimeError(
+                "Legacy controlled workflow projection identity receipt is malformed."
+            )
+        restored_identity = tuple(binding.get(column) for column in identity_columns)
+        opportunity_id, p32_sha256, knowledge_sha256 = restored_identity
+        if (
+            not isinstance(opportunity_id, str)
+            or not opportunity_id
+            or opportunity_id != opportunity_id.strip()
+            or any(
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(character not in "0123456789abcdef" for character in value)
+                for value in (p32_sha256, knowledge_sha256)
+            )
+        ):
+            raise RuntimeError(
+                "Legacy controlled workflow projection identity receipt is incomplete."
+            )
+        if any(
+            stored is not None and stored != restored
+            for stored, restored in zip(stored_identity, restored_identity, strict=True)
+        ):
+            raise RuntimeError(
+                "Controlled workflow projection identity disagrees with its canonical receipt."
+            )
+        connection.execute(
+            "UPDATE controlled_test_workflows SET p32_opportunity_id = ?, "
+            "p32_projection_sha256 = ?, "
+            "engineering_knowledge_projection_sha256 = ? WHERE workflow_id = ?",
+            (*restored_identity, row["workflow_id"]),
+        )
+    connection.execute(
+        """
+        INSERT INTO schema_migrations(version, checksum, applied_at)
+        VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        """,
+        (7, _LIGHTWEIGHT_MIGRATION_CHECKSUMS[7]),
+    )
 
 
 def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
@@ -93,23 +466,70 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
         )
         """
     )
-    newer = connection.execute(
-        "SELECT version FROM schema_migrations WHERE version > ? ORDER BY version LIMIT 1",
-        (_LIGHTWEIGHT_MIGRATION_VERSION,),
-    ).fetchone()
-    if newer is not None:
-        raise RuntimeError(
-            "Database schema was created by a newer RacerZLab build; upgrade this app before opening it."
-        )
-    applied = connection.execute(
-        "SELECT checksum FROM schema_migrations WHERE version = ?",
-        (_LIGHTWEIGHT_MIGRATION_VERSION,),
-    ).fetchone()
-    if applied is not None:
-        if applied["checksum"] != _LIGHTWEIGHT_MIGRATION_CHECKSUM:
+    applied_rows = connection.execute(
+        "SELECT version, checksum FROM schema_migrations ORDER BY version"
+    ).fetchall()
+    applied_versions: set[int] = set()
+    for row in applied_rows:
+        version = int(row["version"])
+        if version > _LIGHTWEIGHT_MIGRATION_VERSION:
+            raise RuntimeError(
+                "Database schema was created by a newer RacerZLab build; upgrade this app before opening it."
+            )
+        expected_checksum = _LIGHTWEIGHT_MIGRATION_CHECKSUMS.get(version)
+        if expected_checksum is None or row["checksum"] != expected_checksum:
             raise RuntimeError(
                 "Database migration history checksum does not match this RacerZLab build."
             )
+        applied_versions.add(version)
+    if _LIGHTWEIGHT_MIGRATION_VERSION in applied_versions:
+        validate_complete_migration_ledger(connection)
+        return
+    if 6 in applied_versions:
+        if not {2, 3, 4, 5}.issubset(applied_versions):
+            raise RuntimeError(
+                "Database migration history is incomplete for this RacerZLab build."
+            )
+        _apply_controlled_workflow_projection_identity_migration(connection)
+        validate_complete_migration_ledger(connection)
+        return
+    if 5 in applied_versions:
+        if not {2, 3, 4}.issubset(applied_versions):
+            raise RuntimeError(
+                "Database migration history is incomplete for this RacerZLab build."
+            )
+        _apply_crew_case_revision_lineage_receipt_migration(connection)
+        _apply_controlled_workflow_projection_identity_migration(connection)
+        validate_complete_migration_ledger(connection)
+        return
+    if 4 in applied_versions:
+        if not {2, 3}.issubset(applied_versions):
+            raise RuntimeError(
+                "Database migration history is incomplete for this RacerZLab build."
+            )
+        _apply_controlled_workflow_case_mutation_receipt_migration(connection)
+        _apply_crew_case_revision_lineage_receipt_migration(connection)
+        _apply_controlled_workflow_projection_identity_migration(connection)
+        validate_complete_migration_ledger(connection)
+        return
+    if 3 in applied_versions:
+        if 2 not in applied_versions:
+            raise RuntimeError(
+                "Database migration history is incomplete for this RacerZLab build."
+            )
+        _apply_crew_case_mutation_receipt_migration(connection)
+        _apply_controlled_workflow_case_mutation_receipt_migration(connection)
+        _apply_crew_case_revision_lineage_receipt_migration(connection)
+        _apply_controlled_workflow_projection_identity_migration(connection)
+        validate_complete_migration_ledger(connection)
+        return
+    if 2 in applied_versions:
+        _apply_controlled_response_receipt_migration(connection)
+        _apply_crew_case_mutation_receipt_migration(connection)
+        _apply_controlled_workflow_case_mutation_receipt_migration(connection)
+        _apply_crew_case_revision_lineage_receipt_migration(connection)
+        _apply_controlled_workflow_projection_identity_migration(connection)
+        validate_complete_migration_ledger(connection)
         return
 
     # Existing developer databases from the scaffold had narrower tables. This
@@ -1133,8 +1553,14 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
         INSERT INTO schema_migrations(version, checksum, applied_at)
         VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
         """,
-        (_LIGHTWEIGHT_MIGRATION_VERSION, _LIGHTWEIGHT_MIGRATION_CHECKSUM),
+        (2, _LIGHTWEIGHT_MIGRATION_CHECKSUMS[2]),
     )
+    _apply_controlled_response_receipt_migration(connection)
+    _apply_crew_case_mutation_receipt_migration(connection)
+    _apply_controlled_workflow_case_mutation_receipt_migration(connection)
+    _apply_crew_case_revision_lineage_receipt_migration(connection)
+    _apply_controlled_workflow_projection_identity_migration(connection)
+    validate_complete_migration_ledger(connection)
 
 
 def initialize_database(db_path: str | Path | None = None) -> sqlite3.Connection:
