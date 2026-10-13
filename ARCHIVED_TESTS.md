@@ -38,12 +38,17 @@ Pytest ignores `tests_archived/` by default — see `pyproject.toml`.
 | 1 obsolete startup copy assertion | `test_startup_import_polish_frontend_contract.py` | Startup copy was rewritten around the new workspace journey. | Remaining import progress/retry/completion contracts |
 | 1 obsolete Platform broadcast assertion | `test_tab_experience_polish_frontend_contract.py` | Platform no longer owns the removed global broadcast. | Overview, Laps, and Setup experience contracts |
 | 1 obsolete lazy-load assertion | `test_ui_performance_contract.py` | The removed Priority Rail is no longer a lazy-loaded surface. | Remaining lazy-load and chart-performance contracts |
+| `test_cfs_half_inch_claim_is_needs_review` | `test_setup_guide_digest.py` | Duplicate of the richer review-queue assertion in the owning setup-knowledge tests. | `test_setup_knowledge.py::test_cfs_half_inch_item_remains_needs_review` |
+| `test_arb_discrete_options_remain_exact` | `test_setup_guide_digest.py` | Exact duplicate of the Next Gen ARB option contract in the owning setup-knowledge tests. | `test_setup_knowledge.py::test_next_gen_arb_diameter_and_arm_constraints_valid` |
+| `test_next_gen_query_never_returns_legacy_disabled_areas` | `test_setup_guide_digest.py` | Same query and disabled-area assertion already covered by the owning matcher tests. | `test_setup_knowledge.py::test_next_gen_never_returns_disabled_legacy_areas` |
+| `test_every_setup_effect_has_effect_and_counter_effect` | `test_setup_guide_digest.py` | Duplicate structural check; the owning test also verifies the counter-effect language. | `test_setup_knowledge.py::test_every_effect_has_effect_and_counter_effect_arrays` |
+| `test_platform_threshold_classification` | `test_platform.py` | Repeated the same splitter classifier boundaries already covered by the focused metrics test. | `test_platform_metrics.py::test_splitter_height_classification_boundaries` |
 
 ---
 
 ## Active Default Suite
 
 The active collection is measured rather than frozen in a hand-maintained file list.
-Verification snapshot on 2026-10-13: 2,873 active items across 208 modules;
-the fast command selects 2,839 items across 205 modules. Archived modules are
+Verification snapshot on 2026-10-13: 2,868 active items across 208 modules;
+the fast command selects 2,834 items across 205 modules. Archived modules are
 excluded by the pytest configuration.

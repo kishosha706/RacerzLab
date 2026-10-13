@@ -5,8 +5,9 @@ Reviewed: 2026-10-13
 Cleanup evidence (2026-10-13): archived the generic legacy model-shape file and
 the three-test vehicle-dynamics duplicate; removed 16 UI contract tests for
 surfaces removed by the current workspace redesign; and repaired three
-remaining contracts to assert the current UI boundaries. The active collection
-is 2,873 items across 208 modules; the fast selector runs 2,839 items.
+remaining contracts to assert the current UI boundaries. A second redundancy
+pass deleted five exact duplicate unit/knowledge checks. The active collection
+count is reported by the current verification run below rather than frozen here.
 
 This inventory groups current high-value contract coverage. Exact collection
 counts change with the repository and are reported by the release run, not

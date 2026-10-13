@@ -78,11 +78,6 @@ def test_no_accepted_diffuser_record_claims_measured_downforce():
     assert "measured downforce" not in diffuser_text or "not measured downforce" in diffuser_text
 
 
-def test_cfs_half_inch_claim_is_needs_review():
-    items = {item.review_id: item for item in load_setup_knowledge().guide_review_queue}
-    assert items["cfs_half_inch_opening_claim"].status == "needs_review"
-
-
 def test_next_gen_disabled_areas_remain_disabled():
     cap = load_setup_knowledge().car_capability_by_family["next_gen"]
     assert set(cap.disabled_setup_areas) == {"track_bar", "truck_arm_mount", "bump_stop", "packer"}
@@ -169,14 +164,6 @@ def test_cheat_sheet_road_aero_items_are_gated_from_next_gen():
 def test_legacy_oval_can_keep_legacy_areas():
     cap = load_setup_knowledge().car_capability_by_family["legacy_oval_generic"]
     assert {"track_bar", "truck_arm_mount", "bump_stop", "packer"}.issubset(cap.available_setup_areas)
-
-
-def test_arb_discrete_options_remain_exact():
-    cap = load_setup_knowledge().car_capability_by_family["next_gen"]
-    assert cap.discrete_options["front_arb_diameter"] == ["1.375", "2.000"]
-    assert cap.discrete_options["rear_arb_diameter"] == ["1.375", "2.000"]
-    assert cap.discrete_options["front_arb_arm"] == ["P1", "P2", "P3", "P4", "P5"]
-    assert cap.discrete_options["rear_arb_arm"] == ["P1", "P2", "P3", "P4", "P5"]
 
 
 def test_next_gen_arb_p_setting_direction_is_encoded():
@@ -268,21 +255,9 @@ def test_every_setup_effect_has_source_ids():
     assert all(effect.source_ids for effect in load_setup_knowledge().setup_effects)
 
 
-def test_every_setup_effect_has_effect_and_counter_effect():
-    for effect in load_setup_knowledge().setup_effects:
-        assert effect.effect
-        assert effect.counter_effect
-
-
 def test_generic_loose_tight_asks_clarification():
     assert query_setup_knowledge(car_family="next_gen", symptom="loose").clarification_question
     assert query_setup_knowledge(car_family="next_gen", symptom="tight").clarification_question
-
-
-def test_next_gen_query_never_returns_legacy_disabled_areas():
-    result = query_setup_knowledge(car_family="next_gen", symptom="tight center", limit=40)
-    areas = {ranked.effect.setup_area for ranked in result.candidate_effects}
-    assert not areas & {"track_bar", "truck_arm_mount", "bump_stop", "packer"}
 
 
 def test_query_guide_script_topic_diffuser():

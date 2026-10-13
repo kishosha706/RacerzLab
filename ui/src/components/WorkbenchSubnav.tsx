@@ -34,6 +34,8 @@ export function WorkbenchSubnav({ active, onChange }: WorkbenchSubnavProps) {
           className={`workbench-subnav-item${active === v.id ? " active" : ""}`}
           onClick={() => onChange(v.id)}
           aria-pressed={active === v.id}
+          aria-current={active === v.id ? "page" : undefined}
+          title={v.description}
           aria-label={`Show ${v.label} platform section`}
         >
           <span className="workbench-subnav-icon">{v.icon}</span>

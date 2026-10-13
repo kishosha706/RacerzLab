@@ -3,11 +3,18 @@
   --journey-ink: #f0f5fc;
   --journey-muted: #a2b3c9;
   --journey-line: #26374b;
+  --journey-surface: #101a29;
 }
 
-.journey-stop-number { margin-right: 7px; color: var(--stop-accent); font-variant-numeric: tabular-nums; }
+.journey-stop-number { margin-right: 7px; color: var(--stop-accent); font-variant-numeric: tabular-nums; font-weight: 800; }
 .journey-stop-purpose { color: var(--journey-muted); }
-.journey-workspace-purpose { color: var(--destination-accent); }
+.journey-workspace-purpose {
+  color: var(--destination-accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
 
 @media (min-width: 1000px) {
   .cockpit-shell { height: 100dvh; background: #0a101a; color: var(--journey-ink); }
@@ -35,7 +42,8 @@
     padding: 6px 12px;
     border: 0;
     border-block: 1px solid var(--journey-line);
-    background: #101a29;
+    background: var(--journey-surface);
+    box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.025), 0 8px 20px rgba(0, 0, 0, 0.12);
     overflow: visible;
   }
   .cockpit-shell .nav-rail-heading { display: none; }
@@ -52,6 +60,8 @@
     background: transparent;
     box-shadow: none;
     transform: none;
+    position: relative;
+    overflow: hidden;
   }
   .cockpit-shell .nav-rail-icon {
     width: 24px; height: 26px; border: 0; background: none; color: #8297b2;
@@ -64,16 +74,31 @@
   .cockpit-shell .workspace-nav-rail .journey-stop-purpose { font-size: 10px; line-height: 1.2; }
   .cockpit-shell .nav-rail-signal {
     justify-content: flex-start; font-size: 10px; font-weight: 500; line-height: 1.2;
-    white-space: normal; overflow: visible; text-transform: none; color: #b0bfd1;
+    width: fit-content; max-width: 100%; padding: 2px 6px; border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 999px; white-space: normal; overflow: hidden; text-overflow: ellipsis;
+    text-transform: none; color: #b0bfd1; background: rgba(148, 163, 184, 0.045);
   }
+  .cockpit-shell .nav-rail-signal[data-tone="ready"],
+  .cockpit-shell .nav-rail-signal[data-tone="clear"] { color: #a5f3c8; border-color: rgba(74, 222, 128, 0.25); background: rgba(74, 222, 128, 0.07); }
+  .cockpit-shell .nav-rail-signal[data-tone="attention"] { color: #fde68a; border-color: rgba(251, 191, 36, 0.25); background: rgba(251, 191, 36, 0.07); }
+  .cockpit-shell .nav-rail-signal[data-tone="blocked"] { color: #fecdd3; border-color: rgba(251, 113, 133, 0.25); background: rgba(251, 113, 133, 0.07); }
   .cockpit-shell .nav-rail-item:hover { background: #19273a; color: white; }
   .cockpit-shell .nav-rail-item.active {
     border-color: color-mix(in srgb, var(--stop-accent) 42%, transparent);
     background: linear-gradient(115deg, color-mix(in srgb, var(--stop-accent) 12%, #122031), #122031);
     color: #fff;
-    box-shadow: 0 3px 16px #0003;
+    box-shadow: 0 5px 18px #0004, inset 0 1px 0 rgba(255, 255, 255, 0.04);
   }
   .cockpit-shell .nav-rail-item.active::before { display: none; }
+  .cockpit-shell .nav-rail-item.active::after {
+    content: "";
+    position: absolute;
+    inset: 5px auto 5px 0;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--stop-accent);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--stop-accent) 50%, transparent);
+  }
   .cockpit-shell .nav-rail-item.active .nav-rail-icon { color: var(--stop-accent); background: none; border: 0; }
   .cockpit-shell .journey-shortcuts { display: flex; justify-content: center; align-items: center; padding: 4px; }
   .cockpit-shell .journey-shortcuts .nav-rail-copy { display: none; }
@@ -135,11 +160,11 @@
   .cockpit-shell .shell-session-identity small { font-size: 9px; }
   .cockpit-shell .shell-session-name { max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
   .cockpit-shell .shell-workspace-heading { grid-column: 2; grid-row: 1; display: flex; align-items: baseline; min-width: 0; gap: 10px; padding: 0; border: 0; }
-  .cockpit-shell .workspace-toolbar .journey-workspace-purpose { flex: 0 0 auto; font-size: 10px; letter-spacing: .05em; }
+  .cockpit-shell .workspace-toolbar .journey-workspace-purpose { flex: 0 0 auto; padding: 4px 7px; border: 1px solid color-mix(in srgb, var(--destination-accent) 28%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--destination-accent) 7%, transparent); }
   .cockpit-shell .shell-workspace-name { min-width: 0; font-size: 22px; line-height: 1.1; letter-spacing: -.03em; white-space: nowrap; }
-  .cockpit-shell .shell-workspace-broadcast { margin-left: auto; max-width: 180px; padding: 0; border: 0; gap: 6px; justify-content: flex-end; }
+  .cockpit-shell .shell-workspace-broadcast { margin-left: auto; max-width: 210px; min-height: 24px; padding: 3px 9px; border: 1px solid color-mix(in srgb, var(--destination-accent) 25%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--destination-accent) 6%, #0c1421); gap: 6px; justify-content: flex-end; }
   .cockpit-shell .shell-workspace-broadcast > span { display: none; }
-  .cockpit-shell .shell-workspace-broadcast > strong { font-size: 13px; white-space: normal; }
+  .cockpit-shell .shell-workspace-broadcast > strong { color: #eef8ff; font-size: 12px; white-space: normal; }
   .cockpit-shell .shell-toolbar-action { min-height: 32px; padding: 6px 12px; }
   .cockpit-shell .shell-import-trigger { background: #193c50; border-color: #33718a; color: #daf6ff; }
 
@@ -225,6 +250,8 @@
     .cockpit-shell .shell-workspace-name { font-size: 19px; }
     .cockpit-shell .shell-session-identity { flex-wrap: wrap; gap: 3px 8px; }
     .engineering-mission-strip[data-mode="race"] .engineering-mission-fields { gap: 14px; grid-template-columns: .65fr 1.5fr 1fr; }
+    .platform-page-intro { grid-template-columns: 1fr; gap: 10px; }
+    .platform-page-cue { padding: 10px 0 0; border-top: 1px solid #30455b; border-left: 0; }
   }
 }
 

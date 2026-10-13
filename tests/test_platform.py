@@ -112,14 +112,6 @@ def test_analysis_package_exports_only_canonical_platform_detector_names() -> No
     assert not hasattr(analysis_pkg, "detect_legacy_platform_telemetry_events")
 
 
-def test_platform_threshold_classification() -> None:
-    assert classify_splitter_height_mm(0.0) == "scrape"
-    assert classify_splitter_height_mm(3.0) == "critical"
-    assert classify_splitter_height_mm(6.0) == "high"
-    assert classify_splitter_height_mm(10.0) == "watch"
-    assert classify_splitter_height_mm(12.0) == "safe"
-
-
 def test_canonical_detector_emits_min_splitter_platform_event() -> None:
     events = detect_platform_events(
         [
