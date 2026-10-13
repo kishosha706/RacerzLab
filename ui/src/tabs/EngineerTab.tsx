@@ -1614,7 +1614,7 @@ export function IntelligencePanel({
       data-case-revision-sha256={activeCaseRevisionSha256 ?? undefined}
       data-p19-reasoning-snapshot-sha256={activeCaseReasoningSnapshotSha256 ?? undefined}
     >
-      <header className="engineer-workspace-header">
+      <header className="engineer-workspace-header" id="engineer-evidence-status">
         <div>
           <span className="eyebrow"><BrainCircuit size={13} aria-hidden="true" /> Smart Engineer</span>
           <h2>{learning ? "Evidence, causes, and context" : "Engineering evidence status"}</h2>
@@ -1677,6 +1677,7 @@ export function IntelligencePanel({
 
       <section
         className="tab-decision-broadcast"
+        id="engineer-next-move"
         data-state={broadcastState}
         data-authority={actionAuthorized ? "server-verified" : "withheld"}
         data-run-id={runId}
@@ -1722,6 +1723,7 @@ export function IntelligencePanel({
         <button
           type="button"
           className="engineer-race-support-toggle"
+          id="engineer-support-toggle"
           aria-expanded={raceSupportOpen}
           aria-controls="engineer-supporting-evidence"
           onClick={() => setRaceSupportOpen((open) => !open)}

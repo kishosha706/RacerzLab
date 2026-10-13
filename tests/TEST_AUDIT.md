@@ -1,6 +1,12 @@
 # Test Audit - RaceLab Garage
 
-Reviewed: 2026-08-10
+Reviewed: 2026-10-13
+
+Cleanup evidence (2026-10-13): archived the generic legacy model-shape file and
+the three-test vehicle-dynamics duplicate; removed 16 UI contract tests for
+surfaces removed by the current workspace redesign; and repaired three
+remaining contracts to assert the current UI boundaries. The active collection
+is 2,873 items across 208 modules; the fast selector runs 2,839 items.
 
 This inventory groups current high-value contract coverage. Exact collection
 counts change with the repository and are reported by the release run, not

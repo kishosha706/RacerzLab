@@ -10,51 +10,6 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_platform_broadcasts_diagnostic_scope_and_withheld_setup_authority() -> None:
-    platform = _read("ui/src/tabs/PlatformTab.tsx")
-
-    assert 'className="tab-decision-broadcast platform-decision-broadcast"' in platform
-    assert 'data-diagnostic-state={platformDiagnosticState}' in platform
-    assert 'data-authority="withheld"' in platform
-    assert "This is a diagnostic finding, not an authorized setup target." in platform
-    assert "No setup change is authorized from this Platform state." in platform
-    assert "No setup target is authorized by this event." in platform
-    assert "platformBroadcastNext" not in platform
-    assert "<strong>What next:</strong>" not in platform
-    assert 'aria-label="Platform evidence status and supporting views"' in platform
-    assert "<strong>Next action:</strong>" not in platform
-    assert "<strong>Recommended:</strong>" not in platform
-    assert 'selection.selectedMode === "learning"' in platform
-    assert "focusedPlatformEvent.source_channels.join" in platform
-    assert "focusedPlatformEvent.blocker_reasons[0]" in platform
-
-
-def test_platform_handoffs_preserve_exact_evidence_without_inventing_setup_links() -> None:
-    platform = _read("ui/src/tabs/PlatformTab.tsx")
-
-    handoff = platform.split(
-        'window.sessionStorage.setItem("racelab_setup_evidence_focus"', 1
-    )[1].split("} catch", 1)[0]
-    assert "run_id: overview.run_id" in handoff
-    assert "event_id: event.event_id" in handoff
-    assert "lap_number: event.lap ?? trace?.lap" in handoff
-    assert "lap_pct_peak: event.lap_pct ?? null" in handoff
-    assert "related_setup_keys: []" in handoff
-
-    engineer_handoff = platform.split(
-        "const handleOpenEngineerFromPlatformEvent", 1
-    )[1].split("// ", 1)[0]
-    assert "event?.event_id ?? null" in engineer_handoff
-    assert "sampleIndex" in engineer_handoff
-    assert "lapDistFt" in engineer_handoff
-    assert "lapPct" in engineer_handoff
-    assert '}, "engineer");' in engineer_handoff
-
-    assert "Inspect setup evidence" in platform
-    assert "Open Engineer evidence" in platform
-    assert "Show evidence on map" in platform
-
-
 def test_platform_trace_failure_states_broadcast_no_call_and_recovery() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
 

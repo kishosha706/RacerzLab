@@ -78,7 +78,7 @@ def test_escape_uses_atomic_clear_and_resets_external_cursor_first() -> None:
         'dispatch({ type: "CLEAR_EVIDENCE_FOCUS" })'
     )
 
-    escape_branch = shortcuts.split('case "Escape":', 1)[1].split('case "[":', 1)[0]
+    escape_branch = shortcuts.split('case "Escape":', 1)[1].split('case "]":', 1)[0]
     assert "e.preventDefault()" in escape_branch
     assert "clearEvidenceFocus()" in escape_branch
     assert "focusEvidence(" not in escape_branch

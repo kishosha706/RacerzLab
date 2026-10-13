@@ -317,10 +317,10 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
       <div className="startup-content">
         <div className="start-hero">
           <div className="start-launch-panel">
-            <span className="startup-kicker">Evidence-first workspace</span>
-            <h1 className="start-title">Pick up the engineering thread</h1>
+            <span className="startup-kicker">Your next stint starts here</span>
+            <h1 className="start-title">Every lap has a story.<br />Find your next move.</h1>
             <p className="start-subtitle">
-              Qualify the run, find the repeatable loss, and leave with one controlled next move.
+              Follow the evidence from the track to the garage. Explore your laps, understand your car, and build one better test at a time.
             </p>
             <p className="start-primary-note">
               Current alpha decision scope: NASCAR Next Gen oval telemetry. Other `.ibt` files remain available for truthful archive inspection and fail closed where applicability is unverified.

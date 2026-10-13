@@ -3,7 +3,6 @@ import { Activity, AlertTriangle, BarChart3, BrainCircuit, LocateFixed, MapPin, 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
-import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPanel";
 import { DamperSpectrumSummary } from "../components/DamperSpectrumSummary";
 import { ShockHistogram } from "../components/ShockHistogram";
 import type { ShockSetupField } from "../components/ShockHistogram";
@@ -923,7 +922,7 @@ export function LocalPlatformTrace({
   });
 
   return (
-    <figure className="platform-local-trace">
+    <figure className="platform-local-trace" id="platform-local-trace">
       <figcaption>
         <span>Local trace</span>
         <strong>{contextLabel}</strong>
@@ -1382,6 +1381,7 @@ export function PlatformTab({
             {selection.selectedMode === "learning" && effectiveTraceLoadStatus === "ready" && <p>No trace samples were returned.</p>}
           </div>
           <div className="tab-handoff-actions" aria-label="Platform trace handoff">
+            {onRetryTrace && <button type="button" onClick={onRetryTrace}><RotateCcw size={14} /> Retry trace</button>}
             <button type="button" onClick={() => setWorkspace("engineer", "trace_cursor")}><BrainCircuit size={14} /> Explain evidence gap</button>
           </div>
         </section>
@@ -1495,7 +1495,12 @@ function PlatformTraceWorkbench({
   }>({ requestKey: null, status: "idle", error: null });
   const [shockReaderRetryToken, setShockReaderRetryToken] = useState(0);
   const [selectedPlatformEvent, setSelectedPlatformEvent] = useState<PlatformEventItem | null>(null);
-  const [wholeLapExpanded, setWholeLapExpanded] = useState(selection.selectedMode === "learning");
+  const normalizedInitialView = visiblePlatformWorkbenchView(initialWorkbenchView);
+  const [wholeLapExpanded, setWholeLapExpanded] = useState(
+    selection.selectedMode === "learning"
+      || normalizedInitialView === "balance"
+      || normalizedInitialView === "rear_scrape",
+  );
   const [clickedSampleIndex, setClickedSampleIndex] = useState<number | null>(null);
   const [hoverSampleIndex, setHoverSampleIndex] = useState<number | null>(null);
   const [clickedCursorDistanceFt, setClickedCursorDistanceFt] = useState<number | null>(null);
@@ -1509,7 +1514,6 @@ function PlatformTraceWorkbench({
   const detailTraceCacheRef = useRef<Map<string, TraceResponse>>(new Map());
   const detailTraceDebounceRef = useRef<number | null>(null);
   const detailTraceRequestRef = useRef(0);
-  const normalizedInitialView = visiblePlatformWorkbenchView(initialWorkbenchView);
   const [workbenchView, setWorkbenchView] = useState<WorkbenchView>(normalizedInitialView);
   useEffect(() => {
     setWorkbenchView(normalizedInitialView);
@@ -1533,14 +1537,49 @@ function PlatformTraceWorkbench({
   };
   const preset = presetFromView[workbenchView] ?? "Platform / Rake / Ride Height";
   const scrapeScrubChartView = workbenchView === "rear_scrape" || workbenchView === "scrub_steering";
+  const wholeLapChartTitle = workbenchView === "balance"
+    ? "Ride height + rake charts"
+    : scrapeScrubChartView
+      ? "Ride height + drag / scrub charts"
+      : "Whole-lap engineering charts";
+  const wholeLapChartDescription = workbenchView === "balance"
+    ? "Front/rear ride heights, center rake, side rake, and speed across the selected lap."
+    : scrapeScrubChartView
+      ? "Inspect the ride-height and speed-loss traces behind the scrub/scrape proxies."
+      : "Inspect every recorded sample after reviewing the priority and local trace.";
+  const platformPage = workbenchView === "balance"
+    ? {
+        number: "01",
+        title: "Balance / Rake",
+        description: "Ride height, center rake, side rake, and speed across the selected lap.",
+        cue: "Start here for balance changes or a car that is too high or too low.",
+      }
+      : scrapeScrubChartView
+        ? {
+            number: "02",
+            title: "Drag / Scrub",
+            description: "Scrape margin, scrub suspicion, speed loss, and ride-height response.",
+            cue: "Proxy signals are labeled; they do not measure aerodynamic drag force.",
+          }
+        : {
+            number: "03",
+            title: "Shocks / Dampers",
+            description: "Corner-by-corner rebound and bump distributions with recorded damper context.",
+            cue: "Use the fixed shared axis to compare corners without changing scale.",
+          };
   const rawZoomTraceEnabled = workbenchView === "balance" || scrapeScrubChartView;
   const presetRef = useRef(preset);
   useEffect(() => {
     presetRef.current = preset;
   }, [preset]);
   const handleViewChange = useCallback((view: WorkbenchView) => {
-    setWorkbenchView(visiblePlatformWorkbenchView(view));
-    setWholeLapExpanded(selection.selectedMode === "learning");
+    const nextView = visiblePlatformWorkbenchView(view);
+    setWorkbenchView(nextView);
+    setWholeLapExpanded(
+      selection.selectedMode === "learning"
+        || nextView === "balance"
+        || nextView === "rear_scrape",
+    );
     setHoverSampleIndex(null);
     setHoverCursorDistanceFt(null);
   }, [selection.selectedMode, setWorkbenchView, setHoverSampleIndex]);
@@ -2556,7 +2595,7 @@ function PlatformTraceWorkbench({
       if (cancelDragZoomRef.current === cancelDragZoom) cancelDragZoomRef.current = () => {};
       if (restoreHoverAtPointerRef.current === restoreHoverAtPointer) restoreHoverAtPointerRef.current = () => false;
     };
-  }, [onMapOverlayZoomRangeChange, wholeLapExpanded, zoomStorageKey]);;
+  }, [onMapOverlayZoomRangeChange, wholeLapExpanded, zoomStorageKey]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -2962,6 +3001,7 @@ function PlatformTraceWorkbench({
     }
   }, [
     chartDensity,
+    wholeLapExpanded,
     detailTraceActive,
     platformEventVisibilityMode,
     platformEvents,
@@ -3456,7 +3496,58 @@ function PlatformTraceWorkbench({
     </details>
   );
 
-  const renderRearScrapeScrubPanel = () => null;
+  const renderRearScrapeScrubPanel = () => (
+    <div className="engineering-panel platform-scrape-scrub-panel">
+      <p className="proxy-warning">
+        Scrub and resistance values are telemetry-derived proxies. They indicate possible tire/platform resistance or contact-like behavior; they are not measured aerodynamic drag force or coefficient.
+      </p>
+      <div className="engineering-panel-grid">
+        <EngineeringMetricCard
+          title="Minimum Rear Ride Height"
+          channelName="rear_min_ride_height_mm"
+          value={latest("rear_min_ride_height_mm")}
+          color="#22d3ee"
+        />
+        <EngineeringMetricCard
+          title="Rear Scrape Margin"
+          channelName="rear_scrape_margin_mm"
+          value={latest("rear_scrape_margin_mm")}
+          color="#f97316"
+        />
+        <EngineeringMetricCard
+          title="Scrub Suspicion"
+          channelName="drag_scrub_suspicion"
+          value={latest("drag_scrub_suspicion")}
+          subtitle="Proxy · 0–1 index"
+          color="#ef4444"
+        />
+        <EngineeringMetricCard
+          title="Front / Rear Scrub"
+          channelName="front_scrub_proxy"
+          value={`${formatChannelValue(latest("front_scrub_proxy") as number, "proxy")} / ${formatChannelValue(latest("rear_scrub_proxy") as number, "proxy")}`}
+          subtitle="Front / rear proxy"
+          color="#a78bfa"
+        />
+        <EngineeringMetricCard
+          title="Speed Loss"
+          channelName="grade_corrected_speed_loss_mph_s"
+          value={latest("grade_corrected_speed_loss_mph_s")}
+          subtitle="Grade-corrected estimate"
+          color="#f97316"
+        />
+        <EngineeringMetricCard
+          title="Steering"
+          channelName="abs_steering_deg"
+          value={latest("abs_steering_deg")}
+          color="#f59e0b"
+        />
+      </div>
+      <p className="section-note">
+        Use the charts above to inspect the complete ride-height and scrub traces at the selected track position. Missing channels remain unavailable rather than being shown as zero.
+      </p>
+      {setupAction(["lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm"], "Ride Height / Alignment Setup", true)}
+    </div>
+  );
 
   const renderAeroPanel = () => {
     const aeroIdx = latest("aero_load_index") as number | null;
@@ -3653,63 +3744,6 @@ function PlatformTraceWorkbench({
 
   return (
     <section className="platform-workbench" data-analysis-surface="platform_channel_overlay">
-      <EngineeringAwarenessPanel runId={overview.run_id} sessionId={sessionId} surface="platform" />
-      <section
-        className="tab-decision-broadcast platform-decision-broadcast"
-        data-state={platformDecisionState}
-        data-diagnostic-state={platformDiagnosticState}
-        data-authority="withheld"
-        aria-label="Platform evidence status and supporting views"
-        role={platformEventsLoadStatus === "error" ? "alert" : undefined}
-        aria-live={platformEventsLoadStatus === "error" ? undefined : "polite"}
-      >
-        <div>
-          <h3>{platformBroadcastHeadline}</h3>
-          <p><strong>Why:</strong> {platformBroadcastWhy}</p>
-          {selection.selectedMode === "learning" && (
-            <p>
-              {focusedPlatformEvent
-                ? "This is a diagnostic finding, not an authorized setup target."
-                : platformEventsLoadStatus === "clear"
-                  ? "Clear applies only to supported checks on this eligible lap; no setup change is implied."
-                  : "No setup change is authorized from this Platform state."}
-            </p>
-          )}
-          <div className="tab-decision-facts" aria-label="Platform scope and authority">
-            <span>Diagnostic <strong>{platformDiagnosticState.replace(/_/g, " ")}</strong></span>
-            <span>Scope <strong>{platformScopeSummary}</strong></span>
-            <span>Signal <strong>{platformSignalSummary}</strong></span>
-            <span>Evidence <strong>{platformEvidenceSummary}</strong></span>
-            <span className="platform-event-summary-strip" aria-label="Platform Diagnostic Events">
-              Events <strong>{visiblePlatformEvents.length} shown · {hiddenPlatformEventCount} hidden</strong>
-            </span>
-            <span><ShieldCheck size={12} /> Authority <strong>Withheld</strong></span>
-          </div>
-          {selection.selectedMode === "learning" && (
-            <p>{groupedPlatformEventSummaryText}</p>
-          )}
-        </div>
-        <div className="tab-handoff-actions" aria-label="Platform workspace handoffs">
-          {platformEventsLoadStatus === "error" && onRetryPlatformEvents && (
-            <button type="button" onClick={onRetryPlatformEvents}>
-              <RotateCcw size={14} /> Retry platform evidence
-            </button>
-          )}
-          {focusedPlatformEvent && (
-            <button type="button" onClick={() => handleOpenSetupFromPlatformEvent(focusedPlatformEvent)}>
-              <Wrench size={14} /> Inspect setup evidence
-            </button>
-          )}
-          <button type="button" onClick={() => handleOpenEngineerFromPlatformEvent(focusedPlatformEvent)}>
-            <BrainCircuit size={14} /> Open Engineer evidence
-          </button>
-          {focusedPlatformEvent && onToggleMapOverlay && (
-            <button type="button" onClick={() => handleOpenMapFromPlatformEvent(focusedPlatformEvent)}>
-              <MapPin size={14} /> Show evidence on map
-            </button>
-          )}
-        </div>
-      </section>
       <header className="platform-header">
         <div>
           <span className="eyebrow">Platform / Aero Workbench</span>
@@ -3915,22 +3949,15 @@ function PlatformTraceWorkbench({
         )}
         </section>
       )}
-      <PlatformOvalCheckpoint
-        trace={trace}
-        xs={xs}
-        sampleIndex={localFocusIndex}
-        event={focusedPlatformEvent}
-        learning={selection.selectedMode === "learning"}
-        onAskEngineer={() => handleOpenEngineerFromPlatformEvent(focusedPlatformEvent)}
-      />
-      <LocalPlatformTrace
-        trace={trace}
-        xs={xs}
-        centerIndex={localFocusIndex}
-        channels={localTraceChannels}
-        contextLabel={localTraceContextLabel}
-      />
       <WorkbenchSubnav active={workbenchView} onChange={handleViewChange} />
+      <section className="platform-page-intro" data-platform-page={workbenchView} aria-label={`${platformPage.title} page`}>
+        <div>
+          <span className="platform-page-kicker">Platform page {platformPage.number}</span>
+          <h3>{platformPage.title}</h3>
+          <p>{platformPage.description}</p>
+        </div>
+        <p className="platform-page-cue"><strong>Use this page when:</strong> {platformPage.cue}</p>
+      </section>
       {workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
           <span className="laps-stint-legend-item" style={{ fontSize: 10, color: "#8d9aaa", fontWeight: 600 }}>
@@ -3945,8 +3972,9 @@ function PlatformTraceWorkbench({
           </span>
         </div>
       )}
-      {workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView && renderEngineeringPanel()}
-      <div className="platform-whole-lap-disclosure">
+      {workbenchView !== "balance" && workbenchView !== "tires" && renderEngineeringPanel()}
+      {workbenchView !== "shocks" && (
+      <div className="platform-whole-lap-disclosure" id="platform-whole-lap-disclosure">
         <button
           type="button"
           className="platform-whole-lap-toggle"
@@ -3956,15 +3984,15 @@ function PlatformTraceWorkbench({
         >
           <span>
             <BarChart3 size={16} />
-            <strong>Whole-lap engineering charts</strong>
-            <small>Inspect every recorded sample after reviewing the priority and local trace.</small>
+            <strong>{wholeLapChartTitle}</strong>
+            <small>{wholeLapChartDescription}</small>
           </span>
           <span aria-hidden="true">{wholeLapExpanded ? "Hide charts" : "Show charts"}</span>
         </button>
         {wholeLapExpanded && (
           <div id="platform-whole-lap-charts" className="platform-whole-lap-content">
       <div className="trace-toolbar" aria-label="Trace chart controls">
-        <span className="trace-toolbar-label">{scrapeScrubChartView ? "Ride Height vs Speed Loss" : "Ride-height chart density"}</span>
+        <span className="trace-toolbar-label">{workbenchView === "balance" ? "Ride height + rake" : scrapeScrubChartView ? "Ride height vs speed loss" : "Ride-height chart density"}</span>
         <div className="trace-density-toggle" role="group" aria-label="Ride-height chart density">
           <button
             type="button"
@@ -4042,16 +4070,37 @@ function PlatformTraceWorkbench({
           </div>
         )}
       </div>
+      )}
+
+      {selection.selectedMode === "learning" && (
+        <section className="platform-shared-context" aria-label="Selected position context">
+          <PlatformOvalCheckpoint
+            trace={trace}
+            xs={xs}
+            sampleIndex={localFocusIndex}
+            event={focusedPlatformEvent}
+            learning
+            onAskEngineer={() => handleOpenEngineerFromPlatformEvent(focusedPlatformEvent)}
+          />
+          <LocalPlatformTrace
+            trace={trace}
+            xs={xs}
+            centerIndex={localFocusIndex}
+            channels={localTraceChannels}
+            contextLabel={localTraceContextLabel}
+          />
+        </section>
+      )}
 
       {/* ── structured platform event evidence cards ── */}
       {platformEventsLoadStatus === "loading" && (
-        <div className="platform-events-section" role="status" aria-live="polite">
+        <div className="platform-events-section" id="platform-diagnostic-events" role="status" aria-live="polite">
           <h3>Platform Diagnostic Events</h3>
           <div className="platform-events-empty"><p>Loading platform events...</p></div>
         </div>
       )}
       {platformEventsLoadStatus === "unavailable" && (
-        <div className="platform-events-section" role="status">
+        <div className="platform-events-section" id="platform-diagnostic-events" role="status">
           <h3>Platform Diagnostic Events</h3>
           <div className="platform-events-empty">
             <p>Platform diagnostics are unavailable for this run and lap.</p>
@@ -4063,7 +4112,7 @@ function PlatformTraceWorkbench({
         </div>
       )}
       {platformEventsLoadStatus === "clear" && platformEvents.length === 0 && (
-        <div className="platform-events-section" role="status">
+        <div className="platform-events-section" id="platform-diagnostic-events" role="status">
           <h3>Platform Diagnostic Events</h3>
           <div className="platform-events-empty">
             <p>Supported platform risk checks are clear for this eligible lap.</p>
@@ -4072,7 +4121,7 @@ function PlatformTraceWorkbench({
         </div>
       )}
       {platformEventsLoadStatus === "ready" && platformEvents.length === 0 && (
-        <div className="platform-events-section" role="status">
+        <div className="platform-events-section" id="platform-diagnostic-events" role="status">
           <h3>Platform Diagnostic Events</h3>
           <div className="platform-events-empty">
             <p>No platform diagnostic events were returned for this lap.</p>
@@ -4083,7 +4132,7 @@ function PlatformTraceWorkbench({
         </div>
       )}
       {(platformEventsLoadStatus === "ready" || platformEventsLoadStatus === "clear") && (visiblePlatformEvents.length > 0 || platformEvents.length > 0) && (
-        <div className="platform-events-section">
+        <div className="platform-events-section" id="platform-diagnostic-events">
           <h3>Platform Diagnostic Events</h3>
           {visiblePlatformEvents.length > 0 ? (
             <div className="event-jump-row">

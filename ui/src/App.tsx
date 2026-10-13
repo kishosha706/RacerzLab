@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, BrainCircuit, CheckCircle2, ChevronRight, CircleHelp, Clock, Crosshair, Gauge, Layers, LoaderCircle, Upload, Wrench } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BrainCircuit, ChevronRight, CircleHelp, Clock, Crosshair, Gauge, Layers, LoaderCircle, Upload, Wrench } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addRunToSession,
@@ -37,12 +37,12 @@ import { WorkspaceErrorBoundary } from "./components/WorkspaceErrorBoundary";
 import { CompareBasketProvider, useCompareBasket } from "./store/CompareBasketContext";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { humanizeWorkspaceLabel } from "./constants/ui";
+import { WORKSPACE_JOURNEY } from "./constants/workspaceJourney";
 
 import { TRACE_WORKBENCH_CHANNELS } from "./constants/workbenchChannels";
 import { importDebug } from "./utils/importDebug";
 import { isTauri } from "./utils/env";
 import { buildZoneEvidence } from "./utils/evidenceFocus";
-import { isolateCockpitForPriorityModal } from "./utils/modalIsolation";
 import {
   bestUsefulLapMatchesRun,
   engineeringBlockersMatchRun,
@@ -101,7 +101,6 @@ type WorkspaceSignal = {
   detail: string;
 };
 
-const PRIORITY_RAIL_OVERLAY_QUERY = "(max-width: 700px)";
 
 type IntelligenceShellReportStatus = "idle" | "checking" | "ready" | "error";
 
@@ -229,7 +228,6 @@ const loadLapsTab = () => import("./tabs/LapsTab");
 const loadPlatformTab = () => import("./tabs/PlatformTab");
 const loadSetupTab = () => import("./tabs/SetupTab");
 const loadRawChannelsTab = () => import("./tabs/RawChannelsTab");
-const loadPriorityRail = () => import("./components/PriorityRail");
 const loadEvidenceInspector = () => import("./components/EvidenceInspector");
 const loadEventTimeline = () => import("./components/EventTimeline");
 const loadTrackMapOverlay = () => import("./components/TrackMapOverlay");
@@ -246,10 +244,6 @@ const EngineerTab = lazy(async () => {
 const OverviewTab = lazy(async () => {
   const module = await loadOverviewTab();
   return { default: module.OverviewTab };
-});
-const PriorityRail = lazy(async () => {
-  const module = await loadPriorityRail();
-  return { default: module.PriorityRail };
 });
 const EvidenceInspector = lazy(async () => {
   const module = await loadEvidenceInspector();
@@ -344,17 +338,6 @@ function CockpitShell() {
   const [importOutcome, setImportOutcome] = useState<"run" | "map" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sessionOpenError, setSessionOpenError] = useState<string | null>(null);
-  const [priorityRailOpen, setPriorityRailOpen] = useState(() => !(
-    typeof window !== "undefined"
-    && typeof window.matchMedia === "function"
-    && window.matchMedia(PRIORITY_RAIL_OVERLAY_QUERY).matches
-  ));
-  const [priorityRailUsesOverlay, setPriorityRailUsesOverlay] = useState(() => (
-    typeof window !== "undefined"
-    && typeof window.matchMedia === "function"
-    && window.matchMedia(PRIORITY_RAIL_OVERLAY_QUERY).matches
-  ));
-  const priorityRailTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [activeControlledWorkflow, setActiveControlledWorkflow] = useState<ControlledWorkflow | null>(null);
   const [guidanceControlledWorkflow, setGuidanceControlledWorkflow] = useState<ControlledWorkflow | null>(null);
   const [activeControlledWorkflowRequestKey, setActiveControlledWorkflowRequestKey] = useState<string | null>(null);
@@ -432,85 +415,6 @@ function CockpitShell() {
     ? "idle"
     : platformEventsStateOwnsRequest ? platformEventsLoadState.status : "loading";
   const currentPlatformEventsLoadError = platformEventsStateOwnsRequest ? platformEventsLoadState.error : null;
-  const priorityRailIsGenuinelyClear = selection.selectedMode === "race"
-    && currentPlatformEventsLoadStatus === "clear";
-  const priorityRailNeedsAttention = currentPlatformEventsLoadStatus !== "clear";
-  const priorityRailMustStayOpen = !priorityRailUsesOverlay
-    && selection.selectedMode === "race"
-    && currentPlatformEventsLoadStatus !== "clear";
-  const priorityRailExpanded = priorityRailMustStayOpen || priorityRailOpen;
-  const priorityRailCollapsedLabel = priorityRailIsGenuinelyClear
-    ? "Supported platform checks clear; expand Priority Rail"
-    : priorityRailNeedsAttention
-      ? "Priority evidence needs attention; expand Priority Rail"
-      : "Expand Priority Rail";
-  const closePriorityRail = useCallback(() => {
-    setPriorityRailOpen(false);
-    if (priorityRailUsesOverlay) {
-      window.setTimeout(() => priorityRailTriggerRef.current?.focus(), 0);
-    }
-  }, [priorityRailUsesOverlay]);
-  const openPriorityRail = useCallback(() => {
-    setShortcutsOpen(false);
-    setPriorityRailOpen(true);
-    if (priorityRailUsesOverlay) {
-      window.setTimeout(() => {
-        document.querySelector<HTMLButtonElement>(
-          ".cockpit-body > .priority-rail:not(.collapsed) .rail-collapse-btn",
-        )?.focus();
-      }, 0);
-    }
-  }, [priorityRailUsesOverlay]);
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return undefined;
-    const query = window.matchMedia(PRIORITY_RAIL_OVERLAY_QUERY);
-    const syncLayout = () => setPriorityRailUsesOverlay(query.matches);
-    syncLayout();
-    query.addEventListener("change", syncLayout);
-    return () => query.removeEventListener("change", syncLayout);
-  }, []);
-
-  useEffect(() => {
-    if (!priorityRailUsesOverlay || !priorityRailExpanded) return undefined;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      const rail = document.querySelector<HTMLElement>(
-        '.cockpit-body > .priority-rail[role="dialog"]',
-      );
-      if (!rail) return;
-      if (event.key === "Escape" && !event.defaultPrevented) {
-        event.preventDefault();
-        closePriorityRail();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const focusable = [...rail.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      )].filter((item) => !item.hasAttribute("hidden"));
-      if (!focusable.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (!rail.contains(document.activeElement)) {
-        event.preventDefault();
-        (event.shiftKey ? last : first).focus();
-      } else if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [closePriorityRail, priorityRailExpanded, priorityRailUsesOverlay]);
-
-  useEffect(() => {
-    const covered = priorityRailUsesOverlay && priorityRailExpanded;
-    if (!covered) return undefined;
-    const shell = document.querySelector<HTMLElement>(".cockpit-shell");
-    return shell ? isolateCockpitForPriorityModal(shell) : undefined;
-  }, [priorityRailExpanded, priorityRailUsesOverlay]);
   const traceStateOwnsRequest = traceLoadState.requestKey === platformRequestKey;
   const currentTrace = traceStateOwnsRequest && traceLoadState.status === "ready" ? trace : null;
   const currentTraceLoadStatus: PlatformLoadStatus = platformRequestKey == null
@@ -829,6 +733,8 @@ function CockpitShell() {
     ? workspaceSignals[signalWorkspace as keyof typeof workspaceSignals]
     : workspaceSignals.overview;
   const currentWorkspaceLabel = humanizeWorkspaceLabel(signalWorkspace);
+  const journeyDestination = WORKSPACE_JOURNEY[signalWorkspace];
+  const showGlobalMissionBrief = signalWorkspace === "overview";
 
   const openMapOverlay = useCallback(() => {
     void loadTrackMapOverlay();
@@ -872,17 +778,6 @@ function CockpitShell() {
     latestMapOverlayZoomRangeRef.current = nextRange;
     if (mapOverlayOpenRef.current) setMapOverlayZoomRange(nextRange);
   }, []);
-
-  useEffect(() => {
-    const genuinelyClearInRaceMode = selection.selectedMode === "race"
-      && currentPlatformEventsLoadStatus === "clear";
-    if (!genuinelyClearInRaceMode) void loadPriorityRail();
-    if (priorityRailUsesOverlay) {
-      if (genuinelyClearInRaceMode) setPriorityRailOpen(false);
-      return;
-    }
-    setPriorityRailOpen(!genuinelyClearInRaceMode);
-  }, [currentPlatformEventsLoadStatus, platformRequestKey, priorityRailUsesOverlay, selection.selectedMode]);
 
   useEffect(() => {
     const requestSeq = ++controlledWorkflowRequestSeqRef.current;
@@ -1285,11 +1180,6 @@ function CockpitShell() {
 
   // ── keyboard shortcuts ─────────────────────────────────────
   useKeyboardShortcuts(currentPlatformEvents, setWorkspace, {
-    onTogglePriorityRail: () => {
-      if (priorityRailMustStayOpen) setPriorityRailOpen(true);
-      else if (priorityRailExpanded) closePriorityRail();
-      else openPriorityRail();
-    },
     onToggleInspector: () => {
       void loadEvidenceInspector();
       setInspectorOpen((open) => !open);
@@ -1301,7 +1191,6 @@ function CockpitShell() {
     onShowShortcuts: () => setShortcutsOpen(true),
     onHideShortcuts: () => setShortcutsOpen(false),
     shortcutsOpen,
-    priorityModalOpen: priorityRailUsesOverlay && priorityRailExpanded,
     eventTimelineOwnsKeyboard: timelineOwnsKeyboard,
     characterShortcutsEnabled,
   });
@@ -2261,7 +2150,7 @@ function CockpitShell() {
   // ── cockpit layout ──────────────────────────────────────────
   return (
     <EngineeringCaseProvider runId={overview.run_id} sessionId={sessionId!}>
-    <div className="cockpit-shell" data-mode={selection.selectedMode}>
+    <div className="cockpit-shell" data-mode={selection.selectedMode} style={{ "--destination-accent": journeyDestination?.accent ?? "#63d9ff" } as React.CSSProperties}>
       <a className="shell-skip-link" href="#primary-workspace">Skip to workspace</a>
       <RunContextBar
         overview={overview}
@@ -2271,7 +2160,6 @@ function CockpitShell() {
           selectLap(lap);
         }}
       />
-      <EngineeringMissionStrip />
       {currentControlledWorkflow?.packet.decision === "test" && (
         <ControlledTestRibbon
           workflow={currentControlledWorkflow}
@@ -2291,8 +2179,6 @@ function CockpitShell() {
 
       <div
         className="cockpit-body"
-        data-priority-rail-layout={priorityRailUsesOverlay ? "overlay" : "inline"}
-        data-priority-rail-state={priorityRailExpanded ? "expanded" : "collapsed"}
       >
         <nav className="workspace-nav-rail" aria-label="Main workspaces">
           <div className="nav-rail-heading" aria-hidden="true">
@@ -2308,11 +2194,13 @@ function CockpitShell() {
             ["dial_in", "Dial-In", Crosshair],
           ] as const).map(([key, label, Icon]) => {
             const signal = workspaceSignals[key];
+            const destination = WORKSPACE_JOURNEY[key];
             return (
               <button
                 key={key}
                 type="button"
                 className={`nav-rail-item ${selection.selectedWorkspace === key ? "active" : ""}`}
+                style={{ "--stop-accent": destination.accent } as React.CSSProperties}
                 onClick={() => setWorkspace(key, "manual")}
                 onPointerEnter={() => preloadWorkspace(key)}
                 onFocus={() => preloadWorkspace(key)}
@@ -2322,7 +2210,8 @@ function CockpitShell() {
               >
                 <span className="nav-rail-icon" aria-hidden="true"><Icon size={17} /></span>
                 <span className="nav-rail-copy">
-                  <strong>{label}</strong>
+                  <strong><span className="journey-stop-number" aria-hidden="true">{destination.number}</span>{label}</strong>
+                  <span className="journey-stop-purpose">{destination.purpose}</span>
                   <small className="nav-rail-signal" data-tone={signal.tone} aria-hidden="true">
                     <i /> {signal.short}
                   </small>
@@ -2332,7 +2221,7 @@ function CockpitShell() {
           })}
           <button
             type="button"
-            className="nav-rail-item"
+            className="nav-rail-item journey-shortcuts"
             onClick={() => setShortcutsOpen(true)}
             aria-label="Open keyboard shortcut preferences"
           >
@@ -2343,53 +2232,6 @@ function CockpitShell() {
             </span>
           </button>
         </nav>
-
-        {priorityRailUsesOverlay && priorityRailExpanded && (
-          <button
-            type="button"
-            className="priority-modal-backdrop"
-            onClick={closePriorityRail}
-            tabIndex={-1}
-            aria-label="Close Priority evidence"
-            data-priority-modal-layer="true"
-          />
-        )}
-
-        {priorityRailExpanded ? (
-          <Suspense fallback={<aside className="priority-rail" aria-hidden="true" />}>
-            <PriorityRail
-              runId={overview.run_id}
-              selectedLap={selection.selectedLap}
-              collapsed={false}
-              onToggle={closePriorityRail}
-              collapseDisabled={priorityRailMustStayOpen}
-              platformEvents={currentPlatformEvents}
-              loadStatus={currentPlatformEventsLoadStatus}
-              loadError={currentPlatformEventsLoadError}
-              eventVisibilityMode={platformEventVisibilityMode}
-              modal={priorityRailUsesOverlay}
-            />
-          </Suspense>
-        ) : (
-          <aside className={`priority-rail collapsed${priorityRailIsGenuinelyClear ? " shell-clear" : priorityRailNeedsAttention ? " shell-attention" : ""}`}>
-            <button
-              ref={priorityRailTriggerRef}
-              className="rail-collapse-btn"
-              onClick={openPriorityRail}
-              onPointerEnter={() => { void loadPriorityRail(); }}
-              onFocus={() => { void loadPriorityRail(); }}
-              title={priorityRailCollapsedLabel}
-              aria-label={priorityRailCollapsedLabel}
-              aria-expanded="false"
-            >
-              {priorityRailIsGenuinelyClear
-                ? <CheckCircle2 size={16} aria-hidden="true" />
-                : priorityRailNeedsAttention
-                  ? <AlertTriangle size={16} aria-hidden="true" />
-                  : <ChevronRight size={16} aria-hidden="true" />}
-            </button>
-          </aside>
-        )}
 
         <main id="primary-workspace" className="cockpit-workspace" tabIndex={-1}>
           <div className="workspace-toolbar shell-session-toolbar">
@@ -2403,6 +2245,7 @@ function CockpitShell() {
               </span>
             </div>
             <div className="shell-workspace-heading">
+              {journeyDestination && <span className="journey-workspace-purpose">{journeyDestination.purpose}</span>}
               <h1 className="shell-workspace-name">{currentWorkspaceLabel}</h1>
               <div
                 className="shell-workspace-broadcast"
@@ -2447,10 +2290,11 @@ function CockpitShell() {
               />
             </div>
           )}
-          {status && <p className="status-text" role="status" aria-live="polite">{status}</p>}
-          {error && <p className="error-text" role="alert">{error}</p>}
+          {(sessionToolsOpen || importing) && status && <p className="status-text" role="status" aria-live="polite">{status}</p>}
+          {(sessionToolsOpen || importing) && error && <p className="error-text" role="alert">{error}</p>}
           <div className="cockpit-workspace-body">
             <div className="cockpit-workspace-main">
+              {showGlobalMissionBrief && <EngineeringMissionStrip />}
               <WorkspaceErrorBoundary
                 workspaceKey={`${overview.run_id}:${selection.selectedWorkspace}`}
                 onReturnToOverview={() => setWorkspace("overview", "manual")}

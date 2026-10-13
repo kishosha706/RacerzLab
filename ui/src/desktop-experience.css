@@ -1,0 +1,280 @@
+/* Desktop journey: navigation is a route; telemetry remains the authority. */
+:root {
+  --journey-ink: #f0f5fc;
+  --journey-muted: #a2b3c9;
+  --journey-line: #26374b;
+}
+
+.journey-stop-number { margin-right: 7px; color: var(--stop-accent); font-variant-numeric: tabular-nums; }
+.journey-stop-purpose { color: var(--journey-muted); }
+.journey-workspace-purpose { color: var(--destination-accent); }
+
+@media (min-width: 1000px) {
+  .cockpit-shell { height: 100dvh; background: #0a101a; color: var(--journey-ink); }
+  .cockpit-shell > .context-bar.context-bar-two-tier {
+    background: #0c1421;
+    box-shadow: none;
+    border-bottom: 1px solid var(--journey-line);
+  }
+
+  /* A horizontal route restores the space previously spent on two sidebars. */
+  .cockpit-shell .cockpit-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 36px;
+    grid-template-rows: auto minmax(0, 1fr);
+    background: #0a101a;
+  }
+  .cockpit-body:has(> .evidence-inspector:not(.collapsed)) { grid-template-columns: minmax(0, 1fr) 280px; }
+  .cockpit-shell .workspace-nav-rail {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr)) 44px;
+    width: auto;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 0;
+    border-block: 1px solid var(--journey-line);
+    background: #101a29;
+    overflow: visible;
+  }
+  .cockpit-shell .nav-rail-heading { display: none; }
+  .cockpit-shell .nav-rail-item {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    align-items: start;
+    gap: 7px;
+    min-height: 58px;
+    margin: 0;
+    padding: 6px 8px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+  }
+  .cockpit-shell .nav-rail-icon {
+    width: 24px; height: 26px; border: 0; background: none; color: #8297b2;
+  }
+  .cockpit-shell .nav-rail-copy { display: grid; gap: 2px; }
+  .cockpit-shell .nav-rail-copy > strong {
+    display: block; font-size: 12px; line-height: 1.2; white-space: normal; overflow: visible;
+  }
+  .cockpit-shell .workspace-nav-rail .journey-stop-number { font-size: 11px; }
+  .cockpit-shell .workspace-nav-rail .journey-stop-purpose { font-size: 10px; line-height: 1.2; }
+  .cockpit-shell .nav-rail-signal {
+    justify-content: flex-start; font-size: 10px; font-weight: 500; line-height: 1.2;
+    white-space: normal; overflow: visible; text-transform: none; color: #b0bfd1;
+  }
+  .cockpit-shell .nav-rail-item:hover { background: #19273a; color: white; }
+  .cockpit-shell .nav-rail-item.active {
+    border-color: color-mix(in srgb, var(--stop-accent) 42%, transparent);
+    background: linear-gradient(115deg, color-mix(in srgb, var(--stop-accent) 12%, #122031), #122031);
+    color: #fff;
+    box-shadow: 0 3px 16px #0003;
+  }
+  .cockpit-shell .nav-rail-item.active::before { display: none; }
+  .cockpit-shell .nav-rail-item.active .nav-rail-icon { color: var(--stop-accent); background: none; border: 0; }
+  .cockpit-shell .journey-shortcuts { display: flex; justify-content: center; align-items: center; padding: 4px; }
+  .cockpit-shell .journey-shortcuts .nav-rail-copy { display: none; }
+  .cockpit-shell .nav-rail-item:focus-visible { outline: 2px solid #a6e6ff; outline-offset: 2px; }
+
+  .cockpit-body > .cockpit-workspace { grid-column: 1; grid-row: 2; }
+  .cockpit-body > .evidence-inspector { grid-column: 2; grid-row: 2; width: auto; min-width: 0; }
+
+  /* The next move leads; scope and completion conditions remain readable. */
+  .engineering-mission-strip {
+    flex: 0 0 auto;
+    gap: 7px;
+    padding: 10px 20px;
+    background: linear-gradient(110deg, #0f2132, #0c1421 70%);
+    border: 0;
+  }
+  .engineering-mission-strip > header span { font-size: 10px; letter-spacing: .14em; color: #8da6c0; }
+  .engineering-mission-strip > header strong { font-size: 10px; font-weight: 500; color: #8da6c0; }
+  .engineering-mission-strip[data-mode="race"] .engineering-mission-fields { grid-template-columns: minmax(160px, .65fr) minmax(0, 1.8fr) minmax(220px, 1fr); gap: 20px; }
+  .engineering-mission-fields article { padding: 0; border: 0; background: none; gap: 4px; }
+  .engineering-mission-fields article > span { font-size: 10px; color: #9eb1c8; }
+  .engineering-mission-fields article > strong { font-size: 13px; line-height: 1.45; font-weight: 550; }
+  .engineering-mission-fields .mission-next { border: 0; background: none; }
+  .engineering-mission-fields .mission-next > span { color: #6ce3bd; }
+  .engineering-mission-fields .mission-next > strong { font-size: 15px; color: #f5fbff; }
+  .engineering-scope-stack { gap: 8px 14px; font-size: 11px; padding-top: 6px; border-top: 1px solid #233348; color: #b2c2d5; }
+  .engineering-scope-stack small { font-size: 10px; letter-spacing: .03em; color: #8fa7bf; }
+  .engineering-scope-stack button { min-height: 26px; padding: 3px 8px; font-size: 11px; }
+
+  /* One scrolling content surface, with no flex-shrunk sections or clipped lists. */
+  .cockpit-shell .cockpit-workspace { overflow: hidden; background: #0a101a; }
+  .cockpit-shell .cockpit-workspace-body { min-height: 0; }
+  .cockpit-shell .cockpit-workspace-main { display: block; overflow: auto; padding: 20px 24px 32px; scrollbar-gutter: stable; }
+  .cockpit-shell .cockpit-workspace-main > .engineering-mission-strip {
+    margin: 0 0 18px;
+    border-bottom: 1px solid #26384d;
+    border-radius: 0 0 12px 12px;
+  }
+  .cockpit-workspace-main > .platform-workbench { overflow: visible; min-height: auto; }
+  .platform-workbench > * { flex-shrink: 0; }
+  /* Platform pages own their evidence hierarchy; hide the old shared summary layers. */
+  .cockpit-shell .platform-workbench > .platform-decision-card:not(.platform-oval-checkpoint) { display: none; }
+  .cockpit-workspace-main > .smart-engineer-workspace { padding: 0; }
+  .cockpit-workspace-main > .tab-grid, .smart-engineer-workspace, .platform-workbench { gap: 20px; align-content: start; }
+  .cockpit-workspace-main > .race-decision-shell { padding: 0; }
+  .cockpit-shell .workspace-toolbar.shell-session-toolbar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    margin: 0;
+    padding: 8px 18px;
+    background: #101a28;
+    box-shadow: none;
+    border-bottom: 1px solid var(--journey-line);
+  }
+  .shell-session-toolbar-context { grid-column: 1; grid-row: 1; }
+  .shell-import-trigger { grid-column: 3; grid-row: 1; }
+  .cockpit-shell .shell-session-identity { display: flex; gap: 8px; align-items: baseline; }
+  .cockpit-shell .shell-session-identity small { font-size: 9px; }
+  .cockpit-shell .shell-session-name { max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+  .cockpit-shell .shell-workspace-heading { grid-column: 2; grid-row: 1; display: flex; align-items: baseline; min-width: 0; gap: 10px; padding: 0; border: 0; }
+  .cockpit-shell .workspace-toolbar .journey-workspace-purpose { flex: 0 0 auto; font-size: 10px; letter-spacing: .05em; }
+  .cockpit-shell .shell-workspace-name { min-width: 0; font-size: 22px; line-height: 1.1; letter-spacing: -.03em; white-space: nowrap; }
+  .cockpit-shell .shell-workspace-broadcast { margin-left: auto; max-width: 180px; padding: 0; border: 0; gap: 6px; justify-content: flex-end; }
+  .cockpit-shell .shell-workspace-broadcast > span { display: none; }
+  .cockpit-shell .shell-workspace-broadcast > strong { font-size: 13px; white-space: normal; }
+  .cockpit-shell .shell-toolbar-action { min-height: 32px; padding: 6px 12px; }
+  .cockpit-shell .shell-import-trigger { background: #193c50; border-color: #33718a; color: #daf6ff; }
+
+  .cockpit-shell .priority-rail, .cockpit-shell .evidence-inspector { background: #0e1724; backdrop-filter: none; }
+  .cockpit-shell .rail-header { padding: 16px; }
+  .cockpit-shell .rail-header h3 { font-size: 17px; text-transform: none; color: #eef5ff; }
+  .cockpit-shell .rail-list { gap: 0; }
+  .cockpit-shell .priority-card { min-height: 0; flex-shrink: 0; transform: none; border-bottom: 1px solid #243348; }
+  .cockpit-shell .priority-body { padding: 16px 14px 16px 8px; gap: 7px; overflow: visible; min-width: 0; }
+  .cockpit-shell .priority-title-row strong, .cockpit-shell .priority-evidence-summary {
+    display: block; overflow: visible; white-space: normal; text-overflow: clip; -webkit-line-clamp: unset; overflow-wrap: anywhere;
+  }
+  .cockpit-shell .priority-title-row strong { font-size: 14px; line-height: 1.45; }
+  .cockpit-shell .priority-evidence-summary { color: #aebed1; font-size: 12px; line-height: 1.5; }
+  .cockpit-shell .priority-rank { width: 24px; align-items: flex-start; padding-top: 19px; color: #91a7c0; }
+  .cockpit-shell .priority-category { color: #97aac1; }
+  .cockpit-shell .priority-next { color: #7cddff; }
+  .cockpit-shell .rail-next-action { margin: 8px 12px; padding: 14px; border-radius: 10px; background: #142639; }
+
+  /* Stronger hierarchy, calmer borders, consistent room between evidence groups. */
+  .tab-decision-broadcast { padding: 20px; gap: 18px; border-color: #314259; background: #131f30; border-radius: 12px; }
+  .tab-decision-broadcast h2, .tab-decision-broadcast h3 { font-size: 21px; line-height: 1.3; margin-bottom: 10px; }
+  .tab-decision-broadcast p { font-size: 14px; line-height: 1.6; }
+  .tab-decision-facts { gap: 10px 18px; margin-top: 14px; }
+  .tab-handoff-actions { flex-wrap: wrap; gap: 8px; }
+  .tab-handoff-actions button { min-height: 36px; white-space: normal; }
+  .engineer-workspace-header { padding: 22px; border-radius: 12px; background: linear-gradient(120deg, #202741, #142033); border-color: #394364; }
+  .engineer-workspace-header h2 { font-size: 26px; line-height: 1.2; }
+  .engineer-workspace-header p { font-size: 14px; line-height: 1.5; margin-top: 10px; }
+  .engineer-support-stack, .engineer-briefing { gap: 18px; }
+  .crew-chief-deck { padding: 22px; background: #101a28; border: 1px solid #29384b; border-radius: 12px; }
+  .crew-chief-deck > header { margin-bottom: 20px; gap: 16px; flex-wrap: wrap; }
+  .crew-chief-deck p { line-height: 1.6; }
+  .crew-chief-deck .speed-story { margin-block: 20px; }
+  .speed-story-grid { gap: 22px; }
+  .platform-header { flex-wrap: wrap; gap: 16px; }
+  .platform-header .toolbar-actions { flex-wrap: wrap; gap: 8px; }
+  .platform-header h2 { margin-block: 6px 10px; font-size: 24px; }
+  .platform-local-trace { padding: 20px; border-radius: 12px; background: #111e2d; }
+  .platform-whole-lap-toggle { padding: 18px; gap: 18px; }
+  .platform-whole-lap-toggle strong { font-size: 16px; }
+  .workbench-subnav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 8px; gap: 10px; background: #111d2b; border-radius: 10px; }
+  .workbench-subnav-item { justify-content: flex-start; font-size: 13px; padding: 10px 16px; }
+  .workbench-subnav-copy { display: grid; gap: 3px; text-align: left; }
+  .workbench-subnav-copy small { color: #8fa5bd; font-size: 10px; font-weight: 500; line-height: 1.25; }
+  .platform-page-intro {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(260px, .8fr);
+    gap: 20px;
+    align-items: center;
+    padding: 16px 20px;
+    border: 1px solid #2b3f55;
+    border-left: 3px solid var(--destination-accent);
+    border-radius: 12px;
+    background: linear-gradient(105deg, #142335, #101a28);
+  }
+  .platform-page-kicker { color: var(--destination-accent); font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+  .platform-page-intro h3 { margin: 4px 0 5px; color: #f4f8ff; font-size: 20px; line-height: 1.2; }
+  .platform-page-intro p { margin: 0; color: #a8bbcf; font-size: 12px; line-height: 1.5; }
+  .platform-page-cue { padding-left: 16px; border-left: 1px solid #30455b; }
+  .platform-page-cue strong { color: #eaf6ff; }
+  .engineering-panel-grid, .metrics-row { gap: 12px; }
+  .metric-card { padding: 16px; border-radius: 10px; background: #131f30; }
+  .workspace-section { padding: 20px; border-color: #29384b; border-radius: 12px; }
+  .workspace-section h2 { font-size: 18px; margin-bottom: 14px; }
+  .engineering-awareness__header--compact { align-items: center; gap: 16px; padding: 12px 16px; }
+  .engineering-awareness__header--compact > div:first-child { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 4px 10px; min-width: 0; }
+  .engineering-awareness__header--compact .eyebrow { grid-column: 1 / -1; }
+  .engineering-awareness__header--compact strong { min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+  .engineering-awareness__header--compact small { color: #9db1c7; font-size: 11px; line-height: 1.35; }
+  .engineering-awareness__header--compact .engineering-awareness__status { flex: 0 0 auto; min-width: 150px; }
+  .cockpit-shell .event-timeline { padding: 7px 20px 9px; background: #101a28; border-color: #29384b; }
+  .cockpit-shell .event-timeline.compact { min-height: 36px; }
+  .cockpit-shell .timeline-collapse-toggle { color: #b8c9dd; }
+
+  @media (max-width: 1200px) {
+    .cockpit-shell .workspace-nav-rail { gap: 4px; padding: 9px 10px; }
+    .cockpit-shell .nav-rail-item { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 8px; }
+    .cockpit-shell .nav-rail-item > .nav-rail-icon { display: none; }
+    .cockpit-shell .journey-shortcuts > .nav-rail-icon { display: grid; }
+    .cockpit-shell .cockpit-workspace-main { padding: 16px; }
+    .cockpit-shell .workspace-toolbar.shell-session-toolbar { padding-inline: 12px; gap: 8px; }
+    .cockpit-shell .shell-workspace-name { font-size: 19px; }
+    .cockpit-shell .shell-session-identity { flex-wrap: wrap; gap: 3px 8px; }
+    .engineering-mission-strip[data-mode="race"] .engineering-mission-fields { gap: 14px; grid-template-columns: .65fr 1.5fr 1fr; }
+  }
+}
+
+/* The garage is a launch point, with a welcoming headline and legible session cards. */
+@media (min-width: 1000px) {
+  .start-shell:not([data-launch-splash="true"]) { background: radial-gradient(ellipse at 20% 0%, #16374c 0, transparent 55%), #090f19; }
+  .start-shell:not([data-launch-splash="true"]) .startup-bg-image { opacity: .12; }
+  .start-shell { align-items: start; overflow-y: auto; }
+  .start-shell .startup-content {
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(390px, .92fr);
+    align-items: start;
+    max-width: 1360px;
+    width: 100%;
+    max-height: none;
+    gap: 28px;
+    padding: 44px 40px 36px;
+    margin: auto;
+  }
+  .start-shell .start-hero { align-items: start; justify-items: stretch; text-align: left; }
+  .start-shell .start-launch-panel {
+    width: 100%;
+    max-width: none;
+    min-height: 420px;
+    padding: 38px;
+    text-align: left;
+    background: linear-gradient(130deg, #142e41e8, #111c2ced);
+    border-color: #2d5066;
+    border-radius: 18px;
+  }
+  .start-shell .startup-kicker { color: #7cddff; font-size: 12px; letter-spacing: .16em; }
+  .start-shell .start-title { margin: 18px 0; font-size: clamp(34px, 3.3vw, 50px); line-height: 1.08; letter-spacing: -.04em; }
+  .start-shell .start-subtitle { max-width: 650px; margin: 0 0 18px; font-size: 17px; line-height: 1.6; color: #bfcee0; }
+  .start-shell .start-primary-note { font-size: 12px; line-height: 1.6; color: #9daec3; }
+  .start-shell .startup-value-grid { gap: 14px; margin-block: 24px; }
+  .start-shell .startup-value-item { padding: 16px; background: #0d1c2ca8; border-radius: 10px; }
+  .start-shell .startup-value-item strong { font-size: 15px; }
+  .start-shell .startup-value-item small { font-size: 12px; line-height: 1.5; }
+  .start-shell .start-actions { justify-content: flex-start; flex-wrap: wrap; gap: 12px; }
+  .start-shell .start-primary-btn { background: #7cddff; color: #082235; border: 1px solid #a3e8ff; box-shadow: 0 4px 22px #28bfe92a; min-height: 46px; font-weight: 750; }
+  .start-shell .session-list { grid-column: 2; grid-row: 1; width: 100%; max-width: none; margin-top: 0; border-radius: 14px; padding: 24px; background: #101a28; }
+  .start-shell .session-list-heading { font-size: 18px; text-transform: none; color: #eef6ff; }
+  .start-shell .session-list-grid { gap: 12px; max-height: calc(100dvh - 230px); min-height: 360px; }
+  .start-shell .session-card { border-color: #2c3b50; border-radius: 10px; background: #142132; }
+  .start-shell .session-card-body { padding: 20px; }
+  .start-shell .session-card-title { font-size: 17px; white-space: normal; }
+  .start-shell .session-card-meta { font-size: 13px; line-height: 1.5; }
+  .start-shell .start-empty, .start-shell > .startup-content > .muted { grid-column: 2; width: 100%; max-width: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cockpit-shell .nav-rail-item, .start-shell .start-primary-btn { transition: none; }
+}

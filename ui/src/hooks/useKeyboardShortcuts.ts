@@ -15,13 +15,11 @@ export function useKeyboardShortcuts(
   platformEvents: PlatformEventItem[],
   openWorkspace: (ws: Workspace) => void,
   options?: {
-    onTogglePriorityRail?: () => void;
     onToggleInspector?: () => void;
     onToggleMapOverlay?: () => void;
     onShowShortcuts?: () => void;
     onHideShortcuts?: () => void;
     shortcutsOpen?: boolean;
-    priorityModalOpen?: boolean;
     eventTimelineOwnsKeyboard?: boolean;
     characterShortcutsEnabled?: boolean;
   },
@@ -40,9 +38,6 @@ export function useKeyboardShortcuts(
       const timelineTargetOwnsKeyboard = e.target instanceof HTMLElement
         && e.target.closest('[data-event-timeline-keyboard-owner="true"]') != null;
       const timelineOwnsEventKey = options?.eventTimelineOwnsKeyboard || timelineTargetOwnsKeyboard;
-      // The Priority dialog installs its own Escape/Tab handler. While it is
-      // modal, no shell shortcut may mutate the obscured workspace or focus.
-      if (options?.priorityModalOpen) return;
       if (options?.shortcutsOpen) {
         if (key === "Escape") {
           e.preventDefault();
@@ -61,9 +56,6 @@ export function useKeyboardShortcuts(
         case "Escape":
           e.preventDefault();
           clearEvidenceFocus();
-          break;
-        case "[":
-          options?.onTogglePriorityRail?.();
           break;
         case "]":
           options?.onToggleInspector?.();

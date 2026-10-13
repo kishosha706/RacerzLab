@@ -121,24 +121,43 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
   }
 
   const primary = projection.primary_state;
+  const compactDetailHeader = !learning && surface !== "overview";
   return (
     <section className="engineering-awareness" data-awareness-surface={surface} data-state-revision={projection.state_revision}>
-      <header className="engineering-awareness__header">
-        <div>
-          <span className="eyebrow"><BrainCircuit size={14} /> Whole-car state</span>
-          <h3>{primary?.label ?? "No qualified primary mechanism"}</h3>
-          <p>
-            {primary
-              ? `Lap ${primary.lap_number} · ${primary.phase} · ${primary.lap_pct_start.toFixed(1)}–${primary.lap_pct_end.toFixed(1)}%`
-              : projection.knowledge_debt[0] ?? "Producer-owned evidence has not earned a primary state."}
-          </p>
-        </div>
-        <div className="engineering-awareness__status">
-          <ShieldCheck size={16} />
-          <strong>Observation only</strong>
-          <small>{blockedCount} of 10 systems need evidence</small>
-        </div>
-      </header>
+      {compactDetailHeader ? (
+        <header className="engineering-awareness__header engineering-awareness__header--compact">
+          <div>
+            <span className="eyebrow"><ShieldCheck size={13} /> Run integrity</span>
+            <strong>{primary?.label ?? "No qualified primary state"}</strong>
+            <small>
+              {primary
+                ? `Lap ${primary.lap_number} · ${primary.phase} · ${primary.lap_pct_start.toFixed(1)}–${primary.lap_pct_end.toFixed(1)}%`
+                : projection.knowledge_debt[0] ?? "Producer-owned evidence has not earned a primary state."}
+            </small>
+          </div>
+          <div className="engineering-awareness__status">
+            <strong>Observation only</strong>
+            <small>{blockedCount} of 10 systems need evidence</small>
+          </div>
+        </header>
+      ) : (
+        <header className="engineering-awareness__header">
+          <div>
+            <span className="eyebrow"><BrainCircuit size={14} /> Whole-car state</span>
+            <h3>{primary?.label ?? "No qualified primary mechanism"}</h3>
+            <p>
+              {primary
+                ? `Lap ${primary.lap_number} · ${primary.phase} · ${primary.lap_pct_start.toFixed(1)}–${primary.lap_pct_end.toFixed(1)}%`
+                : projection.knowledge_debt[0] ?? "Producer-owned evidence has not earned a primary state."}
+            </p>
+          </div>
+          <div className="engineering-awareness__status">
+            <ShieldCheck size={16} />
+            <strong>Observation only</strong>
+            <small>{blockedCount} of 10 systems need evidence</small>
+          </div>
+        </header>
+      )}
 
       {primary && (
         <button type="button" className="engineering-awareness__focus" onClick={focusPrimary}>

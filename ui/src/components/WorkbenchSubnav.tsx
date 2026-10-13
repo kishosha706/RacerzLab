@@ -8,10 +8,10 @@ export type WorkbenchView =
   | "shocks"
   | "grade_pull";
 
-export const WORKBENCH_VIEWS: { id: WorkbenchView; label: string; icon: string }[] = [
-  { id: "balance", label: "Balance", icon: "BAL" },
-  { id: "rear_scrape", label: "Scrape / Scrub", icon: "SCR" },
-  { id: "shocks", label: "Shocks", icon: "SHK" },
+export const WORKBENCH_VIEWS: { id: WorkbenchView; label: string; icon: string; description: string }[] = [
+  { id: "balance", label: "Balance / Rake", icon: "BAL", description: "Ride height and load proxies" },
+  { id: "rear_scrape", label: "Drag / Scrub", icon: "SCR", description: "Scrape margin and speed loss" },
+  { id: "shocks", label: "Shocks / Dampers", icon: "SHK", description: "Corner motion and histograms" },
 ];
 
 export function visiblePlatformWorkbenchView(view: WorkbenchView): WorkbenchView {
@@ -37,7 +37,10 @@ export function WorkbenchSubnav({ active, onChange }: WorkbenchSubnavProps) {
           aria-label={`Show ${v.label} platform section`}
         >
           <span className="workbench-subnav-icon">{v.icon}</span>
-          <span className="workbench-subnav-label">{v.label}</span>
+          <span className="workbench-subnav-copy">
+            <span className="workbench-subnav-label">{v.label}</span>
+            <small>{v.description}</small>
+          </span>
         </button>
       ))}
     </nav>

@@ -351,6 +351,7 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
   const decisionBroadcast = (
     <section
       className="tab-decision-broadcast"
+      id="overview-decision-status"
       data-state={decisionBroadcastState}
       data-run-id={overview.run_id}
       data-long-run-state={longRunLapsNeeded === 0 ? "review-ready" : "short-run"}
@@ -450,7 +451,7 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
       {decisionBroadcast}
       <EngineeringAwarenessPanel runId={overview.run_id} sessionId={sessionId} surface="overview" />
 
-      <section className="overview-hero">
+      <section className="overview-hero" id="overview-hero-signal">
         <div className="overview-hero-header">
           <h2>Observed Signal</h2>
           {topObservedEvent && (
@@ -480,7 +481,7 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
         )}
       </section>
 
-      <section className="workspace-section overview-visual-summary">
+      <section className="workspace-section overview-visual-summary" id="overview-timeline-preview">
         <h2>Run Health / Risk Summary</h2>
         <div className="overview-trust-summary">
           <span>Useful {usefulCount}</span>

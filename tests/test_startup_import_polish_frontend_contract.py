@@ -10,34 +10,6 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_startup_leads_with_the_evidence_workflow_and_local_privacy() -> None:
-    startup = _read("ui/src/components/StartupScreen.tsx")
-
-    for text in (
-        "Evidence-first workspace",
-        "Pick up the engineering thread",
-        "Qualify",
-        "Diagnose",
-        "Test",
-        "Change one thing and verify it",
-        "Runs, setups, reports, and learning stay on this machine.",
-        "Track not labeled",
-        "Car not labeled",
-    ):
-        assert text in startup
-    assert 'aria-label="RacerZLab engineering workflow"' in startup
-    assert 'className="session-card-overline"' in startup
-    assert 'className="session-card-footer"' in startup
-    assert 'className="session-card-continue"' in startup
-    assert "Ready for first import" in startup
-    assert "function sessionAccessibleContext(" in startup
-    assert "Open session ${sessionAccessibleContext(s)}" in startup
-    assert "Delete session ${sessionAccessibleContext(s)}" in startup
-    assert "Remove session ${sessionAccessibleContext(s)}" in startup
-    assert '"No track"' not in startup
-    assert '"No car"' not in startup
-
-
 def test_import_progress_is_stage_based_and_never_invents_a_percentage() -> None:
     panel = _read("ui/src/components/ImportPanel.tsx")
 

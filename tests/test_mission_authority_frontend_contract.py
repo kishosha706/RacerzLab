@@ -74,8 +74,8 @@ def test_supporting_surfaces_keep_evidence_status_and_neutral_navigation() -> No
     assert "Engineering evidence status" in engineer
     assert "Authorized action evidence" in engineer
     assert "Review workflow evidence" in engineer
-    assert 'aria-label="Platform evidence status and supporting views"' in platform
-    assert "Open Engineer evidence" in platform
+    assert 'className="platform-workbench"' in platform
+    assert "Platform Diagnostic Events" in platform
     assert "Status: {evidenceStatus.label}" in ribbon
     assert 'aria-label="Review controlled-test evidence"' in ribbon
     assert "Evidence handoff" in cards

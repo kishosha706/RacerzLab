@@ -1,6 +1,7 @@
 # Archived Tests — RaceLab Garage
 
-Tests moved to `tests_archived/` during the math overhaul spring cleaning (2026-05-27).
+Tests moved to `tests_archived/` during the math overhaul spring cleaning (2026-05-27)
+and the UI/workflow cleanup (2026-10-13).
 Pytest ignores `tests_archived/` by default — see `pyproject.toml`.
 
 ---
@@ -17,6 +18,8 @@ Pytest ignores `tests_archived/` by default — see `pyproject.toml`.
 | `test_report_contract.py` (1 test) | Markdown report shape test. Covered by persistence report API test. | `test_persistence.py::test_markdown_report_from_persisted_data` |
 | `test_lap_detection.py` (1 test) | Lap detection logic. Covered by session tests. | `test_session.py` (25 tests) |
 | `test_units.py` (1 test) | Unit conversion arithmetic. Covered by `test_analysis_constants.py`. | `test_analysis_constants.py` |
+| `test_contract_legacy.py` (37 tests) | Generic model-shape checks, stale warning examples, and two placeholder checks that did not exercise a renderer or real frontend mapping. Focused model/API contracts are maintained in their owning test modules. | `test_lap_windows.py`, `test_notebook.py`, `test_comparison.py`, `test_compare_greenfield_contract.py`, `test_platform.py`, `test_import_hardening.py`, `test_persistence.py` |
+| `test_vehicle_dynamics_legacy.py` (3 tests) | Its three formula/missing-input checks are duplicated by the broader physics-estimate suite. | `test_physics_estimates.py` |
 
 ## Partial-File Archives
 
@@ -28,27 +31,19 @@ Pytest ignores `tests_archived/` by default — see `pyproject.toml`.
 | `test_setup_diff_none_setups` | `test_comparison.py` | Same as above. | Same |
 | `test_context_diff_detects_weather` | `test_comparison.py` | Covered by compare API. | Same |
 | 9 catalog/metadata tests | `test_telemetry_normalization.py` | Duplicate of classification contract tests. | `test_analysis_constants.py` (18 tests) |
+| 7 obsolete Platform layout assertions | `test_platform_chart_visibility.py` | Removed Priority/Platform broadcast and old chart-order contracts no longer describe the current Platform workbench. Remaining chart, trace, scope, and missing-data tests stay active. | Current `PlatformTab.tsx` workbench and remaining tests in the same file |
+| 1 obsolete Platform recovery assertion | `test_platform_recovery_and_session_run_navigation_frontend_contract.py` | Expected the removed global “Retry platform evidence” surface. Resource scoping and session recovery tests remain active. | Remaining functions in the same file |
+| 2 obsolete Platform broadcast assertions | `test_platform_setup_broadcast_frontend_contract.py` | Expected the removed Platform broadcast/handoff controls. | Remaining trace-failure and setup-identity contracts in the same file |
+| 3 obsolete Priority Rail assertions | `test_shell_ux_frontend_contract.py` | Priority Rail was removed from the shell in the current workspace redesign. | Remaining shell keyboard, import, timeline, and scope contracts |
+| 1 obsolete startup copy assertion | `test_startup_import_polish_frontend_contract.py` | Startup copy was rewritten around the new workspace journey. | Remaining import progress/retry/completion contracts |
+| 1 obsolete Platform broadcast assertion | `test_tab_experience_polish_frontend_contract.py` | Platform no longer owns the removed global broadcast. | Overview, Laps, and Setup experience contracts |
+| 1 obsolete lazy-load assertion | `test_ui_performance_contract.py` | The removed Priority Rail is no longer a lazy-loaded surface. | Remaining lazy-load and chart-performance contracts |
 
 ---
 
 ## Active Default Suite
 
-**~120 tests** across 16 files. Runtime: ~2s (unit) / ~30s (with slow .ibt tests).
-
-| File | Count | Notes |
-|---|---|---|
-| `test_analysis_constants.py` | 18 | Constants, sigmoid, WCI profiles |
-| `test_comparison.py` | 8 | Core math: grid, interpolation, speed_delta, discipline, verdict |
-| `test_desktop_local_config.py` | 7 | Local-only config audit |
-| `test_drag_scrub.py` | 9 | Aero-normalized resistance, gate logic |
-| `test_edge_cases.py` | 10 | Superspeedway, missing data, yaw-error, aero_load_index |
-| `test_geometry.py` | 8 | Pitch/roll, corrected deltas, ride height conversions |
-| `test_ibt_header.py` | 1 | Invalid .ibt rejection |
-| `test_notebook.py` | 13 | Full CRUD + setup memory |
-| `test_persistence.py` | 11 | .ibt import, API, trace, compare, sanitization |
-| `test_platform.py` | 2 | CFS thresholds, empty/valid events |
-| `test_session.py` | 25 | Session CRUD, lap math, run add/remove |
-| `test_session_yaml.py` | 1 | Synthetic YAML parse |
-| `test_slip_ratio.py` | 7 | Slip floor, clamp, driven wheel proxy |
-| `test_telemetry_normalization.py` | 10 | Core normalization, ride heights, rake, dynamic pressure, extrema |
-| `test_track_map.py` | 13 | .mt2 decoder, interpolation, matching |
+The active collection is measured rather than frozen in a hand-maintained file list.
+Verification snapshot on 2026-10-13: 2,873 active items across 208 modules;
+the fast command selects 2,839 items across 205 modules. Archived modules are
+excluded by the pytest configuration.

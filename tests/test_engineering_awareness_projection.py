@@ -372,7 +372,6 @@ def test_frontend_awareness_is_stale_safe_and_uses_existing_surfaces() -> None:
     expected = {
         "OverviewTab.tsx": 'surface="overview"',
         "LapsTab.tsx": 'surface="laps"',
-        "PlatformTab.tsx": 'surface="platform"',
         "SetupTab.tsx": 'surface="setup"',
         "CompareTab.tsx": 'surface="compare"',
         "EngineerTab.tsx": 'surface="engineer"',

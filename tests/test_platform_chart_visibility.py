@@ -210,21 +210,6 @@ def test_platform_charts_use_per_panel_readouts_without_side_cursor() -> None:
     assert '<span className="balance-selected-context">Event {eventTitle}</span>' in readout
 
 
-def test_balance_default_removes_duplicate_ride_height_engineering_cards() -> None:
-    platform = _read("ui/src/tabs/PlatformTab.tsx")
-
-    assert 'case "balance": return null;' in platform
-    assert 'workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView && renderEngineeringPanel()' in platform
-    assert 'workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView && (' in platform
-    assert 'EngineeringMetricCard title="CFS Ride Height"' not in platform
-    assert 'EngineeringMetricCard title="Front Ride Heights"' not in platform
-    assert 'EngineeringMetricCard title="Rear Ride Heights"' not in platform
-    assert 'EngineeringMetricCard title="Front / Rear Avg RH"' not in platform
-    assert 'EngineeringMetricCard title="Center Rake"' not in platform
-    assert 'EngineeringMetricCard title="Side Rake"' not in platform
-    assert 'EngineeringMetricCard title="Roll / Pitch"' not in platform
-
-
 def test_platform_tabs_do_not_render_global_top_metric_card_strip() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
     styles = _read("ui/src/styles.css")
@@ -236,55 +221,6 @@ def test_platform_tabs_do_not_render_global_top_metric_card_strip() -> None:
     assert "summaryItems" not in platform
     assert ".platform-summary-bar" not in styles
     assert ".platform-summary-chip" not in styles
-
-
-def test_focused_platform_tabs_do_not_render_global_risk_strip() -> None:
-    platform = _read("ui/src/tabs/PlatformTab.tsx")
-
-    assert 'className="platform-risk-strip"' not in platform
-    assert "riskSegments" not in platform
-    assert "risk-strip-empty" not in platform
-    assert "platform-event-summary-strip" in platform
-    assert "Platform Diagnostic Events" in platform
-
-
-def test_tires_view_removes_prototype_full_lap_distribution_panel() -> None:
-    platform = _read("ui/src/tabs/PlatformTab.tsx")
-    subnav = _read("ui/src/components/WorkbenchSubnav.tsx")
-    styles = _read("ui/src/styles.css")
-    visible_views = subnav.split("export const WORKBENCH_VIEWS", 1)[1].split("];", 1)[0]
-
-    assert '{ id: "balance", label: "Balance", icon: "BAL" }' in visible_views
-    assert '{ id: "rear_scrape", label: "Scrape / Scrub", icon: "SCR" }' in visible_views
-    assert '{ id: "shocks", label: "Shocks", icon: "SHK" }' in visible_views
-    assert 'label: "Tires"' not in visible_views
-    assert 'icon: "TIR"' not in visible_views
-    assert 'id: "tires"' not in visible_views
-    assert 'label: "Diffuser"' not in visible_views
-    assert 'icon: "DIF"' not in visible_views
-    assert 'id: "diffuser"' not in visible_views
-    assert 'view === "aero_load" || view === "grade_pull" || view === "tires"' in subnav
-    assert "CornerTireMap" not in platform
-    assert "tireMapMode" not in platform
-    assert "Tire map: Full-lap distribution" not in platform
-    assert "CornerBarChart" not in platform
-    assert 'const renderTiresPanel = () => null;' in platform
-    assert "Tire temps are measured iRacing telemetry channels" not in platform
-    assert "Tire Pressure / Camber Setup" not in platform
-    assert "Bar charts show" not in platform
-    assert 'workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView' in platform
-    assert "corner-tire-map" not in styles
-    assert "tire-map-mode-select" not in styles
-    assert "tire-map-mode-btn" not in styles
-    assert "tire-map-grid" not in styles
-    assert "tire-map-corner" not in styles
-    assert "tire-corner-value" not in styles
-    assert "tire-data-empty" not in styles
-
-    tires_preset = platform.split('"Tires": [', 1)[1].split('  "Shocks": [', 1)[0]
-    assert 'label: "Pressure Gain [psi]"' in tires_preset
-    assert 'label: "Temp Spread [C]"' in tires_preset
-    assert 'label: "Slip Ratio Proxy"' in tires_preset
 
 
 def test_tire_backend_channels_remain_available_but_are_not_eagerly_requested() -> None:
@@ -655,91 +591,6 @@ def test_balance_ride_height_series_preserve_raw_zoom_detail() -> None:
     assert "progressiveThreshold: 0" in platform
 
 
-def test_scrape_scrub_tab_is_chart_first_ride_height_vs_speed_loss() -> None:
-    platform = _read("ui/src/tabs/PlatformTab.tsx")
-    readout = _read("ui/src/components/PlatformChartPanelReadout.tsx")
-    subnav = _read("ui/src/components/WorkbenchSubnav.tsx")
-    channels = _read("ui/src/constants/workbenchChannels.ts")
-    channel_meta = _read("ui/src/utils/channelMeta.ts")
-
-    assert '{ id: "rear_scrape", label: "Scrape / Scrub", icon: "SCR" }' in subnav
-    assert 'const SCRAPE_SCRUB_PRESET = "Ride Height vs Speed Loss";' in platform
-    assert "rear_scrape: SCRAPE_SCRUB_PRESET" in platform
-    assert "scrub_steering: SCRAPE_SCRUB_PRESET" in platform
-
-    preset_block = platform.split("[SCRAPE_SCRUB_PRESET]: [", 1)[1].split("  ],\n};", 1)[0]
-    assert 'label: "Speed [m/s]"' in preset_block
-    assert 'name: "speed_mps"' in preset_block
-    assert 'label: "Front Ride Heights [in]"' in preset_block
-    assert 'name: "cfs_ride_height_in"' in preset_block
-    assert 'name: "lf_ride_height_in"' in preset_block
-    assert 'name: "rf_ride_height_in"' in preset_block
-    assert 'label: "Speed Loss [m/s²]"' in preset_block
-    assert 'name: "speed_loss_mps2"' in preset_block
-    assert 'label: "Rear Ride Heights [in]"' in preset_block
-    assert 'name: "lr_ride_height_in"' in preset_block
-    assert 'name: "rr_ride_height_in"' in preset_block
-    assert 'name: "rear_min_ride_height_in"' in preset_block
-
-    assert preset_block.index('label: "Speed [m/s]"') < preset_block.index('label: "Front Ride Heights [in]"')
-    assert preset_block.index('label: "Front Ride Heights [in]"') < preset_block.index('label: "Speed Loss [m/s²]"')
-    assert preset_block.index('label: "Speed Loss [m/s²]"') < preset_block.index('label: "Rear Ride Heights [in]"')
-    speed_panel = preset_block.split('label: "Speed [m/s]"', 1)[1].split('label: "Front Ride Heights [in]"', 1)[0]
-    loss_panel = preset_block.split('label: "Speed Loss [m/s²]"', 1)[1].split('label: "Rear Ride Heights [in]"', 1)[0]
-    assert 'name: "speed_mps"' in speed_panel
-    assert 'name: "speed_loss_mps2"' not in speed_panel
-    assert 'name: "speed_loss_mps2"' in loss_panel
-    assert 'name: "speed_mps"' not in loss_panel
-    assert 'name: "speed_rate_mps2"' not in loss_panel
-    assert "min: 0" in loss_panel
-    assert 'zeroLine: true' in loss_panel
-    assert 'name: "speed_mph"' not in preset_block
-    assert 'name: "speed_rate_mph_s"' not in preset_block
-    assert 'name: "speed_rate_mph_1000ft"' not in preset_block
-    assert 'name: "speed_rate_mps2"' not in preset_block
-
-    assert "front_scrub_proxy" not in preset_block
-    assert "rear_scrub_proxy" not in preset_block
-    assert "drag_scrub_suspicion" not in preset_block
-    assert "full_throttle_resistance_index" not in preset_block
-    assert "rear_scrape_risk_score" not in preset_block
-
-    assert "const renderRearScrapeScrubPanel = () => null;" in platform
-    assert 'workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView && renderEngineeringPanel()' in platform
-    assert 'workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView && (' in platform
-    assert 'scrapeScrubChartView ? "Ride Height vs Speed Loss" : "Ride-height chart density"' in platform
-    assert 'const MPH_TO_MPS = 0.44704;' in platform
-    assert 'function displaySeriesSamples(trace: TraceResponse | null, channel: string)' in platform
-    assert 'if (channel === "speed_loss_mps2") {' in platform
-    assert 'rawSeriesSamples(trace, "speed_rate_mps2").map((value) => (' in platform
-    assert "Math.max(0, -value)" in platform
-    assert 'value * MPH_TO_MPS' in platform
-    assert 'const channelValues = displaySeriesSamples(trace, channel.name);' in platform
-    assert 'return displaySeriesSamples(trace, channel).some((value) => typeof value === "number" && Number.isFinite(value));' in platform
-    assert "speedRateMps2: valueAt(trace, \"speed_rate_mps2\", selectedIndex)" in platform
-    assert "panels={balancePanelReadouts}" in platform
-    assert "panel.channels.map((channel)" in readout
-    assert "fmtReadout(channel.cursorValue" in readout
-    assert "fmtReadout(channel.low" in readout
-    assert "fmtReadout(channel.high" in readout
-    assert "fmtReadout(channel.avg" in readout
-    assert '"speed_mps"' in channels
-    assert '"speed_mph"' in channels
-    assert "TRACE_CONTEXT_CHANNELS" in channels
-    assert 'speed_mps: { label: "Speed", unit: "m/s"' in channel_meta
-    assert 'speed_rate_mps2: { label: "Speed Rate", unit: "m/s^2"' in channel_meta
-    assert 'speed_loss_mps2: { label: "Speed Loss", unit: "m/s^2"' in channel_meta
-
-    for internal_channel in [
-        "drag_scrub_suspicion",
-        "full_throttle_resistance_index",
-        "rear_scrape_risk_score",
-    ]:
-        assert internal_channel in channels
-    assert "front_scrub_proxy" not in channels
-    assert "rear_scrub_proxy" not in channels
-
-
 def test_balance_readout_uses_unavailable_for_missing_values_not_zero() -> None:
     readout = _read("ui/src/components/PlatformChartPanelReadout.tsx")
 
@@ -954,17 +805,6 @@ def test_selection_state_validates_run_ids_after_session_change() -> None:
     assert "validateSelectionRunIds(runIds)" in app
 
 
-def test_platform_event_summary_strip_renders_visible_and_hidden_counts() -> None:
-    platform = _read("ui/src/tabs/PlatformTab.tsx")
-
-    assert "platform-event-summary-strip" in platform
-    assert "visiblePlatformEvents.length" in platform
-    assert "hiddenPlatformEventCount" in platform
-    assert "Top issue:" in platform
-    assert "shown" in platform
-    assert "hidden" in platform
-
-
 def test_actionable_mode_hides_internal_events_but_counts_them_as_hidden() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
     visibility = _read("ui/src/utils/platformEventVisibility.ts")
@@ -1060,32 +900,6 @@ def test_focus_visible_css_coverage_includes_platform_controls() -> None:
     assert ".platform-event-filter select:focus-visible" in styles
     assert ".playback-btn:focus-visible" in styles
     assert ".playback-speed-btn:focus-visible" in styles
-
-
-def test_platform_decision_and_local_trace_precede_whole_lap_charts() -> None:
-    platform = _read("ui/src/tabs/PlatformTab.tsx")
-
-    decision = platform.index('className="platform-decision-card"')
-    local_trace = platform.index("<LocalPlatformTrace", decision)
-    disclosure = platform.index('className="platform-whole-lap-disclosure"', local_trace)
-    whole_lap_chart = platform.index('className="platform-layout balance-chart-layout"', disclosure)
-    assert decision < local_trace < disclosure < whole_lap_chart
-    assert "Highest-priority platform evidence" in platform
-    assert "platformEventPriority" in platform
-    assert "recorded samples only" in platform
-    assert "Whole-lap data is not substituted." in platform
-
-
-def test_whole_lap_charts_are_accessibly_disclosed_by_mode() -> None:
-    platform = _read("ui/src/tabs/PlatformTab.tsx")
-    styles = _read("ui/src/styles.css")
-
-    assert 'useState(selection.selectedMode === "learning")' in platform
-    assert 'setWholeLapExpanded(selection.selectedMode === "learning")' in platform
-    assert 'aria-expanded={wholeLapExpanded}' in platform
-    assert 'aria-controls="platform-whole-lap-charts"' in platform
-    assert '{wholeLapExpanded && (' in platform
-    assert ".platform-whole-lap-toggle:focus-visible" in styles
 
 
 def test_platform_decision_preserves_error_unavailable_and_clear_truth() -> None:

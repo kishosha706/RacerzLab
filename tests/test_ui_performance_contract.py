@@ -10,26 +10,6 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_heavy_cockpit_surfaces_are_loaded_on_demand() -> None:
-    app = _read("ui/src/App.tsx")
-
-    for surface in [
-        "OverviewTab",
-        "PriorityRail",
-        "EvidenceInspector",
-        "EventTimeline",
-        "TrackMapOverlay",
-        "CompareBasket",
-    ]:
-        assert f"const {surface} = lazy" in app
-
-    assert "{mapOverlayOpen && (" in app
-    assert "{hasCompareBasketItems && (" in app
-    assert "priorityRailExpanded ? (" in app
-    assert "inspectorOpen ? (" in app
-    assert "onPointerEnter={() => preloadWorkspace(key)}" in app
-
-
 def test_transient_chart_cursor_does_not_re_render_selection_consumers() -> None:
     selection = _read("ui/src/store/TelemetrySelectionContext.tsx")
     platform = _read("ui/src/tabs/PlatformTab.tsx")

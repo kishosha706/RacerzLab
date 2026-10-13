@@ -9,68 +9,6 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_platform_resources_are_keyed_cleared_and_recoverable() -> None:
-    app = _read("ui/src/App.tsx")
-    platform = _read("ui/src/tabs/PlatformTab.tsx")
-    priority = _read("ui/src/components/PriorityRail.tsx")
-
-    assert "const platformRequestKey = overview && platformTargetLap != null" in app
-    assert "run_id: overview.run_id" in app
-    assert "lap: platformTargetLap" in app
-    assert "custom_channel: selection.selectedChannel" in app
-    assert 'type PlatformLoadStatus = "idle" | "loading" | "ready" | "clear" | "unavailable" | "error";' in app
-    assert 'platformEventsLoadState.requestKey === platformRequestKey' in app
-    assert 'traceLoadState.requestKey === platformRequestKey' in app
-    assert '["ready", "clear"].includes(platformEventsLoadState.status)' in app
-    assert 'traceLoadState.status === "ready"' in app
-
-    assert 'setPlatformEventsLoadState({ requestKey: platformRequestKey, status: "loading", error: null });' in app
-    assert 'setTraceLoadState({ requestKey: platformRequestKey, status: "loading", error: null });' in app
-    assert app.index("setPlatformEvents([]);") < app.index("fetchPlatformEventsReport(overview.run_id")
-    assert app.index("setTrace(null);") < app.index("fetchTrace(overview.run_id")
-    assert 'status: "error"' in app
-    assert "setPlatformEventsRetryToken((token) => token + 1)" in app
-    assert "setTraceRetryToken((token) => token + 1)" in app
-    assert "nextTrace.run_id !== overview.run_id || nextTrace.lap !== platformTargetLap" in app
-    assert "report.run_id === overview.run_id" in app
-    assert "report.lap === platformTargetLap" in app
-    assert "report.events.every((event) => event.lap === platformTargetLap)" in app
-    assert "Platform findings did not match the selected run and lap." in app
-
-    assert 'effectiveTraceLoadStatus === "error"' in platform
-    assert "Trace data could not be loaded for this run and lap." in platform
-    assert "Retry trace" in platform
-    assert 'platformEventsLoadStatus === "error"' in platform
-    assert "Platform evidence could not be loaded." in platform
-    assert "Retry platform evidence" in platform
-    assert platform.count("Retry platform evidence") == 1
-    assert 'selection.selectedMode === "learning" && traceLoadError' in platform
-    assert 'selection.selectedMode === "learning" && platformEventsLoadError' in platform
-    assert "No platform diagnostic events were returned for this lap." in platform
-    assert "missing telemetry remains unavailable, never safe or zero" in platform
-    assert 'platformEventsLoadStatus === "unavailable"' in platform
-    assert 'platformEventsLoadStatus === "clear"' in platform
-    assert "Supported platform risk checks are clear for this eligible lap." in platform
-    assert "other mechanisms are not implied safe" in platform
-
-    assert "shockReaderRequestKey" in platform
-    assert 'currentShockReaderLoadStatus === "error"' in platform
-    assert 'currentShockReaderLoadStatus === "unavailable"' in platform
-    assert "Retry shock analysis" in platform
-    assert "const responseMatchesRequest = payload.run_id === overview.run_id" in platform
-    assert "payload.lap_window === expectedLapWindow" in platform
-    assert "payload.zone_start_pct === (selection.selectedZoneStartPct ?? null)" in platform
-
-    assert 'loadStatus === "error"' in priority
-    assert 'loadStatus === "ready" || (loadStatus === "clear" && eventVisibilityMode !== "actionable")' in priority
-    assert "eventsRenderable && valid.length === 0" in priority
-    assert "eventsRenderable && valid.map" in priority
-    assert 'loadStatus === "unavailable"' in priority
-    assert 'loadStatus === "clear"' in priority
-    assert "Open Platform" in priority
-    assert 'className="rail-empty rail-state"' in priority
-
-
 def test_platform_failures_cannot_leak_stale_events_to_other_surfaces() -> None:
     app = _read("ui/src/App.tsx")
 

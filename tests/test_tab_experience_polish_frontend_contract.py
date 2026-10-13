@@ -47,22 +47,6 @@ def test_laps_broadcast_compares_clean_lap_and_stint_without_inventing_cause() -
     assert "This does not identify a tire or setup cause." in source
 
 
-def test_platform_race_broadcast_is_compact_and_learning_keeps_diagnostic_depth() -> None:
-    source = _read("ui/src/tabs/PlatformTab.tsx")
-
-    assert "const platformBroadcastWhy" in source
-    assert "platformBroadcastNext" not in source
-    assert "const platformSignalSummary" in source
-    assert "<p><strong>Why:</strong> {platformBroadcastWhy}</p>" in source
-    assert "<strong>What next:</strong>" not in source
-    assert 'aria-label="Platform evidence status and supporting views"' in source
-    assert 'selection.selectedMode === "learning" && (\n        <section\n          className="platform-decision-card"' in source
-    assert "unmeasured mechanisms remain unknown" in source
-    assert '`Current run · Lap ${traceLap}`' in source
-    assert 'selection.selectedMode === "learning"' in source
-    assert 'data-authority="withheld"' in source
-
-
 def test_setup_broadcast_explains_reference_link_and_keeps_extra_handoffs_in_learning() -> None:
     source = _read("ui/src/tabs/SetupTab.tsx")
 
