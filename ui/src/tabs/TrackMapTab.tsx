@@ -1358,7 +1358,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
             {sections.map((s) => {
               const loc = getLocation(s.start_lap_pct);
               return (
-                <span key={s.section_id} style={{ left: `${s.start_lap_pct}%`, position: "absolute", fontSize: 9, color: "#64748b" }}>
+                <span key={s.section_id} style={{ left: `${s.start_lap_pct}%`, position: "absolute", fontSize: 11, color: "#64748b" }}>
                   {loc.short_label}
                 </span>
               );
@@ -1444,7 +1444,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
         {/* ── Area Drilldown ── */}
         {hasDrawableTrack && sectionStats.length > 0 && (
           <div className="trackmap-area-drilldown">
-            <h4>Area Drilldown <span className="muted" style={{ fontWeight: 400, fontSize: 10 }}>Based on active filters.</span></h4>
+            <h4>Area Drilldown <span className="muted" style={{ fontWeight: 400, fontSize: 11 }}>Based on active filters.</span></h4>
             <div className="trackmap-drilldown-table">
               <div className="trackmap-drilldown-header">
                 <span className="trackmap-drilldown-cell">Area</span>
@@ -1601,7 +1601,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
         </div>
 
         {/* ── Keyboard shortcuts hint ── */}
-        <div className="trackmap-shortcuts-hint" style={{ marginTop: 8, fontSize: 10, color: "#475569" }}>
+        <div className="trackmap-shortcuts-hint" style={{ marginTop: 8, fontSize: 11, color: "#475569" }}>
           Shortcuts: Esc=clear · F=Problem Focus · A=All · S=Scrape · M=Map · ← → = navigate events
         </div>
       </div>
@@ -1699,7 +1699,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                           </button>
                         );
                       })}
-                      {g.events.length > 5 && <p className="muted" style={{ fontSize: 10, margin: 0 }}>+{g.events.length - 5} more</p>}
+                      {g.events.length > 5 && <p className="muted" style={{ fontSize: 11, margin: 0 }}>+{g.events.length - 5} more</p>}
                     </div>
                   ))}
                 </div>
@@ -1791,7 +1791,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                     {loc.display_label}
                     {o.distance_ft != null ? ` · ${o.distance_ft.toFixed(0)} ft` : ""}
                     {loc.confidence !== "high" && (
-                      <span className="muted" style={{ marginLeft: 6, fontSize: 10 }}>Location confidence: {loc.confidence}</span>
+                      <span className="muted" style={{ marginLeft: 6, fontSize: 11 }}>Location confidence: {loc.confidence}</span>
                     )}
                   </span>
                 </div>
@@ -1819,7 +1819,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                 {DEBUG_LOCATION && o.lap_pct != null && (
                   <div className="inspector-block">
                     <label>Debug</label>
-                    <span className="mono" style={{ fontSize: 10 }}>
+                    <span className="mono" style={{ fontSize: 11 }}>
                       lap_pct={o.lap_pct.toFixed(2)}% · section_id={loc.section_id} · local_fraction={loc.local_fraction?.toFixed(3)}
                     </span>
                   </div>

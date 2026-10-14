@@ -363,7 +363,7 @@ export function NotebookTab() {
           </div>
 
           <div className="toolbar-actions" style={{ marginTop: 12, flexWrap: "wrap" }}>
-            <span className="section-note" style={{ fontSize: 10, color: "#8d9aaa", marginRight: 4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            <span className="section-note" style={{ fontSize: 11, color: "#8d9aaa", marginRight: 4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
               Inspect evidence:
             </span>
             <button className="trackmap-action-btn" onClick={() => {

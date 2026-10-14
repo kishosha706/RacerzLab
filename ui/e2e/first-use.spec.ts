@@ -20,7 +20,7 @@ test("first launch enters the evidence-first session picker once", async ({ page
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Enter RacerZLab garage" })).toBeVisible();
   await page.getByRole("button", { name: "Enter RacerZLab garage" }).click();
-  await expect(page.getByRole("heading", { name: "Pick up the engineering thread" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Every lap has a story\.\s*Find your next move\./ })).toBeVisible();
   await expect(page.getByText("No previous sessions yet.")).toBeVisible();
   await expect(page.getByRole("button", { name: /New engineering session/ })).toBeVisible();
   expect(pageErrors).toEqual([]);

@@ -2631,7 +2631,7 @@ function PlatformTraceWorkbench({
       axisLabel: {
         show: index === rows.length - 1,
         color: "#94a3b8",
-        fontSize: 10,
+        fontSize: 11,
         hideOverlap: true,
         margin: 8,
         formatter: (value: number) => formatDistanceFt(value, decimalDistanceLabels ? 1 : 0),
@@ -2659,7 +2659,7 @@ function PlatformTraceWorkbench({
       splitNumber: chartDensity === "detailed" ? 4 : 3,
       axisLabel: {
         color: "#91a0af",
-        fontSize: 10,
+        fontSize: 11,
         margin: 10,
         formatter: (value: number) => formatYAxisTick(value, row.yAxisUnit),
       },
@@ -2694,7 +2694,7 @@ function PlatformTraceWorkbench({
         style: {
           text: row.label,
           fill: "#aebdcb",
-          fontSize: 9,
+          fontSize: 11,
           fontWeight: 700,
           fontFamily: "Inter, sans-serif",
           lineWidth: 0,
@@ -2915,7 +2915,7 @@ function PlatformTraceWorkbench({
         itemHeight: 3,
         itemGap: 11,
         inactiveColor: "#475569",
-        textStyle: { color: "#cbd6e3", fontSize: 10, fontWeight: 650 },
+        textStyle: { color: "#cbd6e3", fontSize: 11, fontWeight: 650 },
         pageIconColor: "#67e8f9",
         pageIconInactiveColor: "#334155",
         pageTextStyle: { color: "#94a3b8" },
@@ -2952,7 +2952,7 @@ function PlatformTraceWorkbench({
             moveHandleStyle: { color: "#cffafe", opacity: 0.9 },
           },
           brushSelect: false,
-          textStyle: { color: "#94a3b8", fontSize: 9 },
+          textStyle: { color: "#94a3b8", fontSize: 11 },
           labelFormatter: (value: number) => formatDistanceFt(value, decimalDistanceLabels ? 1 : 0),
           showDetail: false,
           ...(zoomRangeRef.current ?? {}),
@@ -3478,7 +3478,7 @@ function PlatformTraceWorkbench({
         <span className="lap-flag-badge" style={{
           background: isInferred ? "rgba(245,158,11,0.12)" : "rgba(34,197,94,0.12)",
           color: isInferred ? "#f59e0b" : "#22c55e",
-          fontSize: 8, padding: "1px 5px",
+          fontSize: 11, padding: "1px 5px",
         }}>
           {isInferred ? "Inferred" : "Explicit"}
         </span>
@@ -3960,13 +3960,13 @@ function PlatformTraceWorkbench({
       </section>
       {workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-          <span className="laps-stint-legend-item" style={{ fontSize: 10, color: "#8d9aaa", fontWeight: 600 }}>
+          <span className="laps-stint-legend-item" style={{ fontSize: 11, color: "#8d9aaa", fontWeight: 600 }}>
             Engineering cards basis:
           </span>
           <span className="lap-flag-badge" style={{
             background: sampleBasisLabel === "Selected sample" ? "rgba(56,189,248,0.15)" : "rgba(141,154,170,0.12)",
             color: sampleBasisLabel === "Selected sample" ? "#38bdf8" : "#8d9aaa",
-            fontSize: 10, padding: "2px 8px",
+            fontSize: 11, padding: "2px 8px",
           }}>
             {sampleBasisLabel}
           </span>

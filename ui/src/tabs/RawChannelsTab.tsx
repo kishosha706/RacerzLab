@@ -121,7 +121,7 @@ export function RawChannelsTab({ overview, trace, channels, loadError = null, on
       {/* Pinned channels */}
       {pinnedChannels.length > 0 && (
         <div style={{ marginBottom: 8, display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
-          <span style={{ fontSize: 10, color: "#8d9aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Pinned:</span>
+          <span style={{ fontSize: 11, color: "#8d9aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Pinned:</span>
           {pinnedChannels.map((name) => {
             const channel = channels.find((item) => item.name === name);
             const canOpenLane = channel != null && channelAllowsContinuousCustomLane(channel);
@@ -130,7 +130,7 @@ export function RawChannelsTab({ overview, trace, channels, loadError = null, on
                 type="button"
                 key={name}
                 disabled={!canOpenLane}
-                style={{ fontSize: 10, padding: "2px 6px", background: "rgba(56,189,248,0.1)", border: "1px solid rgba(56,189,248,0.2)", borderRadius: 4, color: "#38bdf8", cursor: canOpenLane ? "pointer" : "default", opacity: canOpenLane ? 1 : 0.72 }}
+                style={{ fontSize: 11, padding: "2px 6px", background: "rgba(56,189,248,0.1)", border: "1px solid rgba(56,189,248,0.2)", borderRadius: 4, color: "#38bdf8", cursor: canOpenLane ? "pointer" : "default", opacity: canOpenLane ? 1 : 0.72 }}
                 onClick={canOpenLane && channel ? () => handlePinToPlatform(channel) : undefined}
                 title={canOpenLane ? "Open in Platform Trace" : "Pit-boundary snapshots cannot become continuous on-track evidence"}
                 aria-label={canOpenLane ? `Open pinned channel ${name} in Platform Trace` : `Pinned channel ${name} cannot open as a continuous lane`}
@@ -201,7 +201,7 @@ export function RawChannelsTab({ overview, trace, channels, loadError = null, on
           <option value="integrity">Integrity</option>
           <option value="inventory_debug">Inventory / debug</option>
         </select>
-        <span style={{ fontSize: 10, color: "#8d9aaa" }}>{filtered.length} of {channels.length}</span>
+        <span style={{ fontSize: 11, color: "#8d9aaa" }}>{filtered.length} of {channels.length}</span>
       </div>
       <div className="table-scroll">
         <table>
@@ -307,7 +307,7 @@ export function RawChannelsTab({ overview, trace, channels, loadError = null, on
                             <div><span className="muted">Description</span><br />{channel.description}</div>
                           )}
                           {channel.formula && (
-                            <div><span className="muted">Formula</span><br /><code style={{ fontSize: 10, color: "#38bdf8" }}>{channel.formula}</code></div>
+                            <div><span className="muted">Formula</span><br /><code style={{ fontSize: 11, color: "#38bdf8" }}>{channel.formula}</code></div>
                           )}
                           {!channel.formula && channel.is_calculated && (
                             <div><span className="muted">Formula</span><br /><span className="muted">Formula unavailable.</span></div>

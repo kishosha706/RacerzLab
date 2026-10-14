@@ -72,7 +72,7 @@ export function EvidenceCard({ event, onToggleMapOverlay }: EvidenceCardProps) {
         <span className={`severity severity-${event.severity}`}>{event.severity}</span>
         <strong>{eventLabel}</strong>
         {event.lap_pct_start != null && event.lap_pct_end != null && (
-          <span className="muted" style={{ fontSize: 10, marginLeft: 6 }}>
+          <span className="muted" style={{ fontSize: 11, marginLeft: 6 }}>
             {event.lap_pct_start.toFixed(1)}–{event.lap_pct_end.toFixed(1)}%
           </span>
         )}

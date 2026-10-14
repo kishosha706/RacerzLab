@@ -105,10 +105,10 @@ export function CompareBasket() {
               }}
             >
               {readiness.status === "ready" ? <CheckCircle size={12} /> : <AlertTriangle size={12} />}
-              <span style={{ fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: "0.04em" }}>
+              <span style={{ fontWeight: 600, textTransform: "uppercase", fontSize: 11, letterSpacing: "0.04em" }}>
                 {readiness.status.replace(/_/g, " ")}
               </span>
-              <span style={{ fontSize: 10, opacity: 0.8 }}>— {readiness.reason}</span>
+              <span style={{ fontSize: 11, opacity: 0.8 }}>— {readiness.reason}</span>
             </div>
           )}
 

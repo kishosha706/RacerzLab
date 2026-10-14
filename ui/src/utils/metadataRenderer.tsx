@@ -108,7 +108,7 @@ export function MetadataRenderer({
         </div>
       ))}
       {remaining > 0 && (
-        <p className="muted" style={{ fontSize: 10, marginTop: 4 }}>
+        <p className="muted" style={{ fontSize: 11, marginTop: 4 }}>
           +{remaining} more field{remaining > 1 ? "s" : ""}
         </p>
       )}

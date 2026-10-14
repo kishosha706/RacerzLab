@@ -1334,7 +1334,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
         <span className="lap-flag-badge" style={{
           background: isBasketDriven ? "rgba(34,197,94,0.12)" : "rgba(245,158,11,0.12)",
           color: isBasketDriven ? "#22c55e" : "#f59e0b",
-          fontSize: 10, padding: "2px 8px",
+          fontSize: 11, padding: "2px 8px",
         }}>
           <ShoppingCart size={10} style={{ marginRight: 4 }} />
           {compareModeLabel}
@@ -1353,7 +1353,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
           </button>
         )}
         {(basket.baseline?.lap_scope === "lap_window" || basket.test?.lap_scope === "lap_window") && (
-          <span className="lap-flag-badge" style={{ background: "rgba(56,189,248,0.12)", color: "#38bdf8", fontSize: 10, padding: "2px 8px" }}>
+          <span className="lap-flag-badge" style={{ background: "rgba(56,189,248,0.12)", color: "#38bdf8", fontSize: 11, padding: "2px 8px" }}>
             Window metadata preserved
           </span>
         )}

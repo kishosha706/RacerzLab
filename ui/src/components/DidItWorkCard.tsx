@@ -245,7 +245,7 @@ export function DidItWorkCard({
           <h4><AlertTriangle size={12} /> Warnings</h4>
           {warnings.map((w, i) => <p key={i} className="warning-line"><AlertTriangle size={12} /> {w}</p>)}
           {testDisciplineScore != null && testDisciplineScore < 50 && (
-            <p style={{ fontSize: 10, marginTop: 8, color: "#f59e0b", fontStyle: "italic" }}>
+            <p style={{ fontSize: 11, marginTop: 8, color: "#f59e0b", fontStyle: "italic" }}>
               ℹ Comparison is useful for review, not setup authority.
             </p>
           )}

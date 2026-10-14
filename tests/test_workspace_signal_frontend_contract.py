@@ -127,7 +127,12 @@ def test_broadcast_layout_stays_compact_and_responsive() -> None:
     assert ".tab-handoff-actions" in styles
     assert ".shell-workspace-broadcast" in styles
     assert ".nav-rail-signal" in styles
-    assert "font-size: 0.68rem" in styles
+    # Broadcast fact chips previously used a literal 0.68rem (10.88px), which sat
+    # below the documented 11px garage-legibility minimum. They now use the shared
+    # micro token, and the assertion is scoped to the actual rule instead of
+    # matching the literal anywhere in the stylesheet.
+    broadcast_facts = styles.split(".tab-decision-facts > span {", 1)[1].split("}", 1)[0]
+    assert "font-size: var(--fs-micro)" in broadcast_facts
     assert "width: 142px" in styles
     responsive = styles.split("@media (max-width: 820px)", 1)[1]
     assert ".shell-workspace-broadcast" in responsive

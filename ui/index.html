@@ -4,10 +4,40 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#06090e" />
+    <meta
+      name="description"
+      content="RacerZLab is an evidence-driven race-engineering workstation that turns iRacing telemetry into one trustworthy next setup decision."
+    />
     <title>RacerZLab</title>
+    <style>
+      /* Painted before the bundle loads so the window never flashes white. */
+      html {
+        color-scheme: dark;
+        background: #06090e;
+      }
+      body {
+        margin: 0;
+        min-width: 320px;
+        min-height: 100vh;
+        background: #06090e;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <main class="boot-screen">
+        <section class="empty-panel">
+          <h1>RacerZLab needs JavaScript</h1>
+          <p>
+            This workstation renders entirely on your machine. Enable JavaScript for the desktop
+            app or your local browser, then reload.
+          </p>
+        </section>
+      </main>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

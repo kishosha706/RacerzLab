@@ -36,6 +36,6 @@
     "openapi-typescript": "^7.13.0",
     "typescript": "^5.5.4",
     "vite": "^8.2.0",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.11"
   }
 }
