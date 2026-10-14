@@ -48,6 +48,7 @@ import { isDialInHypothesisResponse } from "../utils/dialInResponseTrust";
 import { isControlledWorkflowResponse } from "../utils/controlledWorkflowTrust";
 import { canonicalJsonSha256 } from "../utils/canonicalJsonSha256";
 import { getLocalApiCapabilityToken } from "./localApiCapability";
+import { isHandlingBalanceReport } from "../utils/handlingBalanceTrust";
 
 const API_BASE =
   import.meta.env.VITE_RACELAB_API_BASE_URL ??
@@ -328,6 +329,22 @@ export function importIbtFileFromPath(filePath: string): Promise<ImportIbtRespon
 
 export function fetchOverview(runId: string): Promise<RunOverview> {
   return requestJson<RunOverview>(`/api/runs/${encodeURIComponent(runId)}/overview`);
+}
+
+export function fetchHandlingBalance(runId: string): Promise<OpenApiComponents["schemas"]["HandlingBalanceReport"]> {
+  return requestJson<unknown>(
+    `/api/runs/${encodeURIComponent(runId)}/handling-balance`,
+    undefined,
+    REQUEST_TIMEOUT_MS,
+    "Handling balance",
+  ).then((payload) => {
+    if (!isHandlingBalanceReport(payload, { runId })) {
+      throw new Error(
+        "Handling balance failed its exact observation-only authority or run identity check.",
+      );
+    }
+    return payload;
+  });
 }
 
 export function fetchRunIntelligence(

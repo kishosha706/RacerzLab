@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
 import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPanel";
+import { HandlingBalancePanel } from "../components/HandlingBalancePanel";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { SEVERITY_COLOURS, humanizeEventLabel } from "../constants/ui";
 import { isProxyChannel } from "../utils/channelMeta";
@@ -435,6 +436,8 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
       <div className="race-decision-shell" style={{ alignContent: "start" }}>
         {decisionBroadcast}
 
+        <HandlingBalancePanel runId={overview.run_id} surface="overview" />
+
         {broadcastWarning && (
           <section className="race-warning-line">
             <AlertTriangle size={14} />
@@ -449,6 +452,7 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
   return (
     <div className="tab-grid">
       {decisionBroadcast}
+      <HandlingBalancePanel runId={overview.run_id} surface="overview" />
       <EngineeringAwarenessPanel runId={overview.run_id} sessionId={sessionId} surface="overview" />
 
       <section className="overview-hero" id="overview-hero-signal">

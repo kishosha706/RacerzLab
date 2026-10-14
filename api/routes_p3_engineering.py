@@ -20,6 +20,8 @@ from racelab_engine.analysis.p3_contracts import (
     STINT_STRATEGY_CONTRACT,
 )
 from racelab_engine.analysis.evidence_contracts import RELATIVE_HIGH_SPEED_RESISTANCE_CONTRACT
+from racelab_engine.analysis.handling_balance import analyze_handling_balance
+from racelab_engine.analysis.handling_balance_contracts import HANDLING_BALANCE_CONTRACT
 from racelab_engine.analysis.lap_eligibility import eligible_laps
 from racelab_engine.analysis.p3_common import finite
 from racelab_engine.analysis.powertrain_gearing import PowertrainGearingReport, analyze_powertrain_gearing
@@ -32,6 +34,7 @@ from racelab_engine.analysis.setup_diff import (
 from racelab_engine.analysis.sim_integrity import SimIntegrityCertificate, build_sim_integrity_certificate
 from racelab_engine.analysis.tire_state_energy import TireStateReport, analyze_tire_state
 from racelab_engine.analysis.stint_strategy import StintStrategyReport, analyze_stint_strategy
+from racelab_engine.models.handling_balance import HandlingBalanceReport
 from racelab_engine.services.import_service import read_telemetry_manifest, read_telemetry_rows
 
 
@@ -344,6 +347,25 @@ def get_stint_strategy(run_id: str) -> StintStrategyReport:
         sim_integrity_clear=cohort_clear,
         sim_integrity_confidence_cap=cohort_cap,
         session_type=overview.session.session_type,
+    )
+
+
+@router.get("/{run_id}/handling-balance", response_model=HandlingBalanceReport)
+def get_handling_balance(run_id: str) -> HandlingBalanceReport:
+    overview = get_run_or_404(run_id)
+    rows = _rows(run_id, HANDLING_BALANCE_CONTRACT, _INTEGRITY_CHANNELS)
+    cohort_clear, cohort_cap = _cohort_integrity(rows, overview.laps, overview.session.telemetry_rate_hz)
+    return analyze_handling_balance(
+        rows,
+        overview.laps,
+        run_id=run_id,
+        selected_lap=(
+            overview.best_useful_lap.lap_number
+            if overview.best_useful_lap is not None else None
+        ),
+        sim_integrity_clear=cohort_clear,
+        sim_integrity_confidence_cap=cohort_cap,
+        setup_change_isolated=True,
     )
 
 

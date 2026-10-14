@@ -3902,6 +3902,48 @@
         }
       }
     },
+    "/api/runs/{run_id}/handling-balance": {
+      "get": {
+        "tags": [
+          "p3-engineering"
+        ],
+        "summary": "Get Handling Balance",
+        "operationId": "get_handling_balance_api_runs__run_id__handling_balance_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandlingBalanceReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/runs/relative-resistance/aba": {
       "post": {
         "tags": [
@@ -20280,6 +20322,477 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HandlingAuthority": {
+        "type": "string",
+        "enum": [
+          "observation_only"
+        ],
+        "title": "HandlingAuthority"
+      },
+      "HandlingBalanceAssessment": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "title": "Schema Version",
+            "default": "p-handling-balance.assessment.v1"
+          },
+          "assessment_id": {
+            "type": "string",
+            "title": "Assessment Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "lap_numbers": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Lap Numbers"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "lap_pct_start": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lap Pct Start"
+          },
+          "lap_pct_end": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lap Pct End"
+          },
+          "classification": {
+            "$ref": "#/components/schemas/HandlingClassification"
+          },
+          "canonical_symptom_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Symptom Id"
+          },
+          "observation_text": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Observation Text"
+          },
+          "evidence_state": {
+            "$ref": "#/components/schemas/EvidenceState"
+          },
+          "confidence_score": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence Score"
+          },
+          "repeatability": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Repeatability"
+          },
+          "source_channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Channels"
+          },
+          "supporting_evidence": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Supporting Evidence"
+          },
+          "contradicting_evidence": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Contradicting Evidence"
+          },
+          "alternative_explanations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Alternative Explanations"
+          },
+          "blocker_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocker Reasons"
+          },
+          "phase_observations": {
+            "items": {
+              "$ref": "#/components/schemas/HandlingPhaseObservation"
+            },
+            "type": "array",
+            "title": "Phase Observations"
+          },
+          "authority": {
+            "$ref": "#/components/schemas/HandlingAuthority",
+            "default": "observation_only"
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "title": "Setup Authorized",
+            "default": false
+          },
+          "driver_feedback_source": {
+            "type": "boolean",
+            "title": "Driver Feedback Source",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "assessment_id",
+          "run_id",
+          "classification",
+          "observation_text",
+          "evidence_state",
+          "confidence_score",
+          "repeatability"
+        ],
+        "title": "HandlingBalanceAssessment",
+        "description": "One located, qualified handling observation with full provenance."
+      },
+      "HandlingBalanceReport": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "title": "Schema Version",
+            "default": "p-handling-balance.report.v1"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "selected_lap": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Lap"
+          },
+          "eligible_laps": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Eligible Laps"
+          },
+          "reference_lap_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Reference Lap Count"
+          },
+          "classification": {
+            "$ref": "#/components/schemas/HandlingClassification"
+          },
+          "assessments": {
+            "items": {
+              "$ref": "#/components/schemas/HandlingBalanceAssessment"
+            },
+            "type": "array",
+            "title": "Assessments"
+          },
+          "conclusions": {
+            "items": {
+              "$ref": "#/components/schemas/EngineeringConclusion"
+            },
+            "type": "array",
+            "title": "Conclusions"
+          },
+          "gate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EngineGate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "authority": {
+            "$ref": "#/components/schemas/HandlingAuthority",
+            "default": "observation_only"
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "eligible_laps",
+          "reference_lap_count",
+          "classification"
+        ],
+        "title": "HandlingBalanceReport",
+        "description": "Run-level aggregation of handling-balance observations."
+      },
+      "HandlingClassification": {
+        "type": "string",
+        "enum": [
+          "no_significant_imbalance_qualified",
+          "rotation_response_deficit",
+          "rotation_response_excess",
+          "mixed_phase_dependent",
+          "transient_rotation_anomaly",
+          "steering_response_anomaly",
+          "inconclusive",
+          "unavailable"
+        ],
+        "title": "HandlingClassification",
+        "description": "Descriptive rotation-response signatures. Never \"tight\"/\"loose\" verdicts."
+      },
+      "HandlingPhaseObservation": {
+        "properties": {
+          "phase": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]+$",
+            "title": "Phase"
+          },
+          "eligible_laps": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Eligible Laps"
+          },
+          "sample_bins": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sample Bins"
+          },
+          "steering_demand_median_deg": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steering Demand Median Deg"
+          },
+          "steering_demand_floor_deg": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Steering Demand Floor Deg",
+            "default": 3.0
+          },
+          "path_kinematic_expected_yaw_median_rad_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Kinematic Expected Yaw Median Rad S"
+          },
+          "measured_yaw_median_rad_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured Yaw Median Rad S"
+          },
+          "rotation_response_deficit_median_rad_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rotation Response Deficit Median Rad S"
+          },
+          "rotation_response_deficit_abs_p90_rad_s": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rotation Response Deficit Abs P90 Rad S"
+          },
+          "rotation_response_ratio_median": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rotation Response Ratio Median"
+          },
+          "steering_efficiency_median_curvature_per_rad": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steering Efficiency Median Curvature Per Rad"
+          },
+          "correction_count_median": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correction Count Median"
+          },
+          "max_yaw_rate_of_change_rad_s2": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Yaw Rate Of Change Rad S2"
+          },
+          "sideslip_rate_proxy_median_rad_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sideslip Rate Proxy Median Rad S"
+          },
+          "noise_scale_deficit_rad_s": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Noise Scale Deficit Rad S"
+          },
+          "coverage_fraction": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Coverage Fraction"
+          },
+          "reference_lap_group": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Reference Lap Group"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "phase",
+          "eligible_laps",
+          "sample_bins",
+          "coverage_fraction"
+        ],
+        "title": "HandlingPhaseObservation",
+        "description": "Phase-local response diagnostics aggregated over the eligible lap group."
       },
       "HealthResponse": {
         "properties": {

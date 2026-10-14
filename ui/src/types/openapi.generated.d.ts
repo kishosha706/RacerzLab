@@ -1274,6 +1274,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/{run_id}/handling-balance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Handling Balance */
+        get: operations["get_handling_balance_api_runs__run_id__handling_balance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/relative-resistance/aba": {
         parameters: {
             query?: never;
@@ -7379,6 +7396,155 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HandlingAuthority
+         * @enum {string}
+         */
+        HandlingAuthority: "observation_only";
+        /**
+         * HandlingBalanceAssessment
+         * @description One located, qualified handling observation with full provenance.
+         */
+        HandlingBalanceAssessment: {
+            /**
+             * Schema Version
+             * @default p-handling-balance.assessment.v1
+             */
+            schema_version: string;
+            /** Assessment Id */
+            assessment_id: string;
+            /** Run Id */
+            run_id: string;
+            /** Session Id */
+            session_id?: string | null;
+            /** Lap Numbers */
+            lap_numbers?: number[];
+            /** Phase */
+            phase?: string | null;
+            /** Lap Pct Start */
+            lap_pct_start?: number | null;
+            /** Lap Pct End */
+            lap_pct_end?: number | null;
+            classification: components["schemas"]["HandlingClassification"];
+            /** Canonical Symptom Id */
+            canonical_symptom_id?: string | null;
+            /** Observation Text */
+            observation_text: string;
+            evidence_state: components["schemas"]["EvidenceState"];
+            /** Confidence Score */
+            confidence_score: number;
+            /** Repeatability */
+            repeatability: string;
+            /** Source Channels */
+            source_channels?: string[];
+            /** Supporting Evidence */
+            supporting_evidence?: string[];
+            /** Contradicting Evidence */
+            contradicting_evidence?: string[];
+            /** Alternative Explanations */
+            alternative_explanations?: string[];
+            /** Blocker Reasons */
+            blocker_reasons?: string[];
+            /** Phase Observations */
+            phase_observations?: components["schemas"]["HandlingPhaseObservation"][];
+            /** @default observation_only */
+            authority: components["schemas"]["HandlingAuthority"];
+            /**
+             * Setup Authorized
+             * @default false
+             */
+            setup_authorized: boolean;
+            /**
+             * Driver Feedback Source
+             * @default false
+             */
+            driver_feedback_source: boolean;
+        };
+        /**
+         * HandlingBalanceReport
+         * @description Run-level aggregation of handling-balance observations.
+         */
+        HandlingBalanceReport: {
+            /**
+             * Schema Version
+             * @default p-handling-balance.report.v1
+             */
+            schema_version: string;
+            /** Run Id */
+            run_id: string;
+            /** Session Id */
+            session_id?: string | null;
+            /** Selected Lap */
+            selected_lap?: number | null;
+            /** Eligible Laps */
+            eligible_laps: number;
+            /** Reference Lap Count */
+            reference_lap_count: number;
+            classification: components["schemas"]["HandlingClassification"];
+            /** Assessments */
+            assessments?: components["schemas"]["HandlingBalanceAssessment"][];
+            /** Conclusions */
+            conclusions?: components["schemas"]["EngineeringConclusion"][];
+            gate?: components["schemas"]["EngineGate"] | null;
+            /** Warnings */
+            warnings?: string[];
+            /** @default observation_only */
+            authority: components["schemas"]["HandlingAuthority"];
+            /**
+             * Setup Authorized
+             * @default false
+             */
+            setup_authorized: boolean;
+        };
+        /**
+         * HandlingClassification
+         * @description Descriptive rotation-response signatures. Never "tight"/"loose" verdicts.
+         * @enum {string}
+         */
+        HandlingClassification: "no_significant_imbalance_qualified" | "rotation_response_deficit" | "rotation_response_excess" | "mixed_phase_dependent" | "transient_rotation_anomaly" | "steering_response_anomaly" | "inconclusive" | "unavailable";
+        /**
+         * HandlingPhaseObservation
+         * @description Phase-local response diagnostics aggregated over the eligible lap group.
+         */
+        HandlingPhaseObservation: {
+            /** Phase */
+            phase: string;
+            /** Eligible Laps */
+            eligible_laps: number;
+            /** Sample Bins */
+            sample_bins: number;
+            /** Steering Demand Median Deg */
+            steering_demand_median_deg?: number | null;
+            /**
+             * Steering Demand Floor Deg
+             * @default 3
+             */
+            steering_demand_floor_deg: number;
+            /** Path Kinematic Expected Yaw Median Rad S */
+            path_kinematic_expected_yaw_median_rad_s?: number | null;
+            /** Measured Yaw Median Rad S */
+            measured_yaw_median_rad_s?: number | null;
+            /** Rotation Response Deficit Median Rad S */
+            rotation_response_deficit_median_rad_s?: number | null;
+            /** Rotation Response Deficit Abs P90 Rad S */
+            rotation_response_deficit_abs_p90_rad_s?: number | null;
+            /** Rotation Response Ratio Median */
+            rotation_response_ratio_median?: number | null;
+            /** Steering Efficiency Median Curvature Per Rad */
+            steering_efficiency_median_curvature_per_rad?: number | null;
+            /** Correction Count Median */
+            correction_count_median?: number | null;
+            /** Max Yaw Rate Of Change Rad S2 */
+            max_yaw_rate_of_change_rad_s2?: number | null;
+            /** Sideslip Rate Proxy Median Rad S */
+            sideslip_rate_proxy_median_rad_s?: number | null;
+            /** Noise Scale Deficit Rad S */
+            noise_scale_deficit_rad_s?: number | null;
+            /** Coverage Fraction */
+            coverage_fraction: number;
+            /** Reference Lap Group */
+            reference_lap_group?: number[];
         };
         /** HealthResponse */
         HealthResponse: {
@@ -18534,6 +18700,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StintStrategyReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_handling_balance_api_runs__run_id__handling_balance_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandlingBalanceReport"];
                 };
             };
             /** @description Validation Error */
