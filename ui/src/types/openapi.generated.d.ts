@@ -1291,6 +1291,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/{run_id}/handling-knowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Handling Knowledge */
+        get: operations["get_handling_knowledge_api_runs__run_id__handling_knowledge_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/relative-resistance/aba": {
         parameters: {
             query?: never;
@@ -2722,6 +2739,7 @@ export interface components {
              * @constant
              */
             setup_authorized: false;
+            handling_investigation?: components["schemas"]["HandlingInvestigationProjection"] | null;
         };
         /** CapabilityActivationAudit */
         CapabilityActivationAudit: {
@@ -7398,6 +7416,28 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * HandlingAssessmentRef
+         * @description Exact identity reference to one qualified producer assessment.
+         */
+        HandlingAssessmentRef: {
+            /** Assessment Id */
+            assessment_id: string;
+            /** Run Id */
+            run_id: string;
+            /** Phase */
+            phase: string;
+            classification: components["schemas"]["HandlingClassification"];
+            /** Canonical Symptom Id */
+            canonical_symptom_id?: string | null;
+            /**
+             * Corroborated
+             * @default false
+             */
+            corroborated: boolean;
+            /** Lap Numbers */
+            lap_numbers: number[];
+        };
+        /**
          * HandlingAuthority
          * @enum {string}
          */
@@ -7409,7 +7449,7 @@ export interface components {
         HandlingBalanceAssessment: {
             /**
              * Schema Version
-             * @default p-handling-balance.assessment.v1
+             * @default p-handling-balance.assessment.v2
              */
             schema_version: string;
             /** Assessment Id */
@@ -7468,7 +7508,7 @@ export interface components {
         HandlingBalanceReport: {
             /**
              * Schema Version
-             * @default p-handling-balance.report.v1
+             * @default p-handling-balance.report.v2
              */
             schema_version: string;
             /** Run Id */
@@ -7500,9 +7540,446 @@ export interface components {
         /**
          * HandlingClassification
          * @description Descriptive rotation-response signatures. Never "tight"/"loose" verdicts.
+         *
+         *     Physics audit (2026-10-13): the residual speed x path-curvature - yaw_rate
+         *     equals the planar sideslip RATE (d(beta)/dt), because course angle =
+         *     heading + sideslip. It is therefore zero in steady-state cornering no
+         *     matter how unbalanced the car is, and nonzero during transients without
+         *     implying imbalance. A deficit/excess classification now requires a second,
+         *     independent steering-demand-to-response strand to corroborate the residual
+         *     under comparable conditions. The residual alone maps to no tight/loose
+         *     symptom.
          * @enum {string}
          */
-        HandlingClassification: "no_significant_imbalance_qualified" | "rotation_response_deficit" | "rotation_response_excess" | "mixed_phase_dependent" | "transient_rotation_anomaly" | "steering_response_anomaly" | "inconclusive" | "unavailable";
+        HandlingClassification: "no_significant_imbalance_qualified" | "kinematic_residual_observation" | "rotation_response_deficit" | "rotation_response_excess" | "mixed_phase_dependent" | "transient_rotation_anomaly" | "steering_response_anomaly" | "steering_demand_anomaly" | "inconclusive" | "unavailable";
+        /**
+         * HandlingComponentRelation
+         * @description One relevant P26 component family and its P26-owned state.
+         */
+        HandlingComponentRelation: {
+            /** Component Id */
+            component_id: string;
+            /**
+             * Relevance
+             * @enum {string}
+             */
+            relevance: "mechanically_relevant" | "observable" | "supported" | "contradicted" | "unavailable";
+            /**
+             * Observability States
+             * @default []
+             */
+            observability_states: string[];
+            /**
+             * Source
+             * @default p26_component_awareness
+             * @constant
+             */
+            source: "p26_component_awareness";
+            /**
+             * Malfunction Declared
+             * @default false
+             * @constant
+             */
+            malfunction_declared: false;
+        };
+        /**
+         * HandlingCorroboration
+         * @description Two-strand qualification status for one phase observation.
+         *
+         *     Strand A is the kinematic residual (speed x path-curvature - yaw_rate),
+         *     which equals the planar sideslip rate. Strand B is the steering-demand-to-
+         *     response relationship (steering demand per achieved path curvature) at
+         *     comparable speeds. Both strands must be qualified and aligned before a
+         *     deficit/excess signature may carry a canonical tight/loose-family symptom.
+         *
+         *     Dependence audit: the two strands share measured path curvature and the
+         *     same run-local reference lap group. They are complementary relationships,
+         *     not statistically independent evidence; corroboration qualifies the
+         *     symptom mapping and can never inflate independent evidence-unit counts.
+         */
+        HandlingCorroboration: {
+            /**
+             * Kinematic Residual Strand Qualified
+             * @default false
+             */
+            kinematic_residual_strand_qualified: boolean;
+            /**
+             * Steering Response Strand Qualified
+             * @default false
+             */
+            steering_response_strand_qualified: boolean;
+            /** Steering Response Direction */
+            steering_response_direction?: string | null;
+            /**
+             * Aligned
+             * @default false
+             */
+            aligned: boolean;
+            /**
+             * Corroborated
+             * @default false
+             */
+            corroborated: boolean;
+            /**
+             * Shared Input Channels
+             * @default [
+             *       "curvature_1_per_m"
+             *     ]
+             */
+            shared_input_channels: string[];
+            /**
+             * Shared Reference Laps
+             * @default true
+             */
+            shared_reference_laps: boolean;
+            /**
+             * Independence Qualification
+             * @default The kinematic residual and the steering-demand strand share measured path curvature and the same run-local reference lap group; they are complementary relationships, not statistically independent evidence.
+             */
+            independence_qualification: string;
+        };
+        /**
+         * HandlingInvestigationFinding
+         * @description One WHAT/WHERE/DRIVER/RESPONSE/... reasoning chain for a qualified phase.
+         */
+        HandlingInvestigationFinding: {
+            /** Assessment Id */
+            assessment_id: string;
+            /** Phase */
+            phase: string;
+            /** What */
+            what: string;
+            /** Where */
+            where: string;
+            /** Driver */
+            driver: string;
+            /** Response */
+            response: string;
+            /**
+             * Mechanisms
+             * @default []
+             */
+            mechanisms: components["schemas"]["HandlingMechanismRelation"][];
+            /**
+             * Components
+             * @default []
+             */
+            components: components["schemas"]["HandlingComponentRelation"][];
+            /**
+             * Performance
+             * @default []
+             */
+            performance: components["schemas"]["HandlingPerformanceAssociation"][];
+            /**
+             * Contradictions
+             * @default []
+             */
+            contradictions: string[];
+            /**
+             * Uncertain
+             * @default []
+             */
+            uncertain: string[];
+            /** Next */
+            next: string;
+            /**
+             * Next Evidence Channels
+             * @default []
+             */
+            next_evidence_channels: string[];
+        };
+        /**
+         * HandlingInvestigationProjection
+         * @description Run-level unified handling investigation projection.
+         */
+        HandlingInvestigationProjection: {
+            /**
+             * Schema Version
+             * @default p356.handling-investigation.v1
+             * @constant
+             */
+            schema_version: "p356.handling-investigation.v1";
+            /** Projection Sha256 */
+            projection_sha256: string;
+            /** Run Id */
+            run_id: string;
+            /** Session Id */
+            session_id: string;
+            /** Setup Id */
+            setup_id: string;
+            handling_report_classification: components["schemas"]["HandlingClassification"];
+            /** Assessment Refs */
+            assessment_refs: components["schemas"]["HandlingAssessmentRef"][];
+            /** Evidence Dependence */
+            evidence_dependence: string[];
+            /** Findings */
+            findings: components["schemas"]["HandlingInvestigationFinding"][];
+            /**
+             * Authority
+             * @default derived_observation_view
+             * @constant
+             */
+            authority: "derived_observation_view";
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
+            /**
+             * P19 Authority Unchanged
+             * @default true
+             * @constant
+             */
+            p19_authority_unchanged: true;
+        };
+        /**
+         * HandlingKnowledgeHypothesis
+         * @description One relevant P35.1 setup-catalog hypothesis, knowledge-only unless P19.
+         */
+        HandlingKnowledgeHypothesis: {
+            /** Bridge Id */
+            bridge_id: string;
+            /** Effect Id */
+            effect_id: string;
+            /** Setup Area */
+            setup_area: string;
+            /** Physical Role */
+            physical_role: string;
+            /**
+             * Level
+             * @enum {string}
+             */
+            level: "educational_knowledge" | "measurable_hypothesis" | "p19_testable_control" | "unsupported_remove";
+            /**
+             * Relevance
+             * @enum {string}
+             */
+            relevance: "supported_candidate" | "blocked_candidate" | "knowledge_only";
+            /**
+             * Knowledge Applicability
+             * @enum {string}
+             */
+            knowledge_applicability: "applicable" | "educational_only" | "blocked_by_build" | "unsupported";
+            /**
+             * P35 Mechanism Ids
+             * @default []
+             */
+            p35_mechanism_ids: string[];
+            /**
+             * Countereffect Ids
+             * @default []
+             */
+            countereffect_ids: string[];
+            /**
+             * Missing Evidence
+             * @default []
+             */
+            missing_evidence: string[];
+            /**
+             * Authority
+             * @enum {string}
+             */
+            authority: "knowledge_only" | "measurement_only" | "exact_p19_projection";
+            /**
+             * Setup Authorized
+             * @default false
+             */
+            setup_authorized: boolean;
+            p19_control?: components["schemas"]["P19TestableControl"] | null;
+        };
+        /**
+         * HandlingKnowledgeMechanismStatus
+         * @description One mechanism the observation touched, and what it can and cannot say.
+         */
+        HandlingKnowledgeMechanismStatus: {
+            /** Mechanism Id */
+            mechanism_id: string;
+            /** Label */
+            label: string;
+            /**
+             * Relevance
+             * @enum {string}
+             */
+            relevance: "applicable" | "informed_by_observation" | "blocked";
+            /**
+             * Missing Evidence
+             * @default []
+             */
+            missing_evidence: string[];
+            /**
+             * Support Declared
+             * @default false
+             * @constant
+             */
+            support_declared: false;
+        };
+        /** HandlingKnowledgeNextAction */
+        HandlingKnowledgeNextAction: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "inspect_evidence" | "measure" | "p19_authorized_experiment";
+            /** Instruction */
+            instruction: string;
+        };
+        /**
+         * HandlingKnowledgeProjection
+         * @description Run/assessment-level handling knowledge for one Dial-In handoff.
+         */
+        HandlingKnowledgeProjection: {
+            /**
+             * Schema Version
+             * @default p356.handling-knowledge.v1
+             * @constant
+             */
+            schema_version: "p356.handling-knowledge.v1";
+            /** Projection Sha256 */
+            projection_sha256: string;
+            /** Run Id */
+            run_id: string;
+            /** Session Id */
+            session_id: string;
+            /** Setup Id */
+            setup_id: string;
+            /** Case Id */
+            case_id: string;
+            /** Case Revision Sha256 */
+            case_revision_sha256: string;
+            /** Case Sha256 */
+            case_sha256: string;
+            /** Assessment Id */
+            assessment_id: string;
+            /** Phase */
+            phase: string;
+            classification: components["schemas"]["HandlingClassification"];
+            /** Canonical Symptom Id */
+            canonical_symptom_id?: string | null;
+            /**
+             * Corroborated
+             * @default false
+             */
+            corroborated: boolean;
+            /** Observed Behavior */
+            observed_behavior: string;
+            /** Evidence Qualification */
+            evidence_qualification: string;
+            /** Mechanisms */
+            mechanisms: components["schemas"]["HandlingKnowledgeMechanismStatus"][];
+            /** Relevant Knowledge */
+            relevant_knowledge: components["schemas"]["HandlingKnowledgeHypothesis"][];
+            /**
+             * Countereffects
+             * @default []
+             */
+            countereffects: string[];
+            /**
+             * Evidence Status
+             * @default []
+             */
+            evidence_status: string[];
+            /**
+             * Next Evidence Channels
+             * @default []
+             */
+            next_evidence_channels: string[];
+            next_action: components["schemas"]["HandlingKnowledgeNextAction"];
+            /**
+             * Authority
+             * @default derived_observation_view
+             * @constant
+             */
+            authority: "derived_observation_view";
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
+            /**
+             * P19 Authority Unchanged
+             * @default true
+             * @constant
+             */
+            p19_authority_unchanged: true;
+        };
+        /**
+         * HandlingMechanismRelation
+         * @description One applicable P35 mechanism and how the observation informs it.
+         */
+        HandlingMechanismRelation: {
+            /** Mechanism Id */
+            mechanism_id: string;
+            /** Label */
+            label: string;
+            /**
+             * Relevance
+             * @enum {string}
+             */
+            relevance: "applicable" | "informed_by_observation" | "blocked";
+            /** Response Regime */
+            response_regime: string;
+            /** Applicable Phases */
+            applicable_phases: string[];
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "deficit_aligned" | "excess_aligned" | "neutral" | "none";
+            /**
+             * Discriminator Contract Ids
+             * @default []
+             */
+            discriminator_contract_ids: string[];
+            /**
+             * P26 Component Family Ids
+             * @default []
+             */
+            p26_component_family_ids: string[];
+            /**
+             * Required Channels
+             * @default []
+             */
+            required_channels: string[];
+            /**
+             * Missing Evidence
+             * @default []
+             */
+            missing_evidence: string[];
+            /**
+             * Support Declared
+             * @default false
+             * @constant
+             */
+            support_declared: false;
+        };
+        /**
+         * HandlingPerformanceAssociation
+         * @description A co-occurring, P32-owned measured performance consequence.
+         */
+        HandlingPerformanceAssociation: {
+            /** Opportunity Id */
+            opportunity_id: string;
+            /** Track Region */
+            track_region: string;
+            /** Phase */
+            phase: string;
+            /** Measured Delta S */
+            measured_delta_s?: number | null;
+            /** Repeatability */
+            repeatability: string;
+            /** Attribution State */
+            attribution_state: string;
+            /** Wording */
+            wording: string;
+            /**
+             * Causation Declared
+             * @default false
+             * @constant
+             */
+            causation_declared: false;
+        };
         /**
          * HandlingPhaseObservation
          * @description Phase-local response diagnostics aggregated over the eligible lap group.
@@ -7533,18 +8010,23 @@ export interface components {
             rotation_response_ratio_median?: number | null;
             /** Steering Efficiency Median Curvature Per Rad */
             steering_efficiency_median_curvature_per_rad?: number | null;
+            /** Steering Demand Per Curvature Median Deg Per Inv M */
+            steering_demand_per_curvature_median_deg_per_inv_m?: number | null;
+            /** Steering Demand Relative Deviation Scale Units */
+            steering_demand_relative_deviation_scale_units?: number | null;
+            /** Speed Median Mps */
+            speed_median_mps?: number | null;
             /** Correction Count Median */
             correction_count_median?: number | null;
             /** Max Yaw Rate Of Change Rad S2 */
             max_yaw_rate_of_change_rad_s2?: number | null;
-            /** Sideslip Rate Proxy Median Rad S */
-            sideslip_rate_proxy_median_rad_s?: number | null;
             /** Noise Scale Deficit Rad S */
             noise_scale_deficit_rad_s?: number | null;
             /** Coverage Fraction */
             coverage_fraction: number;
             /** Reference Lap Group */
             reference_lap_group?: number[];
+            corroboration?: components["schemas"]["HandlingCorroboration"] | null;
         };
         /** HealthResponse */
         HealthResponse: {
@@ -18731,6 +19213,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HandlingBalanceReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_handling_knowledge_api_runs__run_id__handling_knowledge_get: {
+        parameters: {
+            query?: {
+                session_id?: string;
+                assessment_id?: string;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandlingKnowledgeProjection"];
                 };
             };
             /** @description Validation Error */

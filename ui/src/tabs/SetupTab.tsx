@@ -764,6 +764,75 @@ export function SetupTab({
         refreshKey={`${workflowId ?? "no-workflow"}:${workflowUpdatedAt ?? "no-revision"}`}
         expectedSetupId={setup.setup_id}
       />
+      {learning && engineeringCase != null
+        && engineeringCase.run_id === overview.run_id
+        && engineeringCase.setup_id === setup.setup_id
+        && (sessionId == null || engineeringCase.session_id === sessionId)
+        && engineeringCase.handling_investigation != null
+        && engineeringCase.handling_investigation.findings?.[0] && (
+        <section
+          className="workspace-section handling-balance-panel"
+          data-ui-state="ready"
+          aria-label="Handling observation setup relevance"
+        >
+          <div className="section-header-row">
+            <div>
+              <h2>Handling Relevance</h2>
+              <p className="muted">
+                Mechanically relevant garage areas from the qualified handling
+                observation. Relevance is never support and never permission.
+              </p>
+            </div>
+            <span className="dialin-readonly">Observation only</span>
+          </div>
+          {(() => {
+            const finding = engineeringCase.handling_investigation.findings[0];
+            return (
+              <>
+                <p><b>Candidate mechanisms.</b> Reviewable hypotheses, not confirmed causes.</p>
+                <div className="dialin-chip-row">
+                  {finding.mechanisms.slice(0, 6).map((mechanism) => (
+                    <span key={mechanism.mechanism_id} className="dialin-chip">
+                      {mechanism.mechanism_id.replace("mechanism:", "")}
+                    </span>
+                  ))}
+                </div>
+                {finding.components.length > 0 && (
+                  <>
+                    <p><b>Mechanically relevant areas.</b> Copied from P26 relevance; never proof of malfunction.</p>
+                    <div className="dialin-chip-row">
+                      {finding.components.slice(0, 8).map((component) => (
+                        <span key={component.component_id} className="dialin-chip">
+                          {component.component_id.replace(/_/g, " ")}
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                )}
+                <div className="dialin-rule-note">
+                  <ShieldCheck size={13} aria-hidden="true" />
+                  <span>
+                    <b>Relevant control:</b> none unless P19 authorizes one.{" "}
+                    <b>Supported evidence:</b> none declared.{" "}
+                    <b>Authorized experiment:</b>{" "}
+                    {engineeringCase.active_workflow_id
+                      ? "an exact P19 workflow exists — continue it in Dial-In."
+                      : "none."}{" "}
+                    Only P19 may authorize a setup action.
+                  </span>
+                </div>
+                {engineeringCase.active_workflow_id && (
+                  <div className="tab-handoff-actions" aria-label="Handling setup handoffs">
+                    <button type="button" onClick={handleDialIn}>
+                      <Crosshair size={13} /> Continue authorized workflow
+                    </button>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </section>
+      )}
 
       <section
         className="workspace-section setup-driver-snapshot"

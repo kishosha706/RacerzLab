@@ -21,14 +21,14 @@ const fetchMock = vi.mocked(fetchHandlingBalance);
 
 function qualifiedReport(overrides: Record<string, unknown> = {}): import("../types/openapi.generated").components["schemas"]["HandlingBalanceReport"] {
   return {
-    schema_version: "p-handling-balance.report.v1",
+    schema_version: "p-handling-balance.report.v2",
     run_id: "run-1",
     selected_lap: 4,
     eligible_laps: 6,
     reference_lap_count: 6,
     classification: "rotation_response_deficit",
     assessments: [{
-      schema_version: "p-handling-balance.assessment.v1",
+      schema_version: "p-handling-balance.assessment.v2",
       assessment_id: "hba_000000000000000000000000",
       run_id: "run-1",
       lap_numbers: [2, 3, 4],
@@ -47,6 +47,23 @@ function qualifiedReport(overrides: Record<string, unknown> = {}): import("../ty
       contradicting_evidence: [
         "The reference is actual-path curvature, not the driver's intended path.",
       ],
+      phase_observations: [{
+        phase: "center",
+        eligible_laps: 6,
+        sample_bins: 120,
+        steering_demand_floor_deg: 3.0,
+        coverage_fraction: 0.95,
+        corroboration: {
+          kinematic_residual_strand_qualified: true,
+          steering_response_strand_qualified: true,
+          steering_response_direction: "elevated",
+          aligned: true,
+          corroborated: true,
+          shared_input_channels: ["curvature_1_per_m"],
+          shared_reference_laps: true,
+          independence_qualification: "The strands share curvature and the reference group; they are not statistically independent evidence.",
+        },
+      }],
       authority: "observation_only",
       setup_authorized: false,
       driver_feedback_source: false,
@@ -73,6 +90,52 @@ describe("HandlingBalancePanel observation-only contract", () => {
     expect(screen.getAllByText(/Canonical symptom/).length).toBeGreaterThan(0);
     expect(screen.getByText(/telemetry-observed, not driver testimony/)).toBeTruthy();
     expect(screen.getAllByText("Observation only").length).toBeGreaterThan(0);
+  });
+
+  it("renders the residual-only diagnostic without a symptom claim", async () => {
+    fetchMock.mockResolvedValue(qualifiedReport({
+      classification: "kinematic_residual_observation",
+      assessments: [{
+        schema_version: "p-handling-balance.assessment.v2",
+        assessment_id: "hba_000000000000000000000001",
+        run_id: "run-1",
+        lap_numbers: [1, 2, 3, 4, 5, 6],
+        phase: "center",
+        classification: "kinematic_residual_observation",
+        canonical_symptom_id: null,
+        observation_text: "A kinematic residual in center is reported across 6 eligible laps without steering-response corroboration.",
+        evidence_state: "observed_correlation",
+        confidence_score: 0.4,
+        repeatability: "kinematic residual beyond the run-local envelope; steering response unaligned",
+        source_channels: ["lap_dist_pct_100", "speed_mps", "yaw_rate", "steering_rad"],
+        supporting_evidence: ["Median signed kinematic residual +0.0450 rad/s."],
+        contradicting_evidence: ["Steering-response evidence does not corroborate the residual."],
+        phase_observations: [{
+          phase: "center",
+          eligible_laps: 6,
+          sample_bins: 120,
+          steering_demand_floor_deg: 3.0,
+          coverage_fraction: 0.95,
+          corroboration: {
+            kinematic_residual_strand_qualified: true,
+            steering_response_strand_qualified: false,
+            steering_response_direction: null,
+            aligned: false,
+            corroborated: false,
+            shared_input_channels: ["curvature_1_per_m"],
+            shared_reference_laps: true,
+            independence_qualification: "The strands share curvature and the reference group; they are not statistically independent evidence.",
+          },
+        }],
+        authority: "observation_only",
+        setup_authorized: false,
+        driver_feedback_source: false,
+      }],
+    }));
+    render(<HandlingBalancePanel runId="run-1" />);
+    expect(await screen.findByText(/without steering-response corroboration/)).toBeTruthy();
+    expect(screen.queryByText(/Canonical symptom/)).toBeNull();
+    expect(screen.getByText(/cannot establish tight or loose on its own/)).toBeTruthy();
   });
 
   it("renders no section while loading", () => {

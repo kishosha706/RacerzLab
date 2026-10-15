@@ -57,8 +57,7 @@ def percentile(items: list[float], pct: float) -> float | None:
 
 
 def lap_pct(row: dict[str, Any]) -> float | None:
-    percent = finite(row.get("lap_dist_pct_100"))
-    if percent is not None:
+    if (percent := finite(row.get("lap_dist_pct_100"))) is not None:
         return percent if 0.0 <= percent <= 100.0 else None
     number = finite(row.get("lap_dist_pct"))
     if number is None:

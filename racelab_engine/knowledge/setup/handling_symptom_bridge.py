@@ -67,8 +67,9 @@ def resolve_canonical_symptom(
     family = phase_family(phase)
     if balance is None or family is None:
         return None, (
-            "Canonical symptom mapping requires a qualified deficit or excess "
-            "signature in a known corner-phase family."
+            "Canonical symptom mapping requires a corroborated deficit or excess "
+            "signature in a known corner-phase family; a kinematic-residual or "
+            "steering-demand observation alone can never carry one."
         )
     candidate = f"{balance}_{family}"
     if candidate not in _canonical_symptoms():

@@ -10771,6 +10771,16 @@ button:focus:not(:focus-visible) {
   border-left-color: rgba(167, 139, 250, 0.7);
 }
 
+.handling-balance-corroboration {
+  color: #8fa2b4;
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+}
+
+.handling-balance-corroboration[data-corroborated="true"] {
+  color: #7dd3a8;
+}
+
 .handling-balance-item-head {
   display: flex;
   flex-wrap: wrap;

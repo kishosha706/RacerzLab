@@ -37,6 +37,7 @@ import {
   SmartIntelligenceCards,
 } from "../components/SmartIntelligenceCards";
 import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPanel";
+import { HandlingInvestigationPanel } from "../components/HandlingInvestigationPanel";
 import { VehicleSystemsPanel } from "../components/VehicleSystemsPanel";
 import { CrewChiefCommandDeck } from "../components/CrewChiefCommandDeck";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
@@ -301,8 +302,8 @@ function LearningReadinessCard({
       </section>
     );
   }
-  const projection = state.projection;
-  const activeCampaign = projection.active_campaigns[0] ?? null;
+  const { projection } = state;
+  const [activeCampaign] = projection.active_campaigns;
   const highestOption = projection.acquisition_options.find((option) => option.state === "highest") ?? null;
   const latestRejectedLap = activeCampaign?.latest_assessment?.rejected_lap_numbers[0] ?? null;
   const latestLapRejection = latestRejectedLap == null
@@ -1718,6 +1719,13 @@ export function IntelligencePanel({
           </button>
         </div>
       </section>
+
+      <HandlingInvestigationPanel
+        runId={runId}
+        sessionId={sessionId ?? ""}
+        learning={learning}
+        surface="engineer"
+      />
 
       {!learning && (
         <button

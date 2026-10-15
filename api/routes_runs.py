@@ -146,9 +146,9 @@ def get_telemetry_capabilities(run_id: str) -> dict[str, Any]:
         run_id,
         expected_source_file_sha256=session.file_hash,
     )
-    if not manifest:
-        raise HTTPException(status_code=404, detail=f"Telemetry capability manifest not found for run: {run_id}")
-    return manifest
+    if manifest:
+        return manifest
+    raise HTTPException(status_code=404, detail=f"Telemetry capability manifest not found for run: {run_id}")
 
 
 @router.get("/{run_id}/trace", response_model=TraceResponse)

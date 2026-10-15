@@ -250,6 +250,7 @@ export type CanonicalEngineeringCase = {
   authority: "case_receipt_only";
   p19_authority_unchanged: true;
   setup_authorized: false;
+  handling_investigation?: import("../types/openapi.generated").components["schemas"]["HandlingInvestigationProjection"] | null;
 };
 
 export type EngineeringCaseRevision = {

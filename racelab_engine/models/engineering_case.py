@@ -12,6 +12,10 @@ from typing import Any, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from racelab_engine.identity import canonical_json_sha256
+from racelab_engine.models.handling_balance import HandlingClassification
+from racelab_engine.models.handling_investigation import (
+    HandlingInvestigationProjection,
+)
 from racelab_engine.models.vehicle_dynamics_knowledge import (
     OperationalResponseEvidence,
 )
@@ -951,6 +955,7 @@ class CanonicalEngineeringCase(EngineeringCaseModel):
     authority: Literal["case_receipt_only"] = "case_receipt_only"
     p19_authority_unchanged: Literal[True] = True
     setup_authorized: Literal[False] = False
+    handling_investigation: HandlingInvestigationProjection | None = None
 
     @classmethod
     def build(cls, **values: Any) -> Self:
@@ -1082,6 +1087,21 @@ class CanonicalEngineeringCase(EngineeringCaseModel):
             raise ValueError("engineering case workflow identity must be complete")
         if self.mission.terminal_move_sha256 != self.terminal_move_sha256:
             raise ValueError("engineering mission must exactly mirror the terminal move")
+        if self.handling_investigation is not None and (
+            self.handling_investigation.run_id != self.run_id
+            or self.handling_investigation.session_id != self.session_id
+            or self.handling_investigation.setup_id != self.setup_id
+        ):
+            raise ValueError(
+                "the handling investigation must bind this exact run, session, and setup"
+            )
+        if self.handling_investigation is not None and any(
+            item.classification == HandlingClassification.UNAVAILABLE
+            for item in self.handling_investigation.assessment_refs
+        ):
+            raise ValueError(
+                "a case-embedded handling investigation requires qualified assessments"
+            )
         body = self.model_dump(mode="json", exclude={"case_id", "case_sha256"})
         if canonical_json_sha256(body) != self.case_sha256:
             raise ValueError("engineering case content identity is corrupt")

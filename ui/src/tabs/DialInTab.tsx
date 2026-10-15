@@ -11,6 +11,12 @@ import {
 import { useCompareBasket } from "../store/CompareBasketContext";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { useEngineeringCase } from "../store/EngineeringCaseContext";
+import { HandlingKnowledgeCard } from "../components/HandlingKnowledgeCard";
+import {
+  clearHandlingObservationHandoff,
+  readHandlingObservationHandoff,
+  type HandlingObservationHandoff,
+} from "../utils/handlingObservationHandoff";
 import { setupSnapshotMatchesRun } from "../utils/evidenceTrust";
 import { evidenceStrengthOutOf100 } from "../utils/evidenceScore";
 import {
@@ -154,8 +160,7 @@ function readCompleteDecisionContext(workflow: ControlledWorkflow | null): Compl
   const zoneEnd = readNullableNumber(context, "selected_zone_end_pct");
   const zoneLabel = readNullableText(context, "selected_zone_label");
   const selectedPhase = readNullableText(context, "selected_phase");
-  const objective = context.objective;
-  const priority = context.priority;
+  const { objective, priority } = context;
   if (
     selectedLap === undefined
     || (selectedLap !== null && (!Number.isInteger(selectedLap) || selectedLap < 1))
@@ -700,6 +705,7 @@ export function DialInTab({
   const [certificateMarkdown, setCertificateMarkdown] = useState<string | null>(null);
   const [certificateBusy, setCertificateBusy] = useState(false);
   const [certificateError, setCertificateError] = useState<string | null>(null);
+  const [observationHandoff, setObservationHandoff] = useState<HandlingObservationHandoff | null>(null);
   const activeControlledTest = isActiveControlledTest(workflow);
   const activeWorkflow = workflow != null && workflow.status !== "scored" && workflow.status !== "cancelled";
   const workflowScopeConflict = ambiguousActiveWorkflowCount > 1;
@@ -712,6 +718,43 @@ export function DialInTab({
   const persistedDecisionContext = useMemo(() => readCompleteDecisionContext(workflow), [workflow]);
   const workflowRecordIntegrityReady = !activeWorkflow || (workflow != null && captureWorkflowPlanBinding(workflow) != null);
   const workflowAuthorityBlocked = workflowScopeConflict || workflowIdentityError != null || !workflowRecordIntegrityReady;
+
+  useEffect(() => {
+    if (!sessionId) {
+      setObservationHandoff(null);
+      return;
+    }
+    const handoff = readHandlingObservationHandoff(sessionId);
+    if (!handoff) {
+      setObservationHandoff(null);
+      return;
+    }
+    if (
+      engineeringCaseStatus !== "ready"
+      || !engineeringCase
+      || handoff.runId !== overview?.run_id
+      || handoff.caseId !== engineeringCase.case_id
+      || handoff.caseRevision !== engineeringCase.case_revision_sha256
+      || handoff.caseSha256 !== engineeringCase.case_sha256
+    ) {
+      clearHandlingObservationHandoff(sessionId);
+      setObservationHandoff(null);
+      return;
+    }
+    const ref = engineeringCase.handling_investigation?.assessment_refs?.find(
+      (item) => item.assessment_id === handoff.assessmentId,
+    );
+    if (
+      !ref
+      || ref.phase !== handoff.phase
+      || (ref.canonical_symptom_id ?? null) !== handoff.canonicalSymptomId
+    ) {
+      clearHandlingObservationHandoff(sessionId);
+      setObservationHandoff(null);
+      return;
+    }
+    setObservationHandoff(handoff);
+  }, [sessionId, overview?.run_id, engineeringCaseStatus, engineeringCase]);
 
   useEffect(() => {
     try {
@@ -1773,6 +1816,23 @@ export function DialInTab({
           )}
         </div>
       </section>
+      {observationHandoff && overview && sessionId && engineeringCaseReady && engineeringCase && (
+        <HandlingKnowledgeCard
+          runId={overview.run_id}
+          sessionId={sessionId}
+          handoff={observationHandoff}
+          expectedCase={{
+            caseId: engineeringCase.case_id,
+            caseRevision: engineeringCase.case_revision_sha256,
+            caseSha256: engineeringCase.case_sha256,
+            setupId: engineeringCase.setup_id,
+          }}
+          onDismiss={() => {
+            clearHandlingObservationHandoff(sessionId);
+            setObservationHandoff(null);
+          }}
+        />
+      )}
       {workflowScopeConflict && (
         <section className="dialin-panel dialin-workflow-recovery" aria-label="Resolve active workflow conflict">
           <span className="eyebrow">Recovery only · setup authority withheld</span>

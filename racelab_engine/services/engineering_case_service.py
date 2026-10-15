@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from threading import RLock
-from typing import Any
+from typing import Any, Literal
 
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.knowledge.engineering_semantic_registry import (
@@ -27,6 +27,9 @@ from racelab_engine.models.engineering_case import (
     ResponseExpectationEvaluation,
     SetupEffectReadiness,
 )
+from racelab_engine.models.handling_investigation import (
+    HandlingInvestigationProjection,
+)
 from racelab_engine.services.p19_response_admission_service import (
     build_p19_response_evaluations_and_admissions,
 )
@@ -34,6 +37,24 @@ from racelab_engine.services.p19_response_admission_service import (
 
 _CASE_BUILD_LOCK = RLock()
 _CASE_PROJECTION_BUILD_COUNT = 0
+_RESOLUTION_STATUS: dict[
+    str,
+    Literal[
+        "available_now",
+        "requires_more_laps",
+        "requires_new_run",
+        "pit_snapshot_only",
+        "controlled_test_required",
+        "structurally_unavailable",
+    ],
+] = {
+    "use_current_data": "available_now",
+    "collect_more_laps": "requires_more_laps",
+    "collect_new_run": "requires_new_run",
+    "pit_snapshot": "pit_snapshot_only",
+    "controlled_test": "controlled_test_required",
+    "unavailable": "structurally_unavailable",
+}
 
 
 def engineering_case_id(*, run_id: str, session_id: str) -> str:
@@ -217,6 +238,16 @@ def build_setup_effect_readiness(
             for relation in expected_relations
             for artifact_id in response_by_relation.get(relation, ())
         )
+        state: Literal[
+            "knowledge_only",
+            "measurement_ready",
+            "response_evidence_ready",
+            "p19_testable",
+            "blocked",
+        ]
+        authority: Literal["knowledge_only", "measurement_only", "exact_p19_projection"]
+        setup_authorized: bool
+        missing: tuple[str, ...]
         if hypothesis.knowledge_applicability in {"blocked_by_build", "unsupported"}:
             state = "blocked"
             authority = "knowledge_only"
@@ -435,7 +466,11 @@ def build_engineering_mission(
         else "Current exact run scope"
     )
     authority = getattr(terminal_decision, "authority", "context_only")
-    source_authority = (
+    source_authority: Literal[
+        "p19_exact_mirror",
+        "p19_measurement_mirror",
+        "navigation_only",
+    ] = (
         "p19_exact_mirror"
         if authority == "p19_projection_only"
         else "p19_measurement_mirror"
@@ -478,14 +513,7 @@ def build_capability_resolutions(
 ) -> tuple[CapabilityEvidenceResolution, ...]:
     resolutions: dict[str, CapabilityEvidenceResolution] = {}
     for deficit in deficits:
-        status = {
-            "use_current_data": "available_now",
-            "collect_more_laps": "requires_more_laps",
-            "collect_new_run": "requires_new_run",
-            "pit_snapshot": "pit_snapshot_only",
-            "controlled_test": "controlled_test_required",
-            "unavailable": "structurally_unavailable",
-        }[deficit.recovery_mode]
+        status = _RESOLUTION_STATUS[deficit.recovery_mode]
         recovery = {
             "use_current_data": "Open the exact current artifact in Telemetry Capabilities.",
             "collect_more_laps": "Record more eligible exact-context laps with the setup unchanged.",
@@ -537,6 +565,7 @@ def engineering_case_projection_revision_sha256(
     crew_event_head_sha256: str | None,
     crew_current_subgoal: str | None,
     crew_critic_state: str,
+    handling_investigation_sha256: str | None = None,
 ) -> str:
     """Bind every late-built case projection without a wrapper-hash cycle.
 
@@ -629,6 +658,7 @@ def engineering_case_projection_revision_sha256(
             "crew_event_head_sha256": crew_event_head_sha256,
             "crew_current_subgoal": crew_current_subgoal,
             "crew_critic_state": crew_critic_state,
+            "p356_handling_investigation_sha256": handling_investigation_sha256,
         }
     )
 
@@ -656,6 +686,7 @@ def build_canonical_engineering_case(
     crew_current_subgoal: str | None = None,
     crew_critic_state: str = "unavailable",
     case_revision_sha256: str | None = None,
+    handling_investigation: HandlingInvestigationProjection | None = None,
 ) -> CanonicalEngineeringCase:
     global _CASE_PROJECTION_BUILD_COUNT
     with _CASE_BUILD_LOCK:
@@ -850,6 +881,7 @@ def build_canonical_engineering_case(
                 "P36 qualification requires a completed real-session certificate; no scientific count is credited.",
             ),
         ),
+        handling_investigation=handling_investigation,
     )
 
 

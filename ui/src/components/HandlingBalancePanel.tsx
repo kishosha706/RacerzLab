@@ -24,11 +24,13 @@ type PanelState =
   | { status: "error"; report: null; error: string };
 
 const QUALIFIED_KINDS = new Set([
+  "kinematic_residual_observation",
   "rotation_response_deficit",
   "rotation_response_excess",
   "mixed_phase_dependent",
   "transient_rotation_anomaly",
   "steering_response_anomaly",
+  "steering_demand_anomaly",
 ]);
 
 function repeatabilityLabel(assessment: HandlingAssessment): string {
@@ -38,7 +40,8 @@ function repeatabilityLabel(assessment: HandlingAssessment): string {
 
 export function HandlingBalancePanel({ runId, surface = "overview" }: HandlingBalancePanelProps) {
   const { selection, setWorkspace, focusEvidence } = useTelemetrySelection();
-  const isLearning = selection.selectedMode === "learning";
+  const { selectedMode } = selection;
+  const isLearning = selectedMode === "learning";
   const requestSeqRef = useRef(0);
   const [state, setState] = useState<PanelState>({ status: "idle", report: null, error: null });
 
@@ -80,7 +83,7 @@ export function HandlingBalancePanel({ runId, surface = "overview" }: HandlingBa
     );
   }
 
-  const report = state.report;
+  const { report } = state;
   const openPhaseEvidence = (phase: string, lapNumber: number | null) => {
     focusEvidence({
       runId,
@@ -161,6 +164,15 @@ export function HandlingBalancePanel({ runId, surface = "overview" }: HandlingBa
                   Canonical symptom <code>{assessment.canonical_symptom_id}</code> — telemetry-observed, not driver testimony.
                 </p>
               )}
+              {isLearning && assessment.phase_observations?.[0]?.corroboration != null && (
+                <p className="handling-balance-corroboration" data-corroborated={
+                  assessment.phase_observations[0].corroboration?.corroborated === true
+                }>
+                  {assessment.phase_observations[0].corroboration.corroborated
+                    ? "Two independent strands corroborate: kinematic residual + steering-demand response."
+                    : "Kinematic diagnostic only — the residual is a sideslip-rate proxy and cannot establish tight or loose on its own."}
+                </p>
+              )}
               {isLearning && assessment.supporting_evidence && assessment.supporting_evidence.length > 0 && (
                 <ul className="muted handling-balance-evidence">
                   {assessment.supporting_evidence.slice(0, 2).map((line) => <li key={line}>{line}</li>)}
@@ -176,9 +188,10 @@ export function HandlingBalancePanel({ runId, surface = "overview" }: HandlingBa
         </ul>
       )}
       <p className="muted handling-balance-footnote">
-        The reference is speed × actual-path curvature. It is not the driver's intended path, so a
-        signature is a response observation, never measured understeer or oversteer. P19 remains the
-        only setup authority.
+        The kinematic residual is speed × actual-path curvature minus yaw rate — the planar
+        sideslip rate, blind to a constant sideslip angle. A tight/loose-family symptom qualifies
+        only when the steering-demand-to-response strand independently corroborates it. The
+        reference is not the driver's intended path, and P19 remains the only setup authority.
       </p>
     </section>
   );

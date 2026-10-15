@@ -1,6 +1,7 @@
 import type { EngineeringCaseRevision } from "../types/engineeringCase";
 import { canonicalJsonSha256 } from "./canonicalJsonSha256";
 import { engineeringCaseFloatKeys } from "./crewChiefResponseTrust";
+import { isHandlingInvestigationProjection } from "./handlingInvestigationTrust";
 
 const hash = /^[0-9a-f]{64}$/;
 const caseId = /^p3543case_[0-9a-f]{24}$/;
@@ -455,7 +456,7 @@ export async function isEngineeringCaseRevision(
     || (focus.artifact_id !== null && !artifactIds.includes(focus.artifact_id))
     || focus.authority !== "navigation_only") return false;
 
-  const mission = engineeringCase.mission;
+  const { mission } = engineeringCase;
   if (!safeText(mission.what)
     || !safeText(mission.where)
     || !safeText(mission.why_it_matters)
@@ -480,5 +481,16 @@ export async function isEngineeringCaseRevision(
     || campaign.null_count_credited !== false
     || campaign.negative_control_count_credited !== false
     || campaign.subgroup_count_credited !== false) return false;
+
+  const { handling_investigation: handlingInvestigation } = engineeringCase;
+  if (handlingInvestigation !== null
+    && handlingInvestigation !== undefined
+    && !isHandlingInvestigationProjection(handlingInvestigation, {
+      runId: expected.runId,
+      sessionId: expected.sessionId,
+      setupId: engineeringCase.setup_id,
+    })) {
+    return false;
+  }
   return true;
 }

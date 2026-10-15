@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from api.routes_runs import get_run_or_404, repository
+from api.routes_runs import RunOverview, get_run_or_404, repository
 from racelab_engine.analysis.braking_efficiency import (
     BrakingEfficiencyReport,
     analyze_braking_efficiency,
@@ -20,9 +21,6 @@ from racelab_engine.analysis.p3_contracts import (
     STINT_STRATEGY_CONTRACT,
 )
 from racelab_engine.analysis.evidence_contracts import RELATIVE_HIGH_SPEED_RESISTANCE_CONTRACT
-from racelab_engine.analysis.handling_balance import analyze_handling_balance
-from racelab_engine.analysis.handling_balance_contracts import HANDLING_BALANCE_CONTRACT
-from racelab_engine.analysis.lap_eligibility import eligible_laps
 from racelab_engine.analysis.p3_common import finite
 from racelab_engine.analysis.powertrain_gearing import PowertrainGearingReport, analyze_powertrain_gearing
 from racelab_engine.analysis.relative_resistance import RelativeResistanceReport, analyze_relative_resistance_aba
@@ -31,24 +29,26 @@ from racelab_engine.analysis.setup_diff import (
     setup_controls_comparable,
     unmapped_setup_change_paths,
 )
-from racelab_engine.analysis.sim_integrity import SimIntegrityCertificate, build_sim_integrity_certificate
+from racelab_engine.analysis.sim_integrity import (
+    SIM_INTEGRITY_CHANNELS as _INTEGRITY_CHANNELS,
+    SimIntegrityCertificate,
+    build_sim_integrity_certificate,
+    cohort_sim_integrity,
+)
 from racelab_engine.analysis.tire_state_energy import TireStateReport, analyze_tire_state
 from racelab_engine.analysis.stint_strategy import StintStrategyReport, analyze_stint_strategy
 from racelab_engine.models.handling_balance import HandlingBalanceReport
+from racelab_engine.models.handling_knowledge import HandlingKnowledgeProjection
+from racelab_engine.services.handling_investigation_service import (
+    build_handling_balance_report,
+)
+from racelab_engine.services.handling_knowledge_service import (
+    build_handling_knowledge,
+)
 from racelab_engine.services.import_service import read_telemetry_manifest, read_telemetry_rows
 
 
 router = APIRouter(prefix="/api/runs", tags=["p3-engineering"])
-
-_INTEGRITY_CHANNELS = [
-    "session_tick", "session_time", "frame_rate", "cpu_usage_foreground",
-    "cpu_usage_background", "gpu_usage", "memory_page_faults_per_s",
-    "memory_soft_page_faults_per_s", "channel_latency_s",
-    "channel_average_latency_s", "channel_quality",
-    "SessionTick", "SessionTime", "FrameRate", "CpuUsageFG", "CpuUsageBG",
-    "GpuUsage", "MemPageFaultSec", "MemSoftPageFaultSec", "ChanLatency",
-    "ChanAvgLatency", "ChanQuality",
-]
 
 
 class RelativeResistanceABARequest(BaseModel):
@@ -105,7 +105,7 @@ def _has_corner_damper_setting(value: Any, path: tuple[str, ...] = ()) -> bool:
             _has_corner_damper_setting(child, (*path, str(key)))
             for key, child in value.items()
         )
-    if isinstance(value, bool) or not isinstance(value, (int, float, str)) or str(value).strip() == "":
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)) or not str(value).strip():
         return False
     compact_path = tuple(_compact_setup_key(part) for part in path)
     identifies_corner = any(_identifies_damper_corner(part) for part in compact_path)
@@ -118,21 +118,19 @@ def _assert_aba_compatibility(run_ids: tuple[str, str, str]) -> None:
         read_telemetry_manifest(run_id).get("compatibility_identity") or {}
         for run_id in run_ids
     ]
-    missing = [
+    if (missing := [
         label for key, label in _ABA_IDENTITY_FIELDS.items()
         if any(identity.get(key) is None for identity in identities)
-    ]
-    if missing:
+    ]):
         raise HTTPException(
             409,
             "A/B/A resistance requires complete three-run compatibility identity; missing "
             + ", ".join(missing) + ".",
         )
-    mismatches = [
+    if (mismatches := [
         label for key, label in _ABA_IDENTITY_FIELDS.items()
         if len({str(identity.get(key)) for identity in identities}) != 1
-    ]
-    if mismatches:
+    ]):
         raise HTTPException(
             400,
             "A/B/A runs are not compatible for setup attribution; mismatched "
@@ -140,10 +138,10 @@ def _assert_aba_compatibility(run_ids: tuple[str, str, str]) -> None:
         )
 
 
-def _aba_setup_change_isolated(setups: list[object]) -> bool:
+def _aba_setup_change_isolated(setups: Sequence[object]) -> bool:
     a1_b = diff_setups(setups[0], setups[1])
     a1_a2 = diff_setups(setups[0], setups[2])
-    return bool(
+    return (
         all(
             setup_controls_comparable(left, right)
             for left, right in ((setups[0], setups[1]), (setups[0], setups[2]))
@@ -155,7 +153,7 @@ def _aba_setup_change_isolated(setups: list[object]) -> bool:
     )
 
 
-def _selected_lap(run_id: str, requested: int | None) -> tuple[object, int]:
+def _selected_lap(run_id: str, requested: int | None) -> tuple[RunOverview, int]:
     overview = get_run_or_404(run_id)
     lap = requested if requested is not None else (
         overview.best_useful_lap.lap_number if overview.best_useful_lap is not None else None
@@ -187,7 +185,7 @@ def _server_setup_redline_rpm(setup: object | None) -> float | None:
         normalized = re.sub(r"[^a-z0-9]", "", key.lower())
         if normalized in _SERVER_REDLINE_KEYS:
             match = re.search(r"[-+]?\d+(?:\.\d+)?", str(value))
-            number = finite(match.group(0)) if match else None
+            number = finite(match[0]) if match else None
             if number is not None and 500.0 <= number <= 30_000.0:
                 candidates.append(number)
         if isinstance(value, dict):
@@ -239,18 +237,7 @@ def _cohort_integrity(
     laps: list,
     telemetry_rate_hz: float | None,
 ) -> tuple[bool | None, float]:
-    certificates = [
-        _certificate(
-            [row for row in rows if row.get("lap") == lap.lap_number],
-            telemetry_rate_hz,
-        )
-        for lap in eligible_laps(laps)
-    ]
-    if not certificates or any(item.is_clear_for_analysis is None for item in certificates):
-        return None, min((item.confidence_cap for item in certificates), default=0.35)
-    if any(item.is_clear_for_analysis is False for item in certificates):
-        return False, min(item.confidence_cap for item in certificates)
-    return True, min(item.confidence_cap for item in certificates)
+    return cohort_sim_integrity(rows, laps, telemetry_rate_hz)
 
 
 @router.get("/{run_id}/sim-integrity", response_model=SimIntegrityCertificate)
@@ -315,8 +302,7 @@ def get_powertrain_gearing(
     request: Request,
     lap: int | None = None,
 ) -> PowertrainGearingReport:
-    unexpected = sorted(set(request.query_params) - {"lap"})
-    if unexpected:
+    if (unexpected := sorted(set(request.query_params) - {"lap"})):
         raise HTTPException(
             422,
             f"Unsupported powertrain/gearing query fields: {', '.join(unexpected)}. "
@@ -353,20 +339,41 @@ def get_stint_strategy(run_id: str) -> StintStrategyReport:
 @router.get("/{run_id}/handling-balance", response_model=HandlingBalanceReport)
 def get_handling_balance(run_id: str) -> HandlingBalanceReport:
     overview = get_run_or_404(run_id)
-    rows = _rows(run_id, HANDLING_BALANCE_CONTRACT, _INTEGRITY_CHANNELS)
-    cohort_clear, cohort_cap = _cohort_integrity(rows, overview.laps, overview.session.telemetry_rate_hz)
-    return analyze_handling_balance(
-        rows,
-        overview.laps,
-        run_id=run_id,
-        selected_lap=(
-            overview.best_useful_lap.lap_number
-            if overview.best_useful_lap is not None else None
-        ),
-        sim_integrity_clear=cohort_clear,
-        sim_integrity_confidence_cap=cohort_cap,
-        setup_change_isolated=True,
+    return build_handling_balance_report(run_id, overview)
+
+
+@router.get(
+    "/{run_id}/handling-knowledge",
+    response_model=HandlingKnowledgeProjection,
+)
+def get_handling_knowledge(
+    run_id: str,
+    request: Request,
+    session_id: str = "",
+    assessment_id: str = "",
+) -> HandlingKnowledgeProjection:
+    if (unexpected := sorted(set(request.query_params) - {"session_id", "assessment_id"})):
+        raise HTTPException(
+            422,
+            f"Unsupported handling-knowledge query fields: {', '.join(unexpected)}. "
+            "The exact session and assessment identity is required.",
+        )
+    if not session_id or not assessment_id:
+        raise HTTPException(
+            422,
+            "Handling knowledge requires the exact session_id and assessment_id.",
+        )
+    get_run_or_404(run_id)
+    projection = build_handling_knowledge(
+        run_id, session_id=session_id, assessment_id=assessment_id
     )
+    if projection is None:
+        raise HTTPException(
+            404,
+            "No qualified handling observation matches this exact run, "
+            "session, and assessment identity.",
+        )
+    return projection
 
 
 @router.post("/relative-resistance/aba", response_model=RelativeResistanceReport)

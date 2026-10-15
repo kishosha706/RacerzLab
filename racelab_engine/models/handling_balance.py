@@ -17,14 +17,32 @@ from racelab_engine.models.evidence import EvidenceState
 
 
 class HandlingClassification(str, Enum):
-    """Descriptive rotation-response signatures. Never "tight"/"loose" verdicts."""
+    """Descriptive rotation-response signatures. Never "tight"/"loose" verdicts.
 
-    # Rotation demand is satisfied within the run-local reference envelope.
+    Physics audit (2026-10-13): the residual speed x path-curvature - yaw_rate
+    equals the planar sideslip RATE (d(beta)/dt), because course angle =
+    heading + sideslip. It is therefore zero in steady-state cornering no
+    matter how unbalanced the car is, and nonzero during transients without
+    implying imbalance. A deficit/excess classification now requires a second,
+    independent steering-demand-to-response strand to corroborate the residual
+    under comparable conditions. The residual alone maps to no tight/loose
+    symptom.
+    """
+
+    # No strand qualified beyond the run-local reference envelope. This is
+    # not evidence of neutral balance: the kinematic residual is blind to a
+    # constant sideslip angle.
     NO_SIGNIFICANT_IMBALANCE_QUALIFIED = "no_significant_imbalance_qualified"
-    # Sustained positive response deficit (car rotates less than the
-    # path-kinematic reference) beyond the run-local noise envelope.
+    # The kinematic residual (planar sideslip-rate proxy) exceeds the run-local
+    # noise envelope, but steering-demand-to-response evidence does not
+    # corroborate it. Diagnostic only; no canonical symptom mapping.
+    KINEMATIC_RESIDUAL_OBSERVATION = "kinematic_residual_observation"
+    # Corroborated reduced rotation response: the kinematic residual is
+    # positive beyond the noise envelope AND steering demand per achieved
+    # curvature is independently elevated on comparable laps.
     ROTATION_RESPONSE_DEFICIT = "rotation_response_deficit"
-    # Sustained negative response deficit beyond the run-local noise envelope.
+    # Corroborated excess rotation-like response: residual negative beyond the
+    # noise envelope AND steering demand per curvature independently reduced.
     ROTATION_RESPONSE_EXCESS = "rotation_response_excess"
     # Opposing qualified signatures in different canonical phases.
     MIXED_PHASE_DEPENDENT = "mixed_phase_dependent"
@@ -32,6 +50,10 @@ class HandlingClassification(str, Enum):
     TRANSIENT_ROTATION_ANOMALY = "transient_rotation_anomaly"
     # Elevated correction demand without a sustained response deficit.
     STEERING_RESPONSE_ANOMALY = "steering_response_anomaly"
+    # Steering demand per achieved curvature diverges from the run-local
+    # reference on comparable laps without a corroborating kinematic residual.
+    # Diagnostic only; no canonical symptom mapping.
+    STEERING_DEMAND_ANOMALY = "steering_demand_anomaly"
     # Evidence exists but cannot support any signature above.
     INCONCLUSIVE = "inconclusive"
     # Missing measurements or an ineligible recording.
@@ -40,6 +62,41 @@ class HandlingClassification(str, Enum):
 
 class HandlingAuthority(str, Enum):
     OBSERVATION_ONLY = "observation_only"
+
+
+class HandlingCorroboration(EngineeringModel):
+    """Two-strand qualification status for one phase observation.
+
+    Strand A is the kinematic residual (speed x path-curvature - yaw_rate),
+    which equals the planar sideslip rate. Strand B is the steering-demand-to-
+    response relationship (steering demand per achieved path curvature) at
+    comparable speeds. Both strands must be qualified and aligned before a
+    deficit/excess signature may carry a canonical tight/loose-family symptom.
+
+    Dependence audit: the two strands share measured path curvature and the
+    same run-local reference lap group. They are complementary relationships,
+    not statistically independent evidence; corroboration qualifies the
+    symptom mapping and can never inflate independent evidence-unit counts.
+    """
+
+    kinematic_residual_strand_qualified: bool = False
+    steering_response_strand_qualified: bool = False
+    steering_response_direction: str | None = Field(
+        default=None, pattern=r"^(elevated|reduced)$",
+    )
+    aligned: bool = False
+    corroborated: bool = False
+    shared_input_channels: tuple[str, ...] = ("curvature_1_per_m",)
+    shared_reference_laps: bool = True
+    independence_qualification: str = Field(
+        default=(
+            "The kinematic residual and the steering-demand strand share "
+            "measured path curvature and the same run-local reference lap "
+            "group; they are complementary relationships, not statistically "
+            "independent evidence."
+        ),
+        min_length=1,
+    )
 
 
 class HandlingPhaseObservation(EngineeringModel):
@@ -56,12 +113,15 @@ class HandlingPhaseObservation(EngineeringModel):
     rotation_response_deficit_abs_p90_rad_s: float | None = Field(default=None, ge=0.0)
     rotation_response_ratio_median: float | None = Field(default=None, ge=0.0)
     steering_efficiency_median_curvature_per_rad: float | None = Field(default=None, ge=0.0)
+    steering_demand_per_curvature_median_deg_per_inv_m: float | None = Field(default=None, ge=0.0)
+    steering_demand_relative_deviation_scale_units: float | None = None
+    speed_median_mps: float | None = Field(default=None, ge=0.0)
     correction_count_median: float | None = Field(default=None, ge=0.0)
     max_yaw_rate_of_change_rad_s2: float | None = Field(default=None, ge=0.0)
-    sideslip_rate_proxy_median_rad_s: float | None = None
     noise_scale_deficit_rad_s: float | None = Field(default=None, ge=0.0)
     coverage_fraction: float = Field(ge=0.0, le=1.0)
     reference_lap_group: tuple[int, ...] = Field(default_factory=tuple)
+    corroboration: HandlingCorroboration | None = None
 
     @model_validator(mode="after")
     def reference_laps_are_unique(self) -> HandlingPhaseObservation:
@@ -73,7 +133,7 @@ class HandlingPhaseObservation(EngineeringModel):
 class HandlingBalanceAssessment(EngineeringModel):
     """One located, qualified handling observation with full provenance."""
 
-    schema_version: str = "p-handling-balance.assessment.v1"
+    schema_version: str = "p-handling-balance.assessment.v2"
     assessment_id: str
     run_id: str
     session_id: str | None = None
@@ -120,13 +180,32 @@ class HandlingBalanceAssessment(EngineeringModel):
             and not self.blocker_reasons
         ):
             raise ValueError("unavailable assessments require blocker_reasons")
+        if self.canonical_symptom_id is not None:
+            if self.classification not in {
+                HandlingClassification.ROTATION_RESPONSE_DEFICIT,
+                HandlingClassification.ROTATION_RESPONSE_EXCESS,
+            }:
+                raise ValueError(
+                    "a canonical symptom association requires a corroborated "
+                    "deficit or excess signature; a kinematic residual or "
+                    "steering-demand observation alone cannot carry one"
+                )
+            if not any(
+                observation.corroboration is not None
+                and observation.corroboration.corroborated
+                for observation in self.phase_observations
+            ):
+                raise ValueError(
+                    "a canonical symptom association requires two-strand "
+                    "corroboration in the phase observations"
+                )
         return self
 
 
 class HandlingBalanceReport(EngineeringModel):
     """Run-level aggregation of handling-balance observations."""
 
-    schema_version: str = "p-handling-balance.report.v1"
+    schema_version: str = "p-handling-balance.report.v2"
     run_id: str
     session_id: str | None = None
     selected_lap: int | None = None
@@ -154,5 +233,6 @@ __all__ = [
     "HandlingBalanceAssessment",
     "HandlingBalanceReport",
     "HandlingClassification",
+    "HandlingCorroboration",
     "HandlingPhaseObservation",
 ]

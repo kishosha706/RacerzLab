@@ -165,9 +165,9 @@ function errorMessageFromResponseText(text: string, fallback: string): string {
         technical_detail?: string;
       };
     };
-    if (typeof payload.detail === "string") return payload.detail;
-    if (payload.detail && typeof payload.detail === "object") {
-      const detail = payload.detail;
+    const { detail } = payload;
+    if (typeof detail === "string") return detail;
+    if (detail && typeof detail === "object") {
       return [
         detail.title ?? fallback,
         detail.message,
@@ -344,6 +344,39 @@ export function fetchHandlingBalance(runId: string): Promise<OpenApiComponents["
       );
     }
     return payload;
+  });
+}
+
+export function fetchHandlingKnowledge(
+  runId: string,
+  sessionId: string,
+  assessmentId: string,
+  expectedCase: { caseId: string; caseRevision: string; caseSha256: string; setupId: string },
+): Promise<OpenApiComponents["schemas"]["HandlingKnowledgeProjection"]> {
+  const params = new URLSearchParams({
+    session_id: sessionId,
+    assessment_id: assessmentId,
+  });
+  return requestJson<unknown>(
+    `/api/runs/${encodeURIComponent(runId)}/handling-knowledge?${params.toString()}`,
+    undefined,
+    INTELLIGENCE_TIMEOUT_MS,
+    "Handling knowledge",
+  ).then(async (payload) => {
+    const trusted = await import("../utils/handlingKnowledgeTrust");
+    if (!await trusted.isHandlingKnowledgeProjection(payload, {
+      runId,
+      sessionId,
+      setupId: expectedCase.setupId,
+      caseId: expectedCase.caseId,
+      caseRevision: expectedCase.caseRevision,
+      caseSha256: expectedCase.caseSha256,
+    })) {
+      throw new Error(
+        "Handling knowledge failed its exact case, observation, or observation-only authority check.",
+      );
+    }
+    return payload as OpenApiComponents["schemas"]["HandlingKnowledgeProjection"];
   });
 }
 

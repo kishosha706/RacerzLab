@@ -21,6 +21,48 @@ from racelab_engine.models.evidence import EvidenceState
 
 IntegrityStatus = Literal["pass", "warning", "fail", "unknown"]
 
+# Declared simulator/data-integrity channel families (canonical and raw
+# aliases) shared by every producer route that certifies an eligible cohort.
+SIM_INTEGRITY_CHANNELS = [
+    "session_tick", "session_time", "frame_rate", "cpu_usage_foreground",
+    "cpu_usage_background", "gpu_usage", "memory_page_faults_per_s",
+    "memory_soft_page_faults_per_s", "channel_latency_s",
+    "channel_average_latency_s", "channel_quality",
+    "SessionTick", "SessionTime", "FrameRate", "CpuUsageFG", "CpuUsageBG",
+    "GpuUsage", "MemPageFaultSec", "MemSoftPageFaultSec", "ChanLatency",
+    "ChanAvgLatency", "ChanQuality",
+]
+
+
+def cohort_sim_integrity(
+    rows: list[dict[str, Any]],
+    laps: list[Any],
+    telemetry_rate_hz: float | None,
+) -> tuple[bool | None, float]:
+    """Certify the eligible-lap cohort with one fail-closed verdict.
+
+    Returns (is_clear_for_analysis, confidence_cap): True when every eligible
+    lap is clear, False when any is not, None when any verdict is unknown.
+    """
+    from racelab_engine.analysis.lap_eligibility import eligible_laps
+
+    certificates = [
+        build_sim_integrity_certificate(
+            [row for row in rows if row.get("lap") == lap.lap_number],
+            expected_sample_rate_hz=telemetry_rate_hz,
+        )
+        for lap in eligible_laps(laps)
+    ]
+    if not certificates or any(
+        item.is_clear_for_analysis is None for item in certificates
+    ):
+        return None, min(
+            (item.confidence_cap for item in certificates), default=0.35
+        )
+    if any(item.is_clear_for_analysis is False for item in certificates):
+        return False, min(item.confidence_cap for item in certificates)
+    return True, min(item.confidence_cap for item in certificates)
+
 
 class IntegrityCheck(EngineeringModel):
     key: str
@@ -319,11 +361,11 @@ def build_sim_integrity_certificate(
     # Scanning every value in a wide telemetry row made the certificate cost
     # proportional to unrelated car channels and repeated that work per lap.
     usable_channels: set[str] = set()
-    for canonical, aliases in alias_sets.items():
+    for canonical, channel_aliases in alias_sets.items():
         present_alias = next(
             (
                 alias
-                for alias in aliases
+                for alias in channel_aliases
                 if any(finite(row.get(alias)) is not None for row in rows)
             ),
             None,
@@ -426,6 +468,7 @@ def comparison_integrity_gate(
 
 
 __all__ = [
-    "IntegrityCheck", "SimIntegrityCertificate", "build_sim_integrity_certificate",
+    "IntegrityCheck", "SIM_INTEGRITY_CHANNELS", "SimIntegrityCertificate",
+    "build_sim_integrity_certificate", "cohort_sim_integrity",
     "comparison_integrity_gate",
 ]

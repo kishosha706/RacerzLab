@@ -80,6 +80,7 @@ result, and remember only what the evidence supports.
 | P35.4.3 - Closed-Loop Engineering Interconnectivity | Verified locally; P36 qualification remains field-locked | One canonical case, first-class response artifacts, P19-owned admission, A/B/A2 response receipts, effect readiness, quantity observability, capability routing, memory capture, and semantic focus share one revision without changing authority |
 | P35.4.4 - Unified Engineering Case Experience | Verified locally; reviewed response expectations and field evidence remain locked | Stable case lifecycles, immutable revision history, one DriverIntent, typed semantic debt, exact-case queries, one mission/scope UI, and revision-safe specialist handoffs make all decision surfaces consume one P19-bounded engineering reality |
 | P35.5 - Field-Ready Alpha Hardening | Verified local release slice; field evidence remains unearned | One honest Next Gen oval alpha opens quickly, exposes one canonical move, packages as one owned desktop instance, and ships only after semantic real-file, dependency, contract, UI, and lifecycle gates pass |
+| P35.6 - Unified Handling Intelligence & Engineering Case Integration | Physics audit, investigation integration, and cross-workspace/Dial-In handoffs verified locally; P5/P6 and field evidence pending | Automatic handling observations are physics-audited (two-strand corroboration), feed one P35/P26/P32/P19 investigation path through the canonical Engineering Case, follow the user across every workspace, and reach Dial-In as telemetry-observed knowledge without fabricating driver wording or setup authority |
 | P36 - Prospective Investigation Evidence Campaigns | Planned; evidence collection remains data-locked | Qualified prospective campaigns produce the independent recurrence, controls, subgroups, and observable comparisons required before learned investigation ordering can earn promotion |
 
 ---
@@ -3086,6 +3087,179 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
   is typed and visible; manifest reduction failures become `not_assessed`; schema
   migrations are checksum-bound and fail closed on tamper or newer history.
 
+## P35.6 - Unified Handling Intelligence & Engineering Case Integration
+
+Overall status: **Physics audit verified locally; investigation integration and
+field evidence pending**. The automatic handling-balance producer is now a
+physics-honest observation system: it can never establish a tight/loose-family
+symptom from the kinematic residual alone.
+
+### P1 - Handling-classification physics audit (complete)
+
+- [x] Demote the speed x path-curvature - yaw-rate residual to a kinematic
+  diagnostic. In planar kinematics the residual equals the sideslip RATE
+  (course angle = heading + sideslip), so it is zero in steady-state cornering
+  regardless of balance and moves during transients without implying imbalance.
+- [x] Remove the former planar sideslip-rate proxy (`lat_accel / speed -
+  yaw_rate`) from the producer: it is the same kinematic identity and can never
+  corroborate itself.
+- [x] Require a second, independent strand before any tight/loose-family symptom:
+  steering demand per achieved path curvature, compared leave-one-out against
+  the run-local reference at comparable speeds, with strict-majority
+  unidirectional qualification so a bimodal lap group cannot feed two opposing
+  signatures into classification order.
+- [x] Add diagnostic-only classifications: `kinematic_residual_observation` and
+  `steering_demand_anomaly`. Neither can carry a canonical symptom; the model
+  validator and the client trust boundary both reject such a mapping
+  structurally.
+- [x] Encode the two-strand rule in the contract: a new operating condition
+  (`independent_response_corroboration`) and new forbidden outputs
+  (`single_strand_tight_loose`, `sideslip_rate_self_corroboration`).
+- [x] Make the no-significant-imbalance wording honest about the blind spot: the
+  residual is blind to a constant sideslip angle, so the absence of a qualified
+  signature is not proof of neutral balance.
+
+### P2 — P35/P26/P32 investigation integration (complete)
+
+- [x] Connect qualified handling observations to the P35 mechanism graph
+  with typed relevance: `applicable`, `informed_by_observation` (corroborated
+  deficit/excess aligned with the reviewed mechanism direction and complete
+  support channels), or `blocked` (missing required channels via the reviewed
+  canonical-equivalents map). `support_declared` is structurally False; a
+  kinematic residual alone informs no mechanism.
+- [x] Connect to P26 component families with relevance copied from the P26
+  projection (`supported`/`contradicted`/`observable`/
+  `mechanically_relevant`/`unavailable`); `malfunction_declared` is
+  structurally False.
+- [x] Connect to P32 performance by co-occurrence only: repeatable,
+  candidate-attributed opportunities matching the phase family, with
+  `causation_declared` structurally False.
+- [x] Evaluate alternative explanations (driver demand, entry speed, traffic,
+  tire progression, shared-source dependence, missing channels) with explicit
+  `supported | contradicted | plausible_unresolved | not_observable` states.
+- [x] Declare the two-strand dependence explicitly and discount corroborated
+  confidence (0.55/0.45); the strands are never counted as independent
+  evidence units.
+- [x] Embed the projection in the canonical Engineering Case with exact
+  run/session/setup binding, case-projection revision coverage, and neutral
+  `p356.handling_balance` evidence-index entries outside the P35 dynamics
+  namespace and P34 cohorts.
+
+### P3-P6 (pending)
+
+- [x] P3: integrate the handling assessment into the one Engineering Case
+  projection across all remaining workspaces (the case already carries it;
+  remaining work is per-workspace consumption polish).
+- [x] P4: complete the Engineer/Dial-In UI handoffs for automatically detected
+  symptoms.
+- [ ] P5: build stint-level handling migration with tire-age confounder gates.
+- [ ] P6: develop external-reference validation (historical same-car/same-track
+  sessions or a reviewed vehicle-response model) for uniform balance offsets,
+  which a run-local reference cannot detect.
+
+### P35.6 P1 verification evidence - 2026-10-13
+
+- The physics identity is documented in the producer, contract, and model
+  docstrings: speed x path-curvature - yaw_rate = d(sideslip)/dt under planar
+  kinematics.
+- Adversarial synthetic suite: 18/18 tests pass, including residual-alone
+  scenarios that must NOT map symptoms, corroborated two-strand deficit/excess
+  scenarios that map `tight_*`/`loose_*` only as telemetry-observed
+  associations, a steering-demand-only divergence that stays diagnostic, an
+  uncorroborated mixed scenario with zero symptom mappings, and structural
+  model-validator rejection of symptoms on uncorroborated signatures.
+- Real Next Gen Talladega recording (`recording-49662f...`, 10 eligible laps,
+  cohort integrity clear, 0.65 cap): the pre-audit producer reported
+  `rotation_response_deficit` with `tight_center`; the audited producer reports
+  `kinematic_residual_observation` for center (residual +0.0283 rad/s,
+  demand strand unavailable) and full-throttle exit (+0.0215 rad/s, demand
+  deviation +0.087 scale units, below qualification), with **no canonical
+  symptom anywhere** and the honest conclusion that the residual cannot
+  establish a tight/loose-family symptom on its own. Runtime ~1.2 s.
+- Whole-repository Ruff, TypeScript, and the full fast Python gate pass;
+  frontend suite 113/113; OpenAPI regenerated in-tree with zero drift.
+
+### P35.6 P2 verification evidence - 2026-10-13
+
+- 17/17 adversarial investigation tests cover mechanism informing without
+  support, residual-only informing nothing, component relevance without
+  malfunction, performance co-occurrence without causation, no
+  DriverIntent/setup language, the shared-source dependence declaration,
+  missing-channel limitations, contradiction carry-through, structural
+  authority rejection, foreign-assessment case rejection, P34 cohort
+  exclusion, and P1 classification invariance.
+- The full fast Python gate passes; ruff is clean across
+  `racelab_engine`/`api`/`tests`; frontend tsc, 116/116 Vitest behaviors,
+  2/2 Chromium flows, 7/7 runtime trust guards, and the budgeted production
+  build (218.63 KiB entry, CSS within budget with zero new CSS rules) pass;
+  OpenAPI/TypeScript contracts regenerate in-tree (406 schemas).
+- Real Next Gen Talladega evidence: the Engineering Case for the real run
+  embeds the investigation with two findings (center, full-throttle exit),
+  zero informed mechanisms (correct for residual-only observations), P26
+  component families, the reviewed steering-to-yaw discriminator as the next
+  step, and two neutral `p356.handling_balance` evidence-index entries.
+  Warm workspace reads measure ~0.166 s with the handling projection
+  memoized by exact producer identity; the cold build adds the one-time
+  handling producer pass to the existing intelligence build.
+
+### P35.6 P3+P4 verification evidence - 2026-10-14
+
+- **P3 cross-workspace integration:** the same qualified handling observation
+  now follows the user across every existing workspace with zero new CSS
+  rules and zero new state providers. Overview shows a compact investigation
+  status card; Engineer exposes the complete WHAT→WHERE→DRIVER→RESPONSE→
+  MECHANISMS→COMPONENTS→PERFORMANCE→CONTRADICTIONS→UNRESOLVED→NEXT chain with
+  per-finding handoffs (Review telemetry, Review laps, Setup relevance,
+  Dial-In knowledge); Laps deep-links the exact qualified lap window and
+  phase zone; Platform focuses the reviewed next-evidence channel on the
+  existing trace workbench; Setup shows a Learning-mode Handling Relevance
+  ladder (relevant control: none unless P19 authorizes; supported evidence:
+  none declared; authorized experiment: only the existing active P19
+  workflow through Dial-In).
+- **P4 Engineer→Dial-In handoff:** a new read-only
+  `GET /api/runs/{run_id}/handling-knowledge` endpoint projects one
+  assessment-scoped, display-only `HandlingKnowledgeProjection`
+  (`p356.handling-knowledge.v1`, authority `derived_observation_view`,
+  `setup_authorized` structurally False) from the memoized Crew Chief
+  workspace with exact case-identity binding and a content-addressed
+  `projection_sha256`. The projection carries observed behavior, relevant
+  knowledge (current P35.1 hypotheses merged with the reviewed static
+  mechanism→setup bridges labeled educational/catalog-only), evidence
+  status, countereffects, and a next action that is an inspection or
+  measurement unless an exact mirrored P19 control exists (reported, never
+  created). The Dial-In card is display-only: it never writes the complaint
+  box, never fabricates driver wording, and never creates DriverIntent. The
+  handoff travels through sessionStorage with exact case validation
+  (stale/foreign/phase/symptom mismatches discard silently); the client
+  trust guard recomputes the projection hash and rejects rehashed payloads,
+  drifted authority, symptoms without corroboration, and setup authorization
+  without an exact P19 control.
+- **Adversarial coverage:** 17/17 handling-knowledge tests (corroborated
+  symptom preserved; residual-only symptom-free; foreign/stale identity
+  fails closed; unsupported capability filtered; blocked mechanisms declare
+  missing evidence; no causal language; no fabricated driver wording; P19
+  withholding keeps next action non-authorizing; an exact P19-authorized
+  experiment is reported not created; knowledge-only catalog entries stay
+  non-authorizing; static bridges cover unmapped mechanisms; structural
+  rejection of symptom-without-corroboration and setup-without-control),
+  19 new Vitest behaviors (trust guard ×9, Dial-In handoff ×5, panel
+  handoffs ×4, overview card ×1) in the full 135/135 suite, the full fast
+  Python gate, whole-engine/API/tests ruff, mypy on all new backend files,
+  tsc clean, OpenAPI/TypeScript contract parity (94 paths, 410 schemas),
+  and the budgeted production build.
+- **Real-telemetry evidence (Next Gen Talladega, 10 eligible laps):** a live
+  browser walk of the complete chain — Overview status card → Engineer
+  investigation → Dial-In telemetry-observed card → Platform evidence →
+  Setup relevance → Laps `Window 10-11 · Rep Lap 10 · Area center`. The
+  Dial-In card for the real center assessment shows the +0.0283 rad/s
+  sideslip-rate observation, **no canonical symptom** ("None — no
+  tight/loose claim"), mechanism evidence status, educational-only catalog
+  knowledge (Cross Weight, Spring Rate, Tire Pressure, ARB arms/diameter),
+  28 countereffect targets, and the steering-to-yaw discriminator review as
+  the next action; the driver complaint box stayed empty. P19 authority,
+  DriverIntent, P34/P36 field counts, and every prior P1/P2 physics and
+  trust gate remain unchanged.
+
 ## P36 - Prospective Investigation Evidence Campaigns
 
 - [ ] Run the preregistered prospective campaigns needed to test whether learned
@@ -3227,3 +3401,6 @@ Implementation queue completed in this pass:
 | 2026-10-13 | Cleared the dependency-audit and first-use CI blockers at `9b18166` locally | The remote run that failed the advisory gate (2 critical, 4 high, 1 moderate) is resolved by upgrading `vitest` 3.2.7 -> 4.1.11, which removes the vulnerable `tinypool` and `@vitest/mocker` ranges while retaining Node 20 CI compatibility and deduping the workspace onto the existing Vite 8.2.0, plus lockfile bumps of `js-yaml` 4.3.2, `brace-expansion` 2.1.7, `source-map-js` 1.2.2, and `@redocly/openapi-core` 1.34.21; `npm audit --audit-level=high` now reports zero vulnerabilities and `npm ci` dry-run confirms lockfile sync. The first-use Chromium flow, whose stale heading expectation had been masked behind the audit failure, now asserts the shipped "Every lap has a story. Find your next move." copy. Verified locally: 101/101 Vitest behaviors on Vitest 4.1.11, seven runtime guards, TypeScript, the budgeted production build, two Chromium first-use flows, 92-path/394-schema generated contract parity with zero diff, and the CI-equivalent fast Python subset. Remote verification earned: pushed as `d95c0ee` and Actions run `38494297772` finished **success** on all four jobs (Tauri desktop contract, permanent synthetic trust gate, `test`, and the full Python gate on main), with every `test` job step green including the previously failing audit and the first-use workflow tests that the audit failure had masked. This is the first green run on `main` since 2026-08-26; the two intervening runs (`38484275499`, `38487395755`) had failed. |
 | 2026-10-13 | Hardened whole-shell recovery and raised the driver-facing type floor locally | The shell now has a last-resort `AppErrorBoundary` above every provider, so a crashed provider or a throw in the cockpit itself can no longer unmount the tree into a blank window; recovery is fail-closed (reload, retry, copyable redacted report, explicit "telemetry, setups, and engineering history were not modified") and offers no setup action. `main.tsx` reports a missing mount point instead of throwing inside the module graph, and `index.html` paints the dark surface before the bundle loads and ships a `<noscript>` path. Legibility: 354 px declarations, 75 `rem` declarations, 30 inline TSX sizes, and a base `small` rule (browser default is 83.33% of parent) were raised to a documented 11px floor (`--fs-micro`) matching the P35.4.4 chart-label minimum, with `--fs-label`/`--fs-body`/`--fs-decision` added as the upper scale. Dial-In's textbox and six symptom chips had `outline: none` focus, so keyboard users could not see focus; they now carry the control-bar ring and the chips meet a 28px target. A stale `ui/src/tabs/TrackMapTab.tsx.bak` was removed. Verified locally: **11px minimum and zero horizontal overflow across 24 viewport x workspace combinations** (1920x1080, 1440x900, 1280x720, 768x1024, 393x844), **zero of 24 tab stops without a visible focus ring**, 108/108 Vitest behaviors (7 new crash-boundary tests), TypeScript, the budgeted build at 213.63 KiB raw / 57.87 KiB gzip entry, two Chromium flows, seven runtime guards, 92-path/394-schema contract parity, and a real Next Gen Talladega run inspected live. Backend-loss recovery was exercised against a stopped sidecar: the shell reports "Local engine failed to start." with restart guidance and a Retry engine check action after its 30-second startup window, and a real retry restored the full session. One frozen frontend contract, `tests/test_workspace_signal_frontend_contract.py::test_broadcast_layout_stays_compact_and_responsive`, pinned the literal `font-size: 0.68rem` (10.88px) for the broadcast fact chips, which is below the documented 11px minimum; it now asserts the micro token on the exact `.tab-decision-facts > span` rule instead of matching a literal anywhere in the stylesheet, which is a stricter check than before. The CI-equivalent Python subset, Ruff, and the integration slice pass. No evidence, authority, or P19 contract was changed. |
 | 2026-10-13 | Built the automatic handling-balance intelligence foundation (milestones A-C, partial D) | **Milestone A (physics audit):** the legacy `yaw_error_proxy`/`balance_signature_proxy` contracts already forbid `measured_understeer_gradient` and `one_sample_loose_tight`; no defect was repaired and the legacy producer keeps its own truth contract untouched. **Milestone B (foundation):** a new producer — `racelab_engine/analysis/handling_balance.py` with `HANDLING_BALANCE_CONTRACT` (`analysis/handling_balance_contracts.py`) and typed `HandlingBalanceAssessment`/`HandlingBalanceReport` (`models/handling_balance.py`) — classifies phase-local rotation-response signatures against a run-local leave-one-out reference built on path-kinematic expected yaw (speed × actual-path curvature, explicitly not the driver's intended path). It reports only descriptive classifications (deficit, excess, mixed phase-dependent, transient anomaly, steering-response anomaly, no-significant-imbalance-qualified, inconclusive, unavailable), never tight/loose verdicts, never neutral balance, with authority structurally fixed to `observation_only` and `setup_authorized` fixed false. Exposed at `GET /api/runs/{run_id}/handling-balance`. **Milestone C (knowledge integration):** `racelab_engine/knowledge/setup/handling_symptom_bridge.py` resolves qualified deficit/excess signatures to canonical Dial-In symptoms (`tight_center`, `loose_exit`, ...) strictly against the loaded 79-entry vocabulary; the association is labeled telemetry-observed, never driver testimony, and no complaint string or DriverIntent is fabricated. **Milestone D (UI, partial):** Overview shows a compact Race-mode handling line ("Telemetry-observed · observation only") and a Learning-mode panel with per-phase observations, canonical symptom, repeatability, contradictions, and a Review telemetry handoff; client trust validation (`utils/handlingBalanceTrust.ts`) rejects any drift from observation-only authority. Engineer/Laps/Platform/Setup/Dial-In handoffs and Milestone E stint-migration remain explicitly not implemented. **Verified:** 14 new adversarial backend tests (synthetic deficit/excess/mixed/normal/weak-noise/missing-yaw/missing-steering/single-lap/junk-lap/integrity-uncertain/unisolated-setup-change/idempotence/symptom-mapping scenarios), 4 new frontend tests, real Talladega Next Gen run returns `rotation_response_deficit` with `tight_center` mapping over 10 eligible laps in ~0.1 s analysis time, whole fast Python suite green, whole-repo Ruff green, 112/112 Vitest behaviors, TypeScript clean, budgeted build, 7/7 runtime guards, 2/2 Chromium flows, and generated OpenAPI parity (93 paths with the new route). No P19 authority, DriverIntent, or field-campaign count changed. |
+| 2026-10-13 | Corrected the handling-classification physics (P35.6 P1 audit) | The kinematic residual `speed x path-curvature - yaw_rate` equals the planar sideslip RATE (course angle = heading + sideslip), so the pre-audit `tight_center`-capable deficit classification was scientifically unsound: a genuinely tight car in steady-state cornering shows a near-zero residual. The producer now demotes the residual to a diagnostic (`kinematic_residual_observation`), removes the self-corroborating `lat_accel/speed - yaw_rate` proxy, and qualifies `rotation_response_deficit`/`excess` — the only classifications that may carry a canonical symptom — only when a second independent strand (steering demand per achieved path curvature, leave-one-out run-local reference at matched speeds, strict-majority unidirectional) corroborates the residual. New `steering_demand_anomaly` covers demand-only divergence. The model validator and client trust boundary structurally reject symptoms on uncorroborated signatures; the contract adds `independent_response_corroboration` and forbids `single_strand_tight_loose`/`sideslip_rate_self_corroboration`; schema versions bumped to v2 with regenerated OpenAPI/TypeScript parity. Verified locally: 18/18 handling adversarial tests, the full fast Python gate, Ruff, TypeScript, 113/113 Vitest behaviors. Real Next Gen Talladega evidence: the pre-audit `rotation_response_deficit + tight_center` becomes two uncorroborated `kinematic_residual_observation` phases (center +0.0283 rad/s; full-throttle exit +0.0215 rad/s with demand deviation +0.087 scale units below qualification) with zero canonical symptoms — the honest scientific outcome. No P19 authority, DriverIntent, or field-campaign count changed; P2-P6 of P35.6 remain pending. |
+| 2026-10-13 | Unified handling investigation through the Engineering Case (P35.6 P2) | The qualified handling observation is now a derived, non-authoritative view embedded in the canonical Engineering Case (`handling_investigation`, exact run/session/setup binding, covered by the case-projection revision). `HandlingInvestigationProjection` (`p356.handling-investigation.v1`, authority `derived_observation_view`) carries per-assessment WHAT/WHERE/DRIVER/RESPONSE findings plus typed P35 mechanism relations (`applicable` / `informed_by_observation` only for corroborated direction-aligned deficit/excess with complete support channels / `blocked` for missing channels via the reviewed alias map; `support_declared` structurally False), P26 component relations (relevance copied from the P26 projection; `malfunction_declared` structurally False), P32 co-occurrence associations (repeatable, candidate-attributed, phase-family matched; `causation_declared` structurally False), evaluated alternative explanations, and the next inspection from the steering-to-yaw discriminator contract. The dependence audit is explicit: both strands share measured curvature and the reference lap group, corroborated confidence is discounted to 0.55/0.45, and the projection declares the non-independence. The evidence index carries neutral `p356.handling_balance` entries (no P20 mechanism kinds, no typed artifact, outside P35 dynamics and P34 cohorts); `build_handling_balance_report` is shared by the route and the workspace with an exact-identity memo so warm workspaces never re-read telemetry rows. Engineer shows a Race-mode compact line and a Learning-mode full investigation reusing existing styles (zero new CSS rules). Verified locally: 17/17 investigation adversarial tests, 18/18 P1 tests, the full fast Python gate, whole-engine/API/tests ruff, tsc, 116/116 Vitest behaviors, 2/2 Chromium flows, 7/7 runtime guards, the budgeted build (218.63 KiB entry), 406-schema contract parity, and real Next Gen Talladega case validation (two findings, zero informed mechanisms, two neutral index entries, warm workspace ~0.166 s). No P19 authority, DriverIntent, or field-campaign count changed. |
+| 2026-10-14 | Completed P35.6 P3 cross-workspace integration and P4 Engineer-to-Dial-In handoff | The same qualified handling observation now follows the user across Overview (investigation status card), Engineer (complete WHAT-WHERE-DRIVER-RESPONSE-MECHANISMS-COMPONENTS-PERFORMANCE-CONTRADICTIONS-UNRESOLVED-NEXT chain with Review telemetry / Review laps / Setup relevance / Dial-In knowledge handoffs), Laps (exact qualified lap window and phase zone), Platform (reviewed next-evidence channel), Setup (Learning-mode Handling Relevance ladder: relevant control only if P19 authorizes; supported evidence none declared; authorized experiment only the existing active P19 workflow), and Dial-In. A new read-only GET /api/runs/{run_id}/handling-knowledge endpoint projects a display-only HandlingKnowledgeProjection (p356.handling-knowledge.v1, authority derived_observation_view, setup_authorized structurally False, content-addressed hash, exact case-identity binding) from the memoized Crew Chief workspace: observed behavior, relevant knowledge (current P35.1 hypotheses plus reviewed static mechanism-to-setup bridges labeled educational/catalog-only), evidence status, countereffects, and a next action that stays inspection or measurement unless an exact mirrored P19 control exists. The Dial-In card never writes the complaint box, never fabricates driver wording, and never creates DriverIntent; the sessionStorage handoff validates exact case identity (stale/foreign/phase/symptom mismatches discard), and the client trust guard recomputes the projection hash and rejects rehashed payloads, drifted authority, symptoms without corroboration, and setup authorization without an exact P19 control. Verified locally: 17/17 handling-knowledge adversarial tests, 19 new Vitest behaviors in the full 135/135 suite, the full fast Python gate, whole-engine/API/tests ruff, mypy on all new backend files, tsc, OpenAPI/TypeScript parity (94 paths, 410 schemas), the budgeted production build with zero new CSS rules, and a live browser walk of the real Next Gen Talladega run: the center assessment shows the +0.0283 rad/s sideslip-rate observation with NO canonical symptom, educational-only catalog knowledge, 28 countereffect targets, the steering-to-yaw discriminator review as the next action, and an untouched complaint box; Laps lands on Window 10-11 Rep Lap 10 Area center. P19 authority, DriverIntent, and P34/P36 field counts remain unchanged. |

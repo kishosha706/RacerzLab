@@ -3944,6 +3944,68 @@
         }
       }
     },
+    "/api/runs/{run_id}/handling-knowledge": {
+      "get": {
+        "tags": [
+          "p3-engineering"
+        ],
+        "summary": "Get Handling Knowledge",
+        "operationId": "get_handling_knowledge_api_runs__run_id__handling_knowledge_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "assessment_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Assessment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandlingKnowledgeProjection"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/runs/relative-resistance/aba": {
       "post": {
         "tags": [
@@ -8201,6 +8263,16 @@
             "const": false,
             "title": "Setup Authorized",
             "default": false
+          },
+          "handling_investigation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HandlingInvestigationProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -20323,6 +20395,64 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HandlingAssessmentRef": {
+        "properties": {
+          "assessment_id": {
+            "type": "string",
+            "pattern": "^hba_[0-9a-f]{24}$",
+            "title": "Assessment Id"
+          },
+          "run_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "phase": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]+$",
+            "title": "Phase"
+          },
+          "classification": {
+            "$ref": "#/components/schemas/HandlingClassification"
+          },
+          "canonical_symptom_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_.:-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Symptom Id"
+          },
+          "corroborated": {
+            "type": "boolean",
+            "title": "Corroborated",
+            "default": false
+          },
+          "lap_numbers": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Lap Numbers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "assessment_id",
+          "run_id",
+          "phase",
+          "classification",
+          "lap_numbers"
+        ],
+        "title": "HandlingAssessmentRef",
+        "description": "Exact identity reference to one qualified producer assessment."
+      },
       "HandlingAuthority": {
         "type": "string",
         "enum": [
@@ -20335,7 +20465,7 @@
           "schema_version": {
             "type": "string",
             "title": "Schema Version",
-            "default": "p-handling-balance.assessment.v1"
+            "default": "p-handling-balance.assessment.v2"
           },
           "assessment_id": {
             "type": "string",
@@ -20510,7 +20640,7 @@
           "schema_version": {
             "type": "string",
             "title": "Schema Version",
-            "default": "p-handling-balance.report.v1"
+            "default": "p-handling-balance.report.v2"
           },
           "run_id": {
             "type": "string",
@@ -20607,16 +20737,826 @@
         "type": "string",
         "enum": [
           "no_significant_imbalance_qualified",
+          "kinematic_residual_observation",
           "rotation_response_deficit",
           "rotation_response_excess",
           "mixed_phase_dependent",
           "transient_rotation_anomaly",
           "steering_response_anomaly",
+          "steering_demand_anomaly",
           "inconclusive",
           "unavailable"
         ],
         "title": "HandlingClassification",
-        "description": "Descriptive rotation-response signatures. Never \"tight\"/\"loose\" verdicts."
+        "description": "Descriptive rotation-response signatures. Never \"tight\"/\"loose\" verdicts.\n\nPhysics audit (2026-10-13): the residual speed x path-curvature - yaw_rate\nequals the planar sideslip RATE (d(beta)/dt), because course angle =\nheading + sideslip. It is therefore zero in steady-state cornering no\nmatter how unbalanced the car is, and nonzero during transients without\nimplying imbalance. A deficit/excess classification now requires a second,\nindependent steering-demand-to-response strand to corroborate the residual\nunder comparable conditions. The residual alone maps to no tight/loose\nsymptom."
+      },
+      "HandlingComponentRelation": {
+        "properties": {
+          "component_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]+$",
+            "title": "Component Id"
+          },
+          "relevance": {
+            "type": "string",
+            "enum": [
+              "mechanically_relevant",
+              "observable",
+              "supported",
+              "contradicted",
+              "unavailable"
+            ],
+            "title": "Relevance"
+          },
+          "observability_states": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Observability States",
+            "default": []
+          },
+          "source": {
+            "type": "string",
+            "const": "p26_component_awareness",
+            "title": "Source",
+            "default": "p26_component_awareness"
+          },
+          "malfunction_declared": {
+            "type": "boolean",
+            "const": false,
+            "title": "Malfunction Declared",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "component_id",
+          "relevance"
+        ],
+        "title": "HandlingComponentRelation",
+        "description": "One relevant P26 component family and its P26-owned state."
+      },
+      "HandlingCorroboration": {
+        "properties": {
+          "kinematic_residual_strand_qualified": {
+            "type": "boolean",
+            "title": "Kinematic Residual Strand Qualified",
+            "default": false
+          },
+          "steering_response_strand_qualified": {
+            "type": "boolean",
+            "title": "Steering Response Strand Qualified",
+            "default": false
+          },
+          "steering_response_direction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(elevated|reduced)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steering Response Direction"
+          },
+          "aligned": {
+            "type": "boolean",
+            "title": "Aligned",
+            "default": false
+          },
+          "corroborated": {
+            "type": "boolean",
+            "title": "Corroborated",
+            "default": false
+          },
+          "shared_input_channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Shared Input Channels",
+            "default": [
+              "curvature_1_per_m"
+            ]
+          },
+          "shared_reference_laps": {
+            "type": "boolean",
+            "title": "Shared Reference Laps",
+            "default": true
+          },
+          "independence_qualification": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Independence Qualification",
+            "default": "The kinematic residual and the steering-demand strand share measured path curvature and the same run-local reference lap group; they are complementary relationships, not statistically independent evidence."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "HandlingCorroboration",
+        "description": "Two-strand qualification status for one phase observation.\n\nStrand A is the kinematic residual (speed x path-curvature - yaw_rate),\nwhich equals the planar sideslip rate. Strand B is the steering-demand-to-\nresponse relationship (steering demand per achieved path curvature) at\ncomparable speeds. Both strands must be qualified and aligned before a\ndeficit/excess signature may carry a canonical tight/loose-family symptom.\n\nDependence audit: the two strands share measured path curvature and the\nsame run-local reference lap group. They are complementary relationships,\nnot statistically independent evidence; corroboration qualifies the\nsymptom mapping and can never inflate independent evidence-unit counts."
+      },
+      "HandlingInvestigationFinding": {
+        "properties": {
+          "assessment_id": {
+            "type": "string",
+            "pattern": "^hba_[0-9a-f]{24}$",
+            "title": "Assessment Id"
+          },
+          "phase": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]+$",
+            "title": "Phase"
+          },
+          "what": {
+            "type": "string",
+            "minLength": 1,
+            "title": "What"
+          },
+          "where": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Where"
+          },
+          "driver": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Driver"
+          },
+          "response": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Response"
+          },
+          "mechanisms": {
+            "items": {
+              "$ref": "#/components/schemas/HandlingMechanismRelation"
+            },
+            "type": "array",
+            "title": "Mechanisms",
+            "default": []
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/HandlingComponentRelation"
+            },
+            "type": "array",
+            "title": "Components",
+            "default": []
+          },
+          "performance": {
+            "items": {
+              "$ref": "#/components/schemas/HandlingPerformanceAssociation"
+            },
+            "type": "array",
+            "title": "Performance",
+            "default": []
+          },
+          "contradictions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Contradictions",
+            "default": []
+          },
+          "uncertain": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Uncertain",
+            "default": []
+          },
+          "next": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Next"
+          },
+          "next_evidence_channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Next Evidence Channels",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "assessment_id",
+          "phase",
+          "what",
+          "where",
+          "driver",
+          "response",
+          "next"
+        ],
+        "title": "HandlingInvestigationFinding",
+        "description": "One WHAT/WHERE/DRIVER/RESPONSE/... reasoning chain for a qualified phase."
+      },
+      "HandlingInvestigationProjection": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "p356.handling-investigation.v1",
+            "title": "Schema Version",
+            "default": "p356.handling-investigation.v1"
+          },
+          "projection_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Projection Sha256"
+          },
+          "run_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Session Id"
+          },
+          "setup_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Setup Id"
+          },
+          "handling_report_classification": {
+            "$ref": "#/components/schemas/HandlingClassification"
+          },
+          "assessment_refs": {
+            "items": {
+              "$ref": "#/components/schemas/HandlingAssessmentRef"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Assessment Refs"
+          },
+          "evidence_dependence": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Evidence Dependence"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/HandlingInvestigationFinding"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Findings"
+          },
+          "authority": {
+            "type": "string",
+            "const": "derived_observation_view",
+            "title": "Authority",
+            "default": "derived_observation_view"
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          },
+          "p19_authority_unchanged": {
+            "type": "boolean",
+            "const": true,
+            "title": "P19 Authority Unchanged",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "projection_sha256",
+          "run_id",
+          "session_id",
+          "setup_id",
+          "handling_report_classification",
+          "assessment_refs",
+          "evidence_dependence",
+          "findings"
+        ],
+        "title": "HandlingInvestigationProjection",
+        "description": "Run-level unified handling investigation projection."
+      },
+      "HandlingKnowledgeHypothesis": {
+        "properties": {
+          "bridge_id": {
+            "type": "string",
+            "pattern": "^p351b_[0-9a-f]{24}$",
+            "title": "Bridge Id"
+          },
+          "effect_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.:-]+$",
+            "title": "Effect Id"
+          },
+          "setup_area": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]+$",
+            "title": "Setup Area"
+          },
+          "physical_role": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Physical Role"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "educational_knowledge",
+              "measurable_hypothesis",
+              "p19_testable_control",
+              "unsupported_remove"
+            ],
+            "title": "Level"
+          },
+          "relevance": {
+            "type": "string",
+            "enum": [
+              "supported_candidate",
+              "blocked_candidate",
+              "knowledge_only"
+            ],
+            "title": "Relevance"
+          },
+          "knowledge_applicability": {
+            "type": "string",
+            "enum": [
+              "applicable",
+              "educational_only",
+              "blocked_by_build",
+              "unsupported"
+            ],
+            "title": "Knowledge Applicability"
+          },
+          "p35_mechanism_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "P35 Mechanism Ids",
+            "default": []
+          },
+          "countereffect_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Countereffect Ids",
+            "default": []
+          },
+          "missing_evidence": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Evidence",
+            "default": []
+          },
+          "authority": {
+            "type": "string",
+            "enum": [
+              "knowledge_only",
+              "measurement_only",
+              "exact_p19_projection"
+            ],
+            "title": "Authority"
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "title": "Setup Authorized",
+            "default": false
+          },
+          "p19_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/P19TestableControl"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "bridge_id",
+          "effect_id",
+          "setup_area",
+          "physical_role",
+          "level",
+          "relevance",
+          "knowledge_applicability",
+          "authority"
+        ],
+        "title": "HandlingKnowledgeHypothesis",
+        "description": "One relevant P35.1 setup-catalog hypothesis, knowledge-only unless P19."
+      },
+      "HandlingKnowledgeMechanismStatus": {
+        "properties": {
+          "mechanism_id": {
+            "type": "string",
+            "pattern": "^mechanism:[a-z][a-z0-9_]+$",
+            "title": "Mechanism Id"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Label"
+          },
+          "relevance": {
+            "type": "string",
+            "enum": [
+              "applicable",
+              "informed_by_observation",
+              "blocked"
+            ],
+            "title": "Relevance"
+          },
+          "missing_evidence": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Evidence",
+            "default": []
+          },
+          "support_declared": {
+            "type": "boolean",
+            "const": false,
+            "title": "Support Declared",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mechanism_id",
+          "label",
+          "relevance"
+        ],
+        "title": "HandlingKnowledgeMechanismStatus",
+        "description": "One mechanism the observation touched, and what it can and cannot say."
+      },
+      "HandlingKnowledgeNextAction": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "inspect_evidence",
+              "measure",
+              "p19_authorized_experiment"
+            ],
+            "title": "Kind"
+          },
+          "instruction": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Instruction"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "instruction"
+        ],
+        "title": "HandlingKnowledgeNextAction"
+      },
+      "HandlingKnowledgeProjection": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "p356.handling-knowledge.v1",
+            "title": "Schema Version",
+            "default": "p356.handling-knowledge.v1"
+          },
+          "projection_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Projection Sha256"
+          },
+          "run_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Session Id"
+          },
+          "setup_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Setup Id"
+          },
+          "case_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Case Id"
+          },
+          "case_revision_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Case Revision Sha256"
+          },
+          "case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Case Sha256"
+          },
+          "assessment_id": {
+            "type": "string",
+            "pattern": "^hba_[0-9a-f]{24}$",
+            "title": "Assessment Id"
+          },
+          "phase": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]+$",
+            "title": "Phase"
+          },
+          "classification": {
+            "$ref": "#/components/schemas/HandlingClassification"
+          },
+          "canonical_symptom_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_.:-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Symptom Id"
+          },
+          "corroborated": {
+            "type": "boolean",
+            "title": "Corroborated",
+            "default": false
+          },
+          "observed_behavior": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Observed Behavior"
+          },
+          "evidence_qualification": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Evidence Qualification"
+          },
+          "mechanisms": {
+            "items": {
+              "$ref": "#/components/schemas/HandlingKnowledgeMechanismStatus"
+            },
+            "type": "array",
+            "title": "Mechanisms"
+          },
+          "relevant_knowledge": {
+            "items": {
+              "$ref": "#/components/schemas/HandlingKnowledgeHypothesis"
+            },
+            "type": "array",
+            "title": "Relevant Knowledge"
+          },
+          "countereffects": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Countereffects",
+            "default": []
+          },
+          "evidence_status": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evidence Status",
+            "default": []
+          },
+          "next_evidence_channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Next Evidence Channels",
+            "default": []
+          },
+          "next_action": {
+            "$ref": "#/components/schemas/HandlingKnowledgeNextAction"
+          },
+          "authority": {
+            "type": "string",
+            "const": "derived_observation_view",
+            "title": "Authority",
+            "default": "derived_observation_view"
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          },
+          "p19_authority_unchanged": {
+            "type": "boolean",
+            "const": true,
+            "title": "P19 Authority Unchanged",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "projection_sha256",
+          "run_id",
+          "session_id",
+          "setup_id",
+          "case_id",
+          "case_revision_sha256",
+          "case_sha256",
+          "assessment_id",
+          "phase",
+          "classification",
+          "observed_behavior",
+          "evidence_qualification",
+          "mechanisms",
+          "relevant_knowledge",
+          "next_action"
+        ],
+        "title": "HandlingKnowledgeProjection",
+        "description": "Run/assessment-level handling knowledge for one Dial-In handoff."
+      },
+      "HandlingMechanismRelation": {
+        "properties": {
+          "mechanism_id": {
+            "type": "string",
+            "pattern": "^mechanism:[a-z][a-z0-9_]+$",
+            "title": "Mechanism Id"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Label"
+          },
+          "relevance": {
+            "type": "string",
+            "enum": [
+              "applicable",
+              "informed_by_observation",
+              "blocked"
+            ],
+            "title": "Relevance"
+          },
+          "response_regime": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Response Regime"
+          },
+          "applicable_phases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Applicable Phases"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "deficit_aligned",
+              "excess_aligned",
+              "neutral",
+              "none"
+            ],
+            "title": "Direction"
+          },
+          "discriminator_contract_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Discriminator Contract Ids",
+            "default": []
+          },
+          "p26_component_family_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "P26 Component Family Ids",
+            "default": []
+          },
+          "required_channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Required Channels",
+            "default": []
+          },
+          "missing_evidence": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Evidence",
+            "default": []
+          },
+          "support_declared": {
+            "type": "boolean",
+            "const": false,
+            "title": "Support Declared",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mechanism_id",
+          "label",
+          "relevance",
+          "response_regime",
+          "applicable_phases",
+          "direction"
+        ],
+        "title": "HandlingMechanismRelation",
+        "description": "One applicable P35 mechanism and how the observation informs it."
+      },
+      "HandlingPerformanceAssociation": {
+        "properties": {
+          "opportunity_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Opportunity Id"
+          },
+          "track_region": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Track Region"
+          },
+          "phase": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Phase"
+          },
+          "measured_delta_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured Delta S"
+          },
+          "repeatability": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Repeatability"
+          },
+          "attribution_state": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Attribution State"
+          },
+          "wording": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Wording"
+          },
+          "causation_declared": {
+            "type": "boolean",
+            "const": false,
+            "title": "Causation Declared",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "opportunity_id",
+          "track_region",
+          "phase",
+          "repeatability",
+          "attribution_state",
+          "wording"
+        ],
+        "title": "HandlingPerformanceAssociation",
+        "description": "A co-occurring, P32-owned measured performance consequence."
       },
       "HandlingPhaseObservation": {
         "properties": {
@@ -20722,6 +21662,41 @@
             ],
             "title": "Steering Efficiency Median Curvature Per Rad"
           },
+          "steering_demand_per_curvature_median_deg_per_inv_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steering Demand Per Curvature Median Deg Per Inv M"
+          },
+          "steering_demand_relative_deviation_scale_units": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steering Demand Relative Deviation Scale Units"
+          },
+          "speed_median_mps": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed Median Mps"
+          },
           "correction_count_median": {
             "anyOf": [
               {
@@ -20745,17 +21720,6 @@
               }
             ],
             "title": "Max Yaw Rate Of Change Rad S2"
-          },
-          "sideslip_rate_proxy_median_rad_s": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sideslip Rate Proxy Median Rad S"
           },
           "noise_scale_deficit_rad_s": {
             "anyOf": [
@@ -20781,6 +21745,16 @@
             },
             "type": "array",
             "title": "Reference Lap Group"
+          },
+          "corroboration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HandlingCorroboration"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
